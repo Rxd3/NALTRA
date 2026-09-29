@@ -1,0 +1,17 @@
+project_languages:
+  - en
+  - tr
+  - en-tr
+text_column: text
+labels_column: labels
+random_seed: 42
+split_ratios:
+  train: 0.70
+  validation: 0.15
+  test: 0.15
+paths:
+  raw: data/raw
+  processed: data/processed
+  splits: data/splits
+  ood: data/ood
+  noisy: data/noisy

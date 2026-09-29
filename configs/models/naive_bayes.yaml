@@ -1,0 +1,11 @@
+model: naive_bayes
+enabled: true
+features:
+  type: tfidf
+  lowercase: true
+  ngram_range: [1, 2]
+  max_features: 50000
+classifier:
+  alpha: 1.0
+multilabel:
+  threshold: 0.5

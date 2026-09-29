@@ -1,0 +1,21 @@
+average_modes:
+  - micro
+  - macro
+classification_metrics:
+  - precision
+  - recall
+  - f1
+  - jaccard
+calibration:
+  bins: 10
+  metrics:
+    - ece
+    - brier_score
+ood_metrics:
+  - auroc
+  - fpr_at_95_tpr
+robustness_metrics:
+  - jaccard_stability
+benchmark:
+  warmup_runs: 3
+  measured_runs: 20

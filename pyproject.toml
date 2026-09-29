@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "naltra"
+version = "0.1.0"
+description = "Natural Language Analysis & Taxonomy Robust Architecture"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "NALTRA Contributors" }]
+dependencies = [
+    "datasets",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "pydantic",
+    "python-dotenv",
+    "pyyaml",
+    "scikit-learn",
+    "sentencepiece",
+    "streamlit",
+    "torch",
+    "transformers",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "pytest",
+    "ruff",
+]
+
+[project.scripts]
+naltra-prepare-data = "naltra.cli:prepare_data"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts", "dashboard", "taxonomy"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

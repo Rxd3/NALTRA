@@ -1,0 +1,29 @@
+{
+  "version": "0.1.0",
+  "labels": [
+    {
+      "id": "technology",
+      "name": "Technology",
+      "parent": null,
+      "description": "Technology-related topics."
+    },
+    {
+      "id": "hardware",
+      "name": "Hardware",
+      "parent": "technology",
+      "description": "Physical computing systems and components."
+    },
+    {
+      "id": "semiconductors",
+      "name": "Semiconductors",
+      "parent": "hardware",
+      "description": "Chips, processors, and semiconductor manufacturing."
+    },
+    {
+      "id": "software",
+      "name": "Software",
+      "parent": "technology",
+      "description": "Software products, systems, and engineering."
+    }
+  ]
+}

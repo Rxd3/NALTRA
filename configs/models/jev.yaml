@@ -1,0 +1,7 @@
+model: jev
+enabled: false
+api_key_env: JEV_API_KEY
+base_url_env: JEV_API_BASE_URL
+request_timeout_seconds: 30
+multilabel:
+  threshold: 0.5

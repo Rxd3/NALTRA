@@ -1,0 +1,9 @@
+{
+  "version": "0.1.0",
+  "aliases": {
+    "tech": "technology",
+    "computer_hardware": "hardware",
+    "chips": "semiconductors",
+    "applications": "software"
+  }
+}
