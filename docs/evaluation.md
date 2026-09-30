@@ -11,5 +11,6 @@ All model families are evaluated through the same `PredictionResult` schema and 
 - OOD: detection AUROC and false-positive rate at 95% true-positive rate.
 - Robustness: performance deltas and Jaccard prediction stability under perturbation.
 - Efficiency: warmed-up latency distributions under documented hardware and batch sizes.
+- Ensemble comparison: hard, soft, and weighted-soft voting against each of the six component models.
 
-Benchmark scripts must save their configuration, taxonomy version, dataset checksum, random seed, and environment details. Never add invented or manually filled experimental values; generated tables belong under `results/`.
+Benchmark scripts must save their configuration, taxonomy version, dataset checksum, random seed, and environment details. Ensemble runs must also record the voting method, global/per-label thresholds, and complete model-weight mapping. Never add invented or manually filled experimental values; generated tables belong under `results/`.

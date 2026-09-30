@@ -8,6 +8,8 @@ MODEL_OPTIONS = [
     "BiLSTM",
     "Multilingual Transformer",
     "Jev",
+    "Laya",
+    "Ensemble",
 ]
 
 st.set_page_config(page_title="NALTRA", page_icon="🧭", layout="wide")

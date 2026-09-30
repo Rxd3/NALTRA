@@ -14,6 +14,7 @@ Owns:
 src/naltra/models/bilstm/
 src/naltra/models/transformer/
 src/naltra/models/jev/
+src/naltra/models/laya/
 src/naltra/pipeline/
 src/naltra/schemas/
 configs/
@@ -51,7 +52,11 @@ src/naltra/models/naive_bayes/
 src/naltra/models/svm/
 configs/models/naive_bayes.yaml
 configs/models/svm.yaml
+src/naltra/pipeline/ensemble.py
+configs/ensemble.yaml
 ```
+
+Raouf is responsible for the ensemble voting implementation and configuration. This file-specific ownership is an exception to the Technical Lead's general ownership of `src/naltra/pipeline/`; shared pipeline contract changes still require coordination with the Technical Lead.
 
 ## Evaluation Member - Abdullah jamal
 

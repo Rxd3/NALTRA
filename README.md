@@ -1,6 +1,6 @@
 # NALTRA
 
-**Natural Language Analysis & Taxonomy Robust Architecture** is a student research project for multilingual, multi-label, hierarchical text classification. The repository is organized so five contributors can develop data, models, evaluation, and the user interface in parallel behind shared interfaces.
+**Natural Language Analysis & Taxonomy Robust Architecture** is a student research project for multilingual, multi-label, hierarchical text classification. The repository is organized so five contributors can develop data, models, ensemble decisions, evaluation, and the user interface in parallel behind shared interfaces.
 
 ## Research goal
 
@@ -24,6 +24,10 @@ Planned model families:
 - BiLSTM
 - Multilingual Transformer
 - Jev integration
+- Laya integration
+- Configurable ensemble voting across all six model families
+
+The ensemble layer supports strict hard-majority voting, average-probability soft voting, and configurable weighted soft voting. All methods vote independently per label and return the same `PredictionResult` schema as an individual model, so hierarchy, OOD, evaluation, and dashboard stages remain unchanged.
 
 Evaluation covers standard classification metrics, cross-language evaluation, OOD detection, confidence calibration, robustness, and latency.
 
@@ -31,7 +35,7 @@ Evaluation covers standard classification metrics, cross-language evaluation, OO
 
 | Path | Purpose |
 | --- | --- |
-| `configs/` | Data, taxonomy, evaluation, and model configuration |
+| `configs/` | Data, taxonomy, evaluation, model, and ensemble configuration |
 | `data/` | Local raw/processed datasets and generated splits (large files ignored) |
 | `taxonomy/` | Versioned taxonomy, label map, and validation utility |
 | `src/naltra/` | Installable Python package and shared interfaces |

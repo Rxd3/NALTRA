@@ -1,12 +1,12 @@
 # Architecture
 
-NALTRA uses one prediction contract for all model families. Model-specific code produces label scores; shared pipeline stages then resolve hierarchy, OOD, calibration metadata, explanations, and presentation.
+NALTRA uses one prediction contract for all model families. Model-specific code produces label scores; a decision layer either keeps one model's prediction or combines all six predictions per label. Shared pipeline stages then resolve thresholds, hierarchy, OOD, calibration metadata, explanations, and presentation.
 
 ```mermaid
 flowchart LR
     A[Input] --> B[Language Detection]
     B --> C[Preprocessing]
-    C --> M{Selected Model}
+    C --> M{Selected Model or Ensemble}
 
     subgraph Model Families
         NB[Naive Bayes]
@@ -14,6 +14,7 @@ flowchart LR
         BL[BiLSTM]
         TR[Multilingual Transformer]
         J[Jev]
+        L[Laya]
     end
 
     M --> NB
@@ -21,14 +22,20 @@ flowchart LR
     M --> BL
     M --> TR
     M --> J
+    M --> L
 
-    NB --> P[Multi-Label Prediction]
+    NB --> P[Per-Model Label Scores]
     SVM --> P
     BL --> P
     TR --> P
     J --> P
+    L --> P
 
-    P --> H[Hierarchical Resolution]
+    P --> V{Decision Layer}
+    V -->|Single model| T[Multi-Label Thresholding]
+    V -->|All six models| EN[Per-Label Ensemble Voting<br/>Hard / Soft / Weighted Soft]
+    EN --> T
+    T --> H[Hierarchical Resolution]
     H --> O[OOD Detection]
     O --> CC[Confidence / Calibration]
     CC --> E[Explainability]
@@ -38,9 +45,11 @@ flowchart LR
 ## Boundaries
 
 - `models/` owns training, persistence, and raw scores behind `BaseNALTRAModel`.
-- `pipeline/` owns shared language, preprocessing, threshold, hierarchy, and OOD flow.
+- `pipeline/` owns shared language, preprocessing, ensemble voting, threshold, hierarchy, and OOD flow.
 - `schemas/` is the stable boundary consumed by evaluation and the dashboard.
 - `evaluation/` reads predictions without depending on model internals.
 - `dashboard/` consumes prediction results and must not contain training logic.
 
 The initial scaffold deliberately avoids dependency injection frameworks, service layers, and deployment infrastructure. Add abstractions only when two or more implementations need them.
+
+For ensemble mode, Naive Bayes, SVM, BiLSTM, Multilingual Transformer, Jev, and Laya each return a `PredictionResult`. The ensemble combines their label scores, returns another `PredictionResult`, and then follows the same hierarchy and OOD path as a single-model prediction. Soft voting treats a label omitted by one model as probability zero; hard voting treats it as a negative vote.

@@ -10,6 +10,8 @@ def test_dashboard_starts_and_handles_placeholder_submission() -> None:
     assert not app.exception
     assert app.title[0].value == "NALTRA"
     assert app.button[0].disabled
+    assert "Laya" in app.selectbox[0].options
+    assert "Ensemble" in app.selectbox[0].options
 
     app.text_area[0].set_value("English ve Türkçe").run()
     assert not app.button[0].disabled

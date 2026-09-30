@@ -1,6 +1,6 @@
 # NALTRA dashboard
 
-This Streamlit app is the UI integration surface. It will provide text input, model selection, label confidence, hierarchy paths, OOD status, explanations, and side-by-side model comparison.
+This Streamlit app is the UI integration surface. It will provide text input, model or ensemble selection, label confidence, hierarchy paths, OOD status, explanations, and side-by-side comparison across Naive Bayes, SVM, BiLSTM, Multilingual Transformer, Jev, Laya, and ensemble voting.
 
 Start it from the repository root after installation:
 
