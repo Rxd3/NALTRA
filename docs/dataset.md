@@ -78,3 +78,71 @@ datasets will be required to cover broader NALTRA topics.
 - Published: Findings of EACL 2023
 - Hugging Face dataset: `awinml/MultiFin`
 - Original dataset license: CC BY-NC 4.0
+
+## Candidate Dataset: MN-DS
+
+MN-DS is an English news classification dataset containing 10,917 annotation
+rows representing 10,491 unique news articles.
+
+The dataset uses a two-level hierarchical taxonomy with 17 broad level-1
+categories and 109 fine-grained level-2 categories.
+
+### Dataset structure
+
+- 10,917 annotation rows
+- 10,491 unique articles
+- 17 level-1 categories
+- 109 level-2 categories
+- No missing titles, article content, or category labels
+- Full news articles rather than only headlines
+
+### Category balance
+
+The level-2 categories are highly balanced.
+
+- Smallest level-2 category: 100 annotations
+- Largest level-2 category: 107 annotations
+- Median level-2 category size: 100
+- No level-2 category contains fewer than 50 examples
+
+The level-1 category sizes vary because each parent contains a different
+number of level-2 categories.
+
+### Multi-label structure
+
+Some articles appear multiple times because they have more than one category
+annotation.
+
+- 10,099 articles contain one annotation
+- 392 articles (3.74%) contain multiple annotations
+- Maximum annotations for one article: 4
+- 137 articles span more than one level-1 category
+- 392 articles contain multiple level-2 categories
+
+During preprocessing, rows sharing the same article ID should be merged into
+one article record containing multiple labels.
+
+### Benchmark role
+
+MN-DS is useful for:
+
+- English hierarchical classification
+- Broad topic coverage
+- Fine-grained 109-label classification
+- Parent/child taxonomy evaluation
+- Balanced per-label benchmark comparisons
+
+MN-DS is less suitable as NALTRA's main multi-label benchmark because only a
+small portion of articles contain multiple annotations.
+
+It complements MultiFin by providing much broader general-news coverage while
+MultiFin provides English/Turkish multilingual evaluation and a higher
+proportion of multi-label samples.
+
+### Provenance
+
+- Dataset: MN-DS
+- Language: English
+- Domain: General news
+- License: CC BY 4.0
+- Source: Zenodo
