@@ -21,6 +21,11 @@ from naltra.data.code_switching import (
 )
 from naltra.data.loader import load_jsonl
 from naltra.data.noise import create_noisy_record, generate_noisy_benchmarks
+from naltra.data.ood import (
+    MASSIVE_ALLOWED_SCENARIOS,
+    generate_far_ood_benchmarks,
+    generate_near_ood_benchmarks,
+)
 from naltra.data.preprocessing import process_mn_ds, process_multifin, process_sib200
 
 
@@ -198,11 +203,64 @@ def prepare_code_switch() -> None:
     print("Clean training data remains untouched.\n")
 
 
+def prepare_ood() -> None:
+    print("\n" + "=" * 50)
+    print("Preparing NALTRA Out-of-Distribution (OOD) Benchmarks")
+    print("=" * 50)
+
+    # 1. Near-OOD: SIB-200 leave-one-topic-out (7 folds)
+    print("\n--- 1. Near-OOD: SIB-200 Leave-One-Topic-Out (7 Folds) ---")
+    near_stats = generate_near_ood_benchmarks()
+    print("Folds generated successfully:")
+    for topic, stats in near_stats.items():
+        print(
+            f"  - {topic}: train_id={stats['train_id']}, "
+            f"val_ood={stats['validation_ood']}, test_ood={stats['test_ood']} "
+            f"(total OOD={stats['total_ood']})"
+        )
+
+    # 2. Far-OOD: Amazon MASSIVE (EN & TR matched pairs)
+    print("\n--- 2. Far-OOD: Amazon MASSIVE (English & Turkish) ---")
+    far_stats = generate_far_ood_benchmarks()
+    print("Far-OOD generated successfully:")
+    for split_name, count in far_stats.items():
+        print(f"  - {split_name}: {count} records ({count // 2} EN, {count // 2} TR)")
+
+    # Display one Near-OOD example and one Far-OOD EN/TR pair example
+    sample_near_file = Path("data/ood/near/sib200/politics/validation_ood.jsonl")
+    if sample_near_file.exists():
+        near_sample = load_jsonl(sample_near_file)[0]
+        print("\n--- Example Near-OOD Record ---")
+        print(f"ID:           {near_sample['id']}")
+        print(f"OOD Type:     {near_sample['ood_type']}")
+        print(f"Held-out:     {near_sample['source_label']}")
+        print(f"Reason:       {near_sample['ood_reason']}")
+        print(f"Language:     {near_sample['language']}")
+        print(f"Text:         {near_sample['text']}")
+
+    sample_far_file = Path("data/ood/far/massive/test_ood.jsonl")
+    if sample_far_file.exists():
+        far_recs = load_jsonl(sample_far_file)
+        en_far = far_recs[0]
+        tr_far = far_recs[1]
+        print("\n--- Example Far-OOD EN/TR Matched Pair ---")
+        print(f"Pair ID:      {en_far['pair_id']}")
+        print(f"EN ID:        {en_far['id']}")
+        print(f"TR ID:        {tr_far['id']}")
+        print(f"Scenario:     {en_far['source_label']}")
+        print(f"EN Text:      {en_far['text']}")
+        print(f"TR Text:      {tr_far['text']}")
+
+    print("\nNear-OOD location: data/ood/near/sib200/")
+    print("Far-OOD location:  data/ood/far/massive/")
+    print("Zero training leakage. Clean training sets remain untouched.\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare NALTRA benchmark datasets.")
     parser.add_argument(
         "--dataset",
-        choices=["sib200", "multifin", "mn_ds", "noisy", "code_switch", "all"],
+        choices=["sib200", "multifin", "mn_ds", "noisy", "code_switch", "ood", "all"],
         default="all",
         help="Which dataset to process (default: all).",
     )
@@ -218,6 +276,8 @@ def main() -> None:
         prepare_noisy()
     if args.dataset in ("code_switch", "all"):
         prepare_code_switch()
+    if args.dataset in ("ood", "all"):
+        prepare_ood()
 
 
 if __name__ == "__main__":
