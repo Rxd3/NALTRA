@@ -146,3 +146,67 @@ proportion of multi-label samples.
 - Domain: General news
 - License: CC BY 4.0
 - Source: Zenodo
+
+
+## Candidate Dataset: SIB-200
+
+SIB-200 is a multilingual topic-classification dataset covering more than
+200 languages and dialects. NALTRA currently uses the English (`eng_Latn`)
+and Turkish (`tur_Latn`) configurations.
+
+Both languages contain the same examples, labels, and official data splits.
+
+### English and Turkish subsets
+
+| Split | English | Turkish |
+|---|---:|---:|
+| Train | 701 | 701 |
+| Validation | 99 | 99 |
+| Test | 204 | 204 |
+| Total | 1,004 | 1,004 |
+
+The dataset contains seven topic categories:
+
+- science/technology
+- travel
+- politics
+- sports
+- health
+- entertainment
+- geography
+
+The category distribution is identical for English and Turkish.
+
+### Cross-language alignment
+
+English and Turkish use matching `index_id` values for every split.
+
+- All train IDs and categories match
+- All validation IDs and categories match
+- All test IDs and categories match
+- Every ID is unique inside its split
+- No IDs overlap between train, validation, and test
+
+This makes SIB-200 suitable for controlled English/Turkish cross-language
+evaluation because models can be compared on translations of the same
+underlying examples.
+
+### Benchmark role
+
+SIB-200 will primarily be used for:
+
+- English/Turkish cross-language comparison
+- language robustness evaluation
+- clean multilingual topic classification
+- controlled comparison using identical splits and labels
+
+The categories are not perfectly balanced, so macro-F1 should be reported
+alongside aggregate metrics.
+
+### Provenance
+
+- Dataset: SIB-200
+- Hugging Face dataset: `Davlan/sib200`
+- Paper: "SIB-200: A Simple, Inclusive, and Big Evaluation Dataset for
+  Topic Classification in 200+ Languages and Dialects"
+- License: CC BY-SA 4.0
