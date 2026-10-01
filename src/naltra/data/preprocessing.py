@@ -249,3 +249,108 @@ def process_multifin(
         print(f"Saved {len(records)} records ({en_count} en, {tr_count} tr) -> {out_path}")
 
     return processed_by_split
+
+
+def process_mn_ds(
+    csv_path: str | Path = "data/raw/mn_ds/MN-DS-news-classification.csv",
+    output_dir: str | Path = "data/processed/mn_ds",
+    taxonomy_path: str | Path = "taxonomy/taxonomy.json",
+    label_map_path: str | Path = "taxonomy/label_map.json",
+    train_ratio: float = 0.70,
+    validation_ratio: float = 0.15,
+    test_ratio: float = 0.15,
+    seed: int = 42,
+) -> dict[str, list[dict[str, Any]]]:
+    """Load, group, preprocess, deterministically split, validate, and persist MN-DS."""
+    import pandas as pd
+    from naltra.data.splits import multilabel_stratified_split
+
+    label_map = load_label_map(label_map_path)
+    allowed_labels = load_canonical_label_ids(taxonomy_path)
+
+    csv_file = Path(csv_path)
+    if not csv_file.exists():
+        raise FileNotFoundError(f"MN-DS CSV not found at: {csv_file}")
+
+    print(f"Loading MN-DS raw data from {csv_file}...")
+    df = pd.read_csv(csv_file)
+    print(f"Loaded {len(df)} annotation rows.")
+
+    # Group by article 'id' to prevent train/test leakage
+    articles: dict[str, dict[str, Any]] = {}
+    for _, row in df.iterrows():
+        article_id = str(row["id"]).strip()
+        raw_l2 = str(row["category_level_2"]).strip()
+
+        if article_id not in articles:
+            title = str(row["title"]).strip() if pd.notna(row["title"]) else ""
+            content = str(row["content"]).strip() if pd.notna(row["content"]) else ""
+
+            # Combine title and content cleanly
+            if title and content:
+                if title.endswith((".", "!", "?")):
+                    raw_text = f"{title} {content}"
+                else:
+                    raw_text = f"{title}. {content}"
+            elif content:
+                raw_text = content
+            else:
+                raw_text = title
+
+            articles[article_id] = {
+                "id": f"mn_ds:{article_id}",
+                "text": preprocess_record_text(raw_text),
+                "source_labels": [],
+                "language": "en",
+                "source": "mn_ds",
+                "license": "CC BY 4.0",
+                "source_id": article_id,
+            }
+
+        if raw_l2 and raw_l2 not in articles[article_id]["source_labels"]:
+            articles[article_id]["source_labels"].append(raw_l2)
+
+    print(f"Merged into {len(articles)} unique articles.")
+
+    # Map labels to canonical IDs
+    article_records: list[dict[str, Any]] = []
+    for rec in articles.values():
+        rec["labels"] = map_labels(rec["source_labels"], label_map)
+        article_records.append(rec)
+
+    # Perform deterministic multi-label stratified split
+    print(f"Splitting {len(article_records)} articles using iterative stratification (seed={seed})...")
+    train_records, val_records, test_records = multilabel_stratified_split(
+        article_records,
+        train_ratio=train_ratio,
+        validation_ratio=validation_ratio,
+        test_ratio=test_ratio,
+        seed=seed,
+    )
+
+    splits = {
+        "train": train_records,
+        "validation": val_records,
+        "test": test_records,
+    }
+
+    # Verify zero leakage across splits
+    train_ids = {r["id"] for r in train_records}
+    val_ids = {r["id"] for r in val_records}
+    test_ids = {r["id"] for r in test_records}
+
+    if train_ids & val_ids or train_ids & test_ids or val_ids & test_ids:
+        raise ValueError("Data leakage detected: article IDs overlap across splits!")
+
+    # Validate and save each split
+    out_dir = Path(output_dir)
+    for split_name, split_data in splits.items():
+        for record in split_data:
+            record["split"] = split_name
+            validate_record(record, allowed_labels=allowed_labels)
+
+        out_path = out_dir / f"{split_name}.jsonl"
+        save_jsonl(split_data, out_path)
+        print(f"Saved {len(split_data)} records -> {out_path}")
+
+    return splits

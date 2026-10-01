@@ -167,6 +167,59 @@ def test_multifin_label_mapping() -> None:
         assert l in canonical_ids
 
 
+def test_mn_ds_label_mapping() -> None:
+    label_map = load_label_map(PROJECT_ROOT / "taxonomy" / "label_map.json")
+    canonical_ids = load_canonical_label_ids(PROJECT_ROOT / "taxonomy" / "taxonomy.json")
+
+    # Real MN-DS L2 labels
+    mn_ds_labels = ["crime", "mass media", "social condition", "armed conflict"]
+    mapped = map_labels(mn_ds_labels, label_map)
+
+    assert mapped == ["crime", "mass_media", "social_condition", "armed_conflict"]
+    for l in mapped:
+        assert l in canonical_ids
+
+
+def test_multilabel_stratified_split() -> None:
+    from naltra.data.splits import multilabel_stratified_split
+
+    # Construct synthetic records with single and multi-labels
+    sample_records = [
+        {"id": f"rec_{i}", "labels": ["cat_a"]} for i in range(40)
+    ] + [
+        {"id": f"rec_{i+40}", "labels": ["cat_b"]} for i in range(40)
+    ] + [
+        {"id": f"rec_{i+80}", "labels": ["cat_a", "cat_b"]} for i in range(20)
+    ]
+
+    train, val, test = multilabel_stratified_split(
+        sample_records,
+        train_ratio=0.70,
+        validation_ratio=0.15,
+        test_ratio=0.15,
+        seed=42,
+    )
+
+    assert len(train) + len(val) + len(test) == 100
+    assert len(train) == 70
+    assert len(val) == 15
+    assert len(test) == 15
+
+    train_ids = {r["id"] for r in train}
+    val_ids = {r["id"] for r in val}
+    test_ids = {r["id"] for r in test}
+
+    assert not (train_ids & val_ids)
+    assert not (train_ids & test_ids)
+    assert not (val_ids & test_ids)
+
+    # All categories present in all splits
+    for s in (train, val, test):
+        labels_in_split = {l for r in s for l in r["labels"]}
+        assert "cat_a" in labels_in_split
+        assert "cat_b" in labels_in_split
+
+
 if __name__ == "__main__":
     print("Running test_preprocessing suite...")
     test_load_label_map_and_canonical_ids()
@@ -180,4 +233,6 @@ if __name__ == "__main__":
     test_validate_record_unknown_canonical_label()
     test_save_and_load_jsonl_roundtrip()
     test_multifin_label_mapping()
-    print("All 11 preprocessing tests passed successfully!")
+    test_mn_ds_label_mapping()
+    test_multilabel_stratified_split()
+    print("All 13 preprocessing tests passed successfully!")
