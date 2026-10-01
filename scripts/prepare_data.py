@@ -10,6 +10,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from naltra.data.loader import load_jsonl
+from naltra.data.noise import create_noisy_record, generate_noisy_benchmarks
 from naltra.data.preprocessing import process_mn_ds, process_multifin, process_sib200
 
 
@@ -114,11 +116,44 @@ def prepare_mn_ds() -> None:
     print("All records validated successfully against taxonomy 0.2.0.\n")
 
 
+def prepare_noisy() -> None:
+    print("\n" + "=" * 50)
+    print("Preparing Noisy Robustness Benchmark (Validation & Test)")
+    print("=" * 50)
+    strategy = "combined"
+    severity = "medium"
+    results = generate_noisy_benchmarks(strategy=strategy, severity=severity)
+
+    total_noisy = sum(sum(v.values()) for v in results.values())
+    print("\n=== NOISY BENCHMARK SUMMARY ===")
+    print(f"Strategy: {strategy} (typos, capitalization, punctuation)")
+    print(f"Severity: {severity} (10% perturbation probability)")
+    print(f"Total noisy records generated: {total_noisy:,}")
+    for ds_name, splits in results.items():
+        print(f"  - {ds_name}: {splits}")
+
+    # Display exactly one clean/noisy pair example
+    sample_file = Path("data/processed/sib200/test.jsonl")
+    if sample_file.exists():
+        clean_sample = load_jsonl(sample_file)[0]
+        noisy_sample = create_noisy_record(clean_sample, strategy=strategy, severity=severity)
+        print("\n--- Example Clean vs. Noisy Pair ---")
+        print(f"ID:          {noisy_sample['id']}")
+        print(f"Original ID: {noisy_sample['original_id']}")
+        print(f"Language:    {noisy_sample['language']} (unchanged)")
+        print(f"Labels:      {noisy_sample['labels']} (unchanged)")
+        print(f"Clean Text:  {clean_sample['text']}")
+        print(f"Noisy Text:  {noisy_sample['text']}")
+
+    print(f"\nOutput location: data/noisy/{strategy}/{severity}/")
+    print("Clean training sets remain untouched.\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare NALTRA benchmark datasets.")
     parser.add_argument(
         "--dataset",
-        choices=["sib200", "multifin", "mn_ds", "all"],
+        choices=["sib200", "multifin", "mn_ds", "noisy", "all"],
         default="all",
         help="Which dataset to process (default: all).",
     )
@@ -130,6 +165,8 @@ def main() -> None:
         prepare_multifin()
     if args.dataset in ("mn_ds", "all"):
         prepare_mn_ds()
+    if args.dataset in ("noisy", "all"):
+        prepare_noisy()
 
 
 if __name__ == "__main__":
