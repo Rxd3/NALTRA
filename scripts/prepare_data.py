@@ -10,6 +10,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+from naltra.data.code_switching import (
+    create_code_switched_record,
+    generate_code_switch_benchmarks,
+    pair_aligned_records,
+)
 from naltra.data.loader import load_jsonl
 from naltra.data.noise import create_noisy_record, generate_noisy_benchmarks
 from naltra.data.preprocessing import process_mn_ds, process_multifin, process_sib200
@@ -149,11 +158,51 @@ def prepare_noisy() -> None:
     print("Clean training sets remain untouched.\n")
 
 
+def prepare_code_switch() -> None:
+    print("\n" + "=" * 50)
+    print("Preparing Synthetic EN/TR Code-Switch Benchmark")
+    print("=" * 50)
+    strategy = "chunk_mix"
+    strength = "balanced"
+    results = generate_code_switch_benchmarks(strategy=strategy, strength=strength)
+
+    total_records = sum(results.values())
+    print("\n=== CODE-SWITCH BENCHMARK SUMMARY ===")
+    print(f"Strategy: {strategy} (controlled synthetic chunk-mixing)")
+    print(f"Strength: {strength} (~50/50 token mix from aligned pairs)")
+    print(f"Total code-switched records: {total_records}")
+    print(f"  - validation: {results.get('validation', 0)}")
+    print(f"  - test: {results.get('test', 0)}")
+
+    # Display exactly one EN source / TR source / mixed example
+    val_file = Path("data/processed/sib200/validation.jsonl")
+    if val_file.exists():
+        pairs = pair_aligned_records(load_jsonl(val_file))
+        if pairs:
+            en_sample, tr_sample = pairs[0]
+            mixed_sample = create_code_switched_record(
+                en_sample, tr_sample, strategy=strategy, strength=strength
+            )
+            print("\n--- Example EN Source / TR Source / Mixed Record ---")
+            print(f"Generated ID:    {mixed_sample['id']}")
+            print(f"Pair ID:         {mixed_sample['pair_id']} (preserved)")
+            print(f"EN Source ID:    {mixed_sample['en_id']}")
+            print(f"TR Source ID:    {mixed_sample['tr_id']}")
+            print(f"Language:        {mixed_sample['language']}")
+            print(f"Labels:          {mixed_sample['labels']} (preserved)")
+            print(f"EN Source Text:  {en_sample['text']}")
+            print(f"TR Source Text:  {tr_sample['text']}")
+            print(f"Synthetic Mixed: {mixed_sample['text']}")
+
+    print(f"\nOutput location: data/processed/code_switch/{strategy}/{strength}/")
+    print("Clean training data remains untouched.\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare NALTRA benchmark datasets.")
     parser.add_argument(
         "--dataset",
-        choices=["sib200", "multifin", "mn_ds", "noisy", "all"],
+        choices=["sib200", "multifin", "mn_ds", "noisy", "code_switch", "all"],
         default="all",
         help="Which dataset to process (default: all).",
     )
@@ -167,6 +216,8 @@ def main() -> None:
         prepare_mn_ds()
     if args.dataset in ("noisy", "all"):
         prepare_noisy()
+    if args.dataset in ("code_switch", "all"):
+        prepare_code_switch()
 
 
 if __name__ == "__main__":
