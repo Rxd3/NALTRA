@@ -139,6 +139,34 @@ def test_save_and_load_jsonl_roundtrip() -> None:
         assert loaded[0]["text"] == "Türkçe özel karakterler: ğüşöçıİ test."
 
 
+def test_validate_record_multilabel() -> None:
+    record = {
+        "id": "multifin:Israel-4145",
+        "text": "Revenue Recognition and corporate tax audit",
+        "labels": ["accounting_assurance", "tax"],
+        "language": "en",
+        "source": "multifin",
+        "license": "CC BY-NC 4.0",
+        "split": "train",
+        "source_id": "Israel-4145",
+        "source_labels": ["Accounting & Assurance", "Tax"],
+    }
+    validate_record(record, allowed_labels={"accounting_assurance", "tax"})
+
+
+def test_multifin_label_mapping() -> None:
+    label_map = load_label_map(PROJECT_ROOT / "taxonomy" / "label_map.json")
+    canonical_ids = load_canonical_label_ids(PROJECT_ROOT / "taxonomy" / "taxonomy.json")
+
+    # Real MultiFin multi-label combination
+    raw_labels = ["Accounting & Assurance", "Tax", "VAT & Customs"]
+    mapped = map_labels(raw_labels, label_map)
+
+    assert mapped == ["accounting_assurance", "tax", "vat_customs"]
+    for l in mapped:
+        assert l in canonical_ids
+
+
 if __name__ == "__main__":
     print("Running test_preprocessing suite...")
     test_load_label_map_and_canonical_ids()
@@ -146,8 +174,10 @@ if __name__ == "__main__":
     test_map_labels_unknown_label_raises_key_error()
     test_normalize_record_text()
     test_validate_record_valid()
+    test_validate_record_multilabel()
     test_validate_record_missing_field()
     test_validate_record_invalid_language()
     test_validate_record_unknown_canonical_label()
     test_save_and_load_jsonl_roundtrip()
-    print("All 9 preprocessing tests passed successfully!")
+    test_multifin_label_mapping()
+    print("All 11 preprocessing tests passed successfully!")

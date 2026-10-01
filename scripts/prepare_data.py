@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from naltra.data.preprocessing import process_sib200
+from naltra.data.preprocessing import process_multifin, process_sib200
 
 
 def prepare_sib200() -> None:
@@ -23,7 +23,7 @@ def prepare_sib200() -> None:
     label_counter: Counter[str] = Counter()
     lang_counter: Counter[str] = Counter()
 
-    print("\n=== PREPARATION SUMMARY ===")
+    print("\n=== PREPARATION SUMMARY (SIB-200) ===")
     for split_name, records in splits.items():
         total_records += len(records)
         print(f"Split '{split_name}': {len(records)} records")
@@ -45,18 +45,57 @@ def prepare_sib200() -> None:
     print("All records validated successfully against taxonomy 0.2.0.\n")
 
 
+def prepare_multifin() -> None:
+    print("\n" + "=" * 50)
+    print("Preparing MultiFin (English & Turkish)")
+    print("=" * 50)
+    splits = process_multifin()
+
+    total_records = 0
+    label_counter: Counter[str] = Counter()
+    lang_counter: Counter[str] = Counter()
+    multi_label_count = 0
+
+    print("\n=== PREPARATION SUMMARY (MultiFin) ===")
+    for split_name, records in splits.items():
+        total_records += len(records)
+        print(f"Split '{split_name}': {len(records)} records")
+        for r in records:
+            lang_counter[r["language"]] += 1
+            if len(r["labels"]) > 1:
+                multi_label_count += 1
+            for l in r["labels"]:
+                label_counter[l] += 1
+
+    print(f"\nTotal processed records: {total_records}")
+    print("\nLanguage breakdown:")
+    for lang, count in lang_counter.items():
+        print(f"  {lang}: {count}")
+
+    print(f"\nMulti-label examples (>1 label): {multi_label_count} ({multi_label_count / total_records * 100:.2f}%)")
+
+    print("\nCanonical label distribution:")
+    for label, count in label_counter.most_common():
+        print(f"  {label}: {count}")
+
+    print("\nOutput location: data/processed/multifin/")
+    print("All records validated successfully against taxonomy 0.2.0.\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare NALTRA benchmark datasets.")
     parser.add_argument(
         "--dataset",
-        choices=["sib200"],
-        default="sib200",
-        help="Which dataset to process (default: sib200).",
+        choices=["sib200", "multifin", "all"],
+        default="all",
+        help="Which dataset to process (default: all).",
     )
     args = parser.parse_args()
 
-    if args.dataset == "sib200":
+    if args.dataset in ("sib200", "all"):
         prepare_sib200()
+    if args.dataset in ("multifin", "all"):
+        prepare_multifin()
 
 
 if __name__ == "__main__":

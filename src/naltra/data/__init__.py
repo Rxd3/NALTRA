@@ -6,6 +6,7 @@ from naltra.data.preprocessing import (
     load_label_map,
     map_labels,
     preprocess_record_text,
+    process_multifin,
     process_sib200,
     validate_record,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "load_label_map",
     "map_labels",
     "preprocess_record_text",
+    "process_multifin",
     "process_sib200",
     "save_jsonl",
     "validate_record",

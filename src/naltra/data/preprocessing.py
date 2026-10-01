@@ -186,3 +186,66 @@ def process_sib200(
         print(f"Saved {len(records)} records ({len(records)//2} en, {len(records)//2} tr) -> {out_path}")
 
     return processed_by_split
+
+
+def process_multifin(
+    output_dir: str | Path = "data/processed/multifin",
+    taxonomy_path: str | Path = "taxonomy/taxonomy.json",
+    label_map_path: str | Path = "taxonomy/label_map.json",
+) -> dict[str, list[dict[str, Any]]]:
+    """Download, preprocess, validate, and persist MultiFin English and Turkish subsets."""
+    from datasets import load_dataset
+
+    label_map = load_label_map(label_map_path)
+    allowed_labels = load_canonical_label_ids(taxonomy_path)
+
+    target_languages = {"English": "en", "Turkish": "tr"}
+    splits = ["train", "validation", "test"]
+
+    print("Loading MultiFin all_languages_lowlevel dataset...")
+    raw_dataset = load_dataset("awinml/MultiFin", "all_languages_lowlevel")
+
+    processed_by_split: dict[str, list[dict[str, Any]]] = {
+        split: [] for split in splits
+    }
+
+    for split_name in splits:
+        records: list[dict[str, Any]] = []
+        split_data = raw_dataset[split_name]
+        for row in split_data:
+            raw_lang = row.get("lang")
+            if raw_lang not in target_languages:
+                continue
+
+            lang = target_languages[raw_lang]
+            raw_id = row["id"]
+            raw_labels = row["labels"]
+            canonical_labels = map_labels(raw_labels, label_map)
+
+            record: dict[str, Any] = {
+                "id": f"multifin:{raw_id}",
+                "text": preprocess_record_text(row["text"]),
+                "labels": canonical_labels,
+                "language": lang,
+                "source": "multifin",
+                "license": "CC BY-NC 4.0",
+                "split": split_name,
+                "source_id": raw_id,
+                "source_labels": list(raw_labels),
+            }
+            validate_record(record, allowed_labels=allowed_labels)
+            records.append(record)
+
+        # Check unique IDs within split
+        ids = [r["id"] for r in records]
+        if len(ids) != len(set(ids)):
+            raise ValueError(f"Duplicate IDs found in MultiFin {split_name} split.")
+
+        out_path = Path(output_dir) / f"{split_name}.jsonl"
+        save_jsonl(records, out_path)
+        processed_by_split[split_name] = records
+        en_count = sum(1 for r in records if r["language"] == "en")
+        tr_count = sum(1 for r in records if r["language"] == "tr")
+        print(f"Saved {len(records)} records ({en_count} en, {tr_count} tr) -> {out_path}")
+
+    return processed_by_split
