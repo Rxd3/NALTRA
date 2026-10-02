@@ -1,27 +1,35 @@
 # Data Workspace
 
-This directory is owned by the Data & Taxonomy contributor. Large dataset files are intentionally ignored by Git (`.gitignore`); only documentation and `.gitkeep` placeholders are versioned.
+This directory contains the datasets and generated benchmark data used by NALTRA.
+
+Large dataset files are intentionally ignored by Git (`.gitignore`). Only documentation, code, and `.gitkeep` placeholders are versioned.
 
 ## Directory Layout
 
-- `raw/`: Immutable source exports and downloads (e.g. `raw/massive/`).
-- `processed/`: Normalized clean records adhering to the unified schema:
-  - `processed/sib200/`: 2,008 SIB-200 English and Turkish aligned pairs.
-  - `processed/multifin/`: 4,974 MultiFin English and Turkish multi-label records.
-  - `processed/mn_ds/`: 10,491 MN-DS English news articles with 109 categories.
-  - `processed/code_switch/`: Synthetic EN/TR code-switched records (e.g. `chunk_mix/balanced/`).
+- `raw/`: Original dataset downloads and source files.
+  - `raw/mn_ds/`: MN-DS source CSV.
+  - `raw/massive/`: English and Turkish MASSIVE source files used for Far-OOD.
+
+- `processed/`: Clean normalized records using the NALTRA unified schema.
+  - `processed/sib200/`: 2,008 records forming 1,004 aligned English/Turkish pairs.
+  - `processed/multifin/`: 4,974 English/Turkish MultiFin records.
+  - `processed/mn_ds/`: 10,491 MN-DS English news articles across 109 fine-grained categories.
+  - `processed/code_switch/`: Synthetic English/Turkish code-switched benchmark records.
+
 - `splits/`: Alternative experiment partitions.
-- `noisy/`: Deterministic perturbations preserving metadata:
-  - `noisy/{strategy}/{severity}/{dataset}/`: e.g. `combined/medium/`.
-- `ood/`: Out-of-Distribution evaluation benchmarks:
-  - `ood/near/sib200/{heldout_topic}/`: SIB-200 7-fold leave-one-topic-out sets.
-  - `ood/far/massive/`: Amazon MASSIVE non-news assistant commands (paired EN/TR).
 
-## Data Generation
+- `noisy/`: Deterministic noisy robustness benchmark data.
+  - Example: `noisy/combined/medium/{dataset}/`
 
-To generate all benchmark datasets locally:
+- `ood/`: Out-of-Distribution evaluation data.
+  - `ood/near/sib200/{heldout_topic}/`: SIB-200 leave-one-topic-out Near-OOD folds.
+  - `ood/far/massive/`: Paired English/Turkish Amazon MASSIVE Far-OOD records.
+
+## Prerequisites
+
+Before preparing the datasets, complete the project setup in the root `README.md`.
+
+Make sure the project virtual environment is activated and the dependencies are installed:
 
 ```bash
-python scripts/prepare_data.py --dataset all
-python scripts/validate_datasets.py
-```
+python -m pip install -e ".[dev]"
