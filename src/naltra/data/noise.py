@@ -159,7 +159,8 @@ def _perturb_whitespace(text: str, prob: float, rng: random.Random) -> str:
         if len(text) > 1:
             mid = len(text) // 2
             return text[:mid] + " " + text[mid:]
-        return text + " "
+        # Single character cannot have interior whitespace; duplicate as safe fallback
+        return _perturb_char_duplicate(text, prob=1.0, rng=rng)
     new_tokens = []
     edited = False
     for w in words[:-1]:
@@ -321,10 +322,19 @@ def perturb_text(
         noisy = _perturb_punctuation(text, prob, rng)
     elif strategy == "combined":
         noisy = _perturb_combined(text, prob, rng)
-    else:
-        raise ValueError(f"Unhandled strategy: {strategy}")
+    clean_orig = text.strip()
+    result = noisy.strip()
 
-    return noisy.strip() if noisy.strip() else text.strip()
+    # Enforce minimum-edit guarantee after final output normalization/strip
+    if not result or result == clean_orig:
+        res = _perturb_char_duplicate(clean_orig, prob=1.0, rng=rng).strip()
+        if not res or res == clean_orig:
+            res = _perturb_capitalization(clean_orig, prob=1.0, rng=rng).strip()
+        if not res or res == clean_orig:
+            res = clean_orig + (clean_orig[-1] if clean_orig else "x")
+        result = res
+
+    return result
 
 
 def create_noisy_record(

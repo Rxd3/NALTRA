@@ -220,6 +220,119 @@ def test_multilabel_stratified_split() -> None:
         assert "cat_b" in labels_in_split
 
 
+def test_splits_same_seed_reproducibility() -> None:
+    from naltra.data.splits import multilabel_stratified_split
+
+    records = [
+        {"id": f"rec_{i}", "labels": ["cat_a" if i % 2 == 0 else "cat_b"]}
+        for i in range(30)
+    ]
+    train1, val1, test1 = multilabel_stratified_split(records, seed=42)
+    train2, val2, test2 = multilabel_stratified_split(records, seed=42)
+
+    assert [r["id"] for r in train1] == [r["id"] for r in train2]
+    assert [r["id"] for r in val1] == [r["id"] for r in val2]
+    assert [r["id"] for r in test1] == [r["id"] for r in test2]
+
+
+def test_splits_different_seed_variation() -> None:
+    from naltra.data.splits import multilabel_stratified_split
+
+    # Multiple records tying on label length and frequency
+    records = [
+        {"id": f"rec_{i}", "labels": ["cat_x"]}
+        for i in range(30)
+    ]
+    train1, val1, test1 = multilabel_stratified_split(records, seed=42)
+    train2, val2, test2 = multilabel_stratified_split(records, seed=999)
+
+    # Capacities must be identical
+    assert len(train1) == len(train2) == 21
+    assert len(val1) == len(val2) == 5
+    assert len(test1) == len(test2) == 4
+
+    # Seed variation breaks ties differently
+    assert [r["id"] for r in train1] != [r["id"] for r in train2]
+
+
+def test_splits_tiny_datasets() -> None:
+    from naltra.data.splits import _compute_split_capacities, multilabel_stratified_split
+
+    # 0 records
+    assert multilabel_stratified_split([]) == ([], [], [])
+    assert _compute_split_capacities(0, [0.7, 0.15, 0.15]) == [0, 0, 0]
+
+    # 1 record
+    rec1 = [{"id": "r1", "labels": ["cat_a"]}]
+    t1, v1, te1 = multilabel_stratified_split(rec1)
+    assert len(t1) + len(v1) + len(te1) == 1
+    assert _compute_split_capacities(1, [0.7, 0.15, 0.15]) == [1, 0, 0]
+
+    # 2 records
+    rec2 = [{"id": "r1", "labels": ["cat_a"]}, {"id": "r2", "labels": ["cat_b"]}]
+    t2, v2, te2 = multilabel_stratified_split(rec2)
+    assert len(t2) + len(v2) + len(te2) == 2
+    assert _compute_split_capacities(2, [0.7, 0.15, 0.15]) == [2, 0, 0]
+
+    # Preserves MN-DS capacity: 10,491 records at 0.70/0.15/0.15 -> [7344, 1574, 1573]
+    mnds_caps = _compute_split_capacities(10491, [0.70, 0.15, 0.15])
+    assert mnds_caps == [7344, 1574, 1573]
+
+
+def test_splits_invalid_and_negative_ratios() -> None:
+    import pytest
+    from naltra.data.splits import _validate_split_ratios, multilabel_stratified_split
+
+    # Negative ratio
+    with pytest.raises(ValueError, match="non-negative"):
+        _validate_split_ratios(-0.1, 0.6, 0.5)
+
+    # Ratios not summing to 1.0
+    with pytest.raises(ValueError, match="sum to 1.0"):
+        _validate_split_ratios(0.5, 0.5, 0.5)
+
+    # Non-numeric type
+    with pytest.raises(TypeError, match="numeric"):
+        _validate_split_ratios("0.7", 0.15, 0.15)  # type: ignore
+
+    # Boolean passed as ratio
+    with pytest.raises(TypeError, match="numeric"):
+        _validate_split_ratios(True, 0.0, 0.0)  # type: ignore
+
+    # Non-finite ratio
+    with pytest.raises(ValueError, match="finite"):
+        _validate_split_ratios(float("inf"), 0.0, 0.0)
+
+    # All-zero ratios
+    with pytest.raises(ValueError, match="At least one split ratio must be positive"):
+        _validate_split_ratios(0.0, 0.0, 0.0)
+
+
+def test_splits_zero_test_ratio() -> None:
+    from naltra.data.splits import multilabel_stratified_split, split_records
+
+    records = [
+        {"id": f"rec_{i}", "labels": ["cat_a" if i % 2 == 0 else "cat_b"]}
+        for i in range(20)
+    ]
+    train, val, test = multilabel_stratified_split(
+        records,
+        train_ratio=0.8,
+        validation_ratio=0.2,
+        test_ratio=0.0,
+    )
+    assert len(train) == 16
+    assert len(val) == 4
+    assert len(test) == 0
+    assert test == []
+
+    # split_records supports test_ratio=0.0
+    t_seq, v_seq, te_seq = split_records(records, train_ratio=0.8, validation_ratio=0.2)
+    assert len(t_seq) == 16
+    assert len(v_seq) == 4
+    assert len(te_seq) == 0
+
+
 if __name__ == "__main__":
     print("Running test_preprocessing suite...")
     test_load_label_map_and_canonical_ids()
@@ -235,4 +348,9 @@ if __name__ == "__main__":
     test_multifin_label_mapping()
     test_mn_ds_label_mapping()
     test_multilabel_stratified_split()
-    print("All 13 preprocessing tests passed successfully!")
+    test_splits_same_seed_reproducibility()
+    test_splits_different_seed_variation()
+    test_splits_tiny_datasets()
+    test_splits_invalid_and_negative_ratios()
+    test_splits_zero_test_ratio()
+    print("All 18 preprocessing tests passed successfully!")

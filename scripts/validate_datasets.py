@@ -12,7 +12,7 @@ if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from naltra.data.loader import load_jsonl
-from naltra.data.preprocessing import load_canonical_label_ids
+from naltra.data.preprocessing import load_canonical_label_ids, validate_record
 
 
 def print_section(title: str) -> None:
@@ -33,6 +33,8 @@ def validate_sib200(canonical_labels: set[str]) -> bool:
     pair_splits: dict[str, set[str]] = defaultdict(set)
     pair_labels: dict[str, set[tuple[str, ...]]] = defaultdict(set)
     pair_langs: dict[str, set[str]] = defaultdict(set)
+    pair_lang_counts: dict[str, Counter[str]] = defaultdict(Counter)
+    missing_pair_ids = 0
     split_ids: dict[str, set[str]] = {}
 
     passed = True
@@ -55,16 +57,35 @@ def validate_sib200(canonical_labels: set[str]) -> bool:
         else:
             print(f"  [OK] Split '{split_name}': {len(records)} records ({en_count} en, {tr_count} tr)")
 
-        # Track pair alignment and taxonomy compliance
+        # Validate schema, split field, pair alignment, and taxonomy compliance
         for r in records:
             all_ids.add(r["id"])
+
+            # Call validate_record and catch errors as [FAIL]
+            try:
+                validate_record(r, allowed_labels=canonical_labels)
+            except Exception as exc:
+                print(f"[FAIL] SIB-200 record {r.get('id', 'unknown')} schema validation failed: {exc}")
+                passed = False
+
+            # Verify split field matches file
+            if r.get("split") != split_name:
+                print(f"[FAIL] SIB-200 record {r.get('id')} split mismatch: got '{r.get('split')}', expected '{split_name}'")
+                passed = False
+
+            # Require pair_id on every SIB-200 record
             p_id = r.get("pair_id")
-            if p_id:
+            if not p_id or not isinstance(p_id, str) or not p_id.strip():
+                print(f"[FAIL] SIB-200 record {r.get('id')} is missing required pair_id")
+                missing_pair_ids += 1
+                passed = False
+            else:
                 pair_splits[p_id].add(split_name)
                 pair_labels[p_id].add(tuple(sorted(r["labels"])))
                 pair_langs[p_id].add(r["language"])
+                pair_lang_counts[p_id][r["language"]] += 1
 
-            for l in r["labels"]:
+            for l in r.get("labels", []):
                 if l not in canonical_labels:
                     print(f"[FAIL] Record {r['id']} has unknown label: {l}")
                     passed = False
@@ -86,16 +107,27 @@ def validate_sib200(canonical_labels: set[str]) -> bool:
     else:
         print("  [OK] Split leakage: 0 (zero overlap between train, val, and test)")
 
-    # Check pair alignment
+    # Check pair alignment and exact 1:1 EN/TR requirement
     misaligned_split = sum(1 for s in pair_splits.values() if len(s) != 1)
     misaligned_labels = sum(1 for l in pair_labels.values() if len(l) != 1)
     incomplete_pairs = sum(1 for langs in pair_langs.values() if langs != {"en", "tr"})
+    non_one_to_one_pairs = sum(
+        1 for counts in pair_lang_counts.values()
+        if counts["en"] != 1 or counts["tr"] != 1 or len(counts) != 2
+    )
 
-    if misaligned_split or misaligned_labels or incomplete_pairs:
-        print(f"[FAIL] Pair alignment issues: split_diff={misaligned_split}, label_diff={misaligned_labels}, incomplete={incomplete_pairs}")
+    if missing_pair_ids > 0:
+        print(f"[FAIL] Missing pair_ids in SIB-200: {missing_pair_ids} records lack pair_id")
+        passed = False
+
+    if misaligned_split or misaligned_labels or incomplete_pairs or non_one_to_one_pairs:
+        print(
+            f"[FAIL] Pair alignment issues: split_diff={misaligned_split}, label_diff={misaligned_labels}, "
+            f"incomplete={incomplete_pairs}, non_1to1={non_one_to_one_pairs}"
+        )
         passed = False
     else:
-        print(f"  [OK] English/Turkish pair alignment: 1,004 pairs perfectly aligned across splits and categories")
+        print(f"  [OK] English/Turkish pair alignment: {len(pair_lang_counts)} pairs perfectly aligned (exactly 1 EN and 1 TR per pair)")
 
     return passed
 
@@ -132,9 +164,22 @@ def validate_multifin(canonical_labels: set[str]) -> bool:
 
         for r in records:
             all_ids.add(r["id"])
-            if len(r["labels"]) > 1:
+
+            # Call validate_record and catch errors as [FAIL]
+            try:
+                validate_record(r, allowed_labels=canonical_labels)
+            except Exception as exc:
+                print(f"[FAIL] MultiFin record {r.get('id', 'unknown')} schema validation failed: {exc}")
+                passed = False
+
+            # Verify split field matches file
+            if r.get("split") != split_name:
+                print(f"[FAIL] MultiFin record {r.get('id')} split mismatch: got '{r.get('split')}', expected '{split_name}'")
+                passed = False
+
+            if len(r.get("labels", [])) > 1:
                 total_multi_label += 1
-            for l in r["labels"]:
+            for l in r.get("labels", []):
                 if l not in canonical_labels:
                     print(f"[FAIL] Record {r['id']} has unknown label: {l}")
                     passed = False
@@ -185,7 +230,7 @@ def validate_mn_ds(canonical_labels: set[str]) -> bool:
 
         records = load_jsonl(file_path)
         split_ids[split_name] = {r["id"] for r in records}
-        split_labels[split_name] = {l for r in records for l in r["labels"]}
+        split_labels[split_name] = {l for r in records for l in r.get("labels", [])}
 
         if len(records) != expected_total:
             print(f"[FAIL] Split '{split_name}' size mismatch: got {len(records)}, expected {expected_total}")
@@ -195,9 +240,22 @@ def validate_mn_ds(canonical_labels: set[str]) -> bool:
 
         for r in records:
             all_ids.add(r["id"])
-            if len(r["labels"]) > 1:
+
+            # Call validate_record and catch errors as [FAIL]
+            try:
+                validate_record(r, allowed_labels=canonical_labels)
+            except Exception as exc:
+                print(f"[FAIL] MN-DS record {r.get('id', 'unknown')} schema validation failed: {exc}")
+                passed = False
+
+            # Verify split field matches file
+            if r.get("split") != split_name:
+                print(f"[FAIL] MN-DS record {r.get('id')} split mismatch: got '{r.get('split')}', expected '{split_name}'")
+                passed = False
+
+            if len(r.get("labels", [])) > 1:
                 total_multi_label += 1
-            for l in r["labels"]:
+            for l in r.get("labels", []):
                 if l not in canonical_labels:
                     print(f"[FAIL] Record {r['id']} has unknown label: {l}")
                     passed = False

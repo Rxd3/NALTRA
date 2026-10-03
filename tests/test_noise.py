@@ -300,6 +300,38 @@ def test_generate_noisy_benchmarks_directory_structure_and_counts() -> None:
             assert not train_path.exists(), "Noisy training split should not be generated"
 
 
+def test_single_character_inputs_across_strategies() -> None:
+    """Verify single-character inputs across all strategies change text, stay non-empty, and are reproducible."""
+    single_char = "a"
+
+    # Specifically test whitespace strategy on "a"
+    noisy_ws = perturb_text(single_char, strategy="whitespace", severity="medium", seed=42)
+    assert noisy_ws != single_char, "Whitespace strategy on 'a' must not return unchanged 'a'"
+    assert len(noisy_ws.strip()) > 0
+    # Reproducibility
+    assert perturb_text(single_char, strategy="whitespace", severity="medium", seed=42) == noisy_ws
+
+    # Test all valid strategies on "a"
+    for strat in sorted(VALID_STRATEGIES):
+        lang = "tr" if strat == "turkish_diacritics" else "en"
+        noisy = perturb_text(single_char, strategy=strat, severity="medium", seed=100, language=lang)
+        assert noisy != single_char, f"Strategy '{strat}' returned unchanged single character '{single_char}'"
+        assert len(noisy.strip()) > 0, f"Strategy '{strat}' returned empty string"
+        # Reproducibility check
+        noisy_repeat = perturb_text(single_char, strategy=strat, severity="medium", seed=100, language=lang)
+        assert noisy == noisy_repeat, f"Strategy '{strat}' is not reproducible with same seed"
+
+    # Turkish diacritic single character
+    noisy_tr = perturb_text("ç", strategy="turkish_diacritics", severity="medium", seed=42, language="tr")
+    assert noisy_tr == "c"
+    assert noisy_tr != "ç"
+
+    # Single punctuation mark
+    noisy_punct = perturb_text(".", strategy="punctuation", severity="medium", seed=42)
+    assert noisy_punct != "."
+    assert len(noisy_punct.strip()) > 0
+
+
 if __name__ == "__main__":
     print("Running test_noise suite...")
     test_deterministic_seeding_across_calls()
@@ -310,4 +342,5 @@ if __name__ == "__main__":
     test_individual_perturbation_strategies()
     test_invalid_parameters_raise_appropriate_errors()
     test_generate_noisy_benchmarks_directory_structure_and_counts()
-    print("All 8 noise benchmark tests passed successfully!")
+    test_single_character_inputs_across_strategies()
+    print("All 9 noise benchmark tests passed successfully!")

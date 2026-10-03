@@ -7,6 +7,7 @@ Supports two separate, complementary OOD evaluation settings:
 
 from __future__ import annotations
 
+from collections import Counter
 import copy
 import hashlib
 from pathlib import Path
@@ -265,8 +266,12 @@ def load_massive_paired_records(
             continue
         tr_rec = tr_by_id[item_id]
 
-        # Verify scenario and intent match
-        if tr_rec.get("scenario") != scenario or tr_rec.get("intent") != en_rec.get("intent"):
+        # Verify scenario, intent, and partition match
+        if (
+            tr_rec.get("scenario") != scenario
+            or tr_rec.get("intent") != en_rec.get("intent")
+            or tr_rec.get("partition") != en_rec.get("partition")
+        ):
             continue
 
         partition = en_rec.get("partition", "test")
@@ -300,6 +305,15 @@ def generate_far_ood_benchmarks(
     dev_pairs = list(paired_by_partition["dev"])
     test_pairs = list(paired_by_partition["test"])
 
+    if len(dev_pairs) < val_sample_size:
+        raise ValueError(
+            f"Insufficient matched dev pairs: requested {val_sample_size}, but only {len(dev_pairs)} available."
+        )
+    if len(test_pairs) < test_sample_size:
+        raise ValueError(
+            f"Insufficient matched test pairs: requested {test_sample_size}, but only {len(test_pairs)} available."
+        )
+
     rng.shuffle(dev_pairs)
     rng.shuffle(test_pairs)
 
@@ -311,8 +325,10 @@ def generate_far_ood_benchmarks(
     selected_test_pairs.sort(key=lambda p: int(p[0]["id"]))
 
     results: dict[str, int] = {}
+    expected_pair_counts = {"validation": val_sample_size, "test": test_sample_size}
 
     for split_name, pairs in (("validation", selected_val_pairs), ("test", selected_test_pairs)):
+        expected_pairs = expected_pair_counts[split_name]
         ood_records: list[dict[str, Any]] = []
         for en_rec, tr_rec in pairs:
             item_id = en_rec["id"]
@@ -361,6 +377,27 @@ def generate_far_ood_benchmarks(
         # Verify uniqueness
         ids = [r["id"] for r in ood_records]
         assert len(ids) == len(set(ids)), f"Duplicate IDs in Far-OOD {split_name}"
+
+        # Verify exact requested pair counts and exact 1:1 English/Turkish pair_id matching
+        assert len(pairs) == expected_pairs, (
+            f"Expected {expected_pairs} pairs for Far-OOD {split_name}, got {len(pairs)}"
+        )
+        assert len(ood_records) == 2 * expected_pairs, (
+            f"Expected {2 * expected_pairs} records for Far-OOD {split_name}, got {len(ood_records)}"
+        )
+        pair_counts = Counter(r["pair_id"] for r in ood_records)
+        assert len(pair_counts) == expected_pairs, (
+            f"Expected {expected_pairs} unique pair_ids, got {len(pair_counts)}"
+        )
+        assert all(cnt == 2 for cnt in pair_counts.values()), (
+            f"Every pair_id must appear exactly twice in Far-OOD {split_name}"
+        )
+        pair_langs: dict[str, set[str]] = {}
+        for r in ood_records:
+            pair_langs.setdefault(r["pair_id"], set()).add(r["language"])
+        assert all(langs == {"en", "tr"} for langs in pair_langs.values()), (
+            f"Every pair_id must have exactly one 'en' and one 'tr' record in Far-OOD {split_name}"
+        )
 
         out_file = out_dir / f"{split_name}_ood.jsonl"
         save_jsonl(ood_records, out_file)
