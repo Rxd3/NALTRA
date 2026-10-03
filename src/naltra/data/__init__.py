@@ -7,6 +7,11 @@ from naltra.data.code_switching import (
     pair_aligned_records,
 )
 from naltra.data.loader import load_jsonl, save_jsonl
+from naltra.data.manifest import (
+    compute_file_md5,
+    compute_file_sha256,
+    create_manifest,
+)
 from naltra.data.noise import create_noisy_record, generate_noisy_benchmarks, perturb_text
 from naltra.data.ood import (
     MASSIVE_ALLOWED_SCENARIOS,
@@ -15,6 +20,8 @@ from naltra.data.ood import (
     validate_ood_record,
 )
 from naltra.data.preprocessing import (
+    compute_content_fingerprint,
+    generate_multifin_leakage_free_track,
     load_canonical_label_ids,
     load_label_map,
     map_labels,
@@ -24,16 +31,26 @@ from naltra.data.preprocessing import (
     process_sib200,
     validate_record,
 )
-from naltra.data.splits import multilabel_stratified_split, split_records
+from naltra.data.splits import (
+    grouped_multilabel_stratified_split,
+    multilabel_stratified_split,
+    split_records,
+)
 
 __all__ = [
     "MASSIVE_ALLOWED_SCENARIOS",
+    "compute_content_fingerprint",
+    "compute_file_md5",
+    "compute_file_sha256",
     "create_code_switched_record",
+    "create_manifest",
     "create_noisy_record",
     "generate_code_switch_benchmarks",
     "generate_far_ood_benchmarks",
+    "generate_multifin_leakage_free_track",
     "generate_near_ood_benchmarks",
     "generate_noisy_benchmarks",
+    "grouped_multilabel_stratified_split",
     "load_canonical_label_ids",
     "load_jsonl",
     "load_label_map",

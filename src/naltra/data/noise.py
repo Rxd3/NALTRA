@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from pathlib import Path
 import random
-import string
-from typing import Any, Sequence
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
 
 from naltra.data.loader import load_jsonl, save_jsonl
 
@@ -88,8 +88,7 @@ def _perturb_char_swap(text: str, prob: float, rng: random.Random) -> str:
     # Fallback: force at least one swap if possible and no edits occurred
     if not edited and len(words) > 0:
         candidates = [
-            i for i, w in enumerate(new_words)
-            if any(w[j] != w[j + 1] for j in range(len(w) - 1))
+            i for i, w in enumerate(new_words) if any(w[j] != w[j + 1] for j in range(len(w) - 1))
         ]
         if candidates:
             target_idx = rng.choice(candidates)
@@ -366,6 +365,7 @@ def create_noisy_record(
     noisy_record["original_id"] = record_id
     noisy_record["noise_strategy"] = strategy
     noisy_record["noise_severity"] = str(severity)
+    noisy_record["base_seed"] = base_seed
 
     return noisy_record
 
@@ -380,27 +380,78 @@ def generate_noisy_benchmarks(
     seed: int = 42,
 ) -> dict[str, dict[str, int]]:
     """Generate noisy validation/test benchmark copies from existing clean processed files."""
+    from naltra.data.manifest import create_manifest
+
     proc_base = Path(processed_base_dir)
     out_base = Path(output_base_dir) / strategy / str(severity)
+
+    # Preflight check: all required clean files must exist
+    missing_files: list[str] = []
+    for dataset_name in datasets:
+        for split_name in splits:
+            input_file = proc_base / dataset_name / f"{split_name}.jsonl"
+            if not input_file.exists():
+                missing_files.append(str(input_file))
+
+    if missing_files:
+        files_str = "\n  - ".join(missing_files)
+        raise FileNotFoundError(
+            f"Cannot generate noisy benchmarks because required clean input files are missing:\n"
+            f"  - {files_str}\n"
+            f"Please run clean dataset preparation first:\n"
+            f"  python scripts/prepare_data.py --dataset all"
+        )
+
     results: dict[str, dict[str, int]] = {}
 
     for dataset_name in datasets:
         results[dataset_name] = {}
+        dataset_out_dir = out_base / dataset_name
+        dataset_out_dir.mkdir(parents=True, exist_ok=True)
+
         for split_name in splits:
             input_file = proc_base / dataset_name / f"{split_name}.jsonl"
-            if not input_file.exists():
-                print(f"[WARN] Input file missing, skipping: {input_file}")
-                continue
-
             clean_records = load_jsonl(input_file)
             noisy_records = [
                 create_noisy_record(r, strategy=strategy, severity=severity, base_seed=seed)
                 for r in clean_records
             ]
 
-            output_file = out_base / dataset_name / f"{split_name}.jsonl"
+            output_file = dataset_out_dir / f"{split_name}.jsonl"
             save_jsonl(noisy_records, output_file)
             results[dataset_name][split_name] = len(noisy_records)
             print(f"Generated {len(noisy_records)} noisy records -> {output_file}")
+
+        # Generate reproducibility manifest for this noisy benchmark dataset
+        create_manifest(
+            benchmark_name=f"noisy_{dataset_name}",
+            output_dir=dataset_out_dir,
+            generation_parameters={
+                "strategy": strategy,
+                "severity": severity,
+                "base_seed": seed,
+                "splits": list(splits),
+            },
+            source_metadata={
+                "source_dataset": dataset_name,
+                "processed_base_dir": str(proc_base),
+            },
+        )
+
+    # Top-level manifest for the entire noisy benchmark configuration
+    create_manifest(
+        benchmark_name="noisy_robustness_benchmark",
+        output_dir=out_base,
+        generation_parameters={
+            "strategy": strategy,
+            "severity": severity,
+            "base_seed": seed,
+            "datasets": list(datasets),
+            "splits": list(splits),
+        },
+        source_metadata={
+            "processed_base_dir": str(proc_base),
+        },
+    )
 
     return results

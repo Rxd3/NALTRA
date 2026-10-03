@@ -2,7 +2,6 @@ from collections import Counter
 
 from datasets import load_dataset
 
-
 DATASET_NAME = "Davlan/sib200"
 LANGUAGES = {
     "English": "eng_Latn",
@@ -37,9 +36,7 @@ def main() -> None:
         print(f"\n{language}")
 
         all_categories = Counter(
-            category
-            for split in dataset.values()
-            for category in split["category"]
+            category for split in dataset.values() for category in split["category"]
         )
 
         for category, count in all_categories.most_common():
@@ -51,32 +48,18 @@ def main() -> None:
     print("\n=== ENGLISH / TURKISH ALIGNMENT ===")
 
     for split_name in english:
-        id_match = (
-            english[split_name]["index_id"]
-            == turkish[split_name]["index_id"]
-        )
+        id_match = english[split_name]["index_id"] == turkish[split_name]["index_id"]
 
-        category_match = (
-            english[split_name]["category"]
-            == turkish[split_name]["category"]
-        )
+        category_match = english[split_name]["category"] == turkish[split_name]["category"]
 
-        print(
-            f"{split_name}: "
-            f"IDs match={id_match}, "
-            f"categories match={category_match}"
-        )
+        print(f"{split_name}: " f"IDs match={id_match}, " f"categories match={category_match}")
 
     print("\n=== UNIQUE IDS ===")
 
     for split_name, split in turkish.items():
         unique_ids = len(set(split["index_id"]))
 
-        print(
-            f"{split_name}: "
-            f"{len(split)} rows, "
-            f"{unique_ids} unique IDs"
-        )
+        print(f"{split_name}: " f"{len(split)} rows, " f"{unique_ids} unique IDs")
 
     print("\n=== SPLIT OVERLAP ===")
 

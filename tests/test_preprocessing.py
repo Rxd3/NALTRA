@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
 import tempfile
+from pathlib import Path
 
 # Add repo root and src/ to sys.path so tests can be run directly with python
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -11,8 +11,8 @@ if str(PROJECT_ROOT / "src") not in sys.path:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from naltra.data.loader import load_jsonl, save_jsonl
-from naltra.data.preprocessing import (
+from naltra.data.loader import load_jsonl, save_jsonl  # noqa: E402
+from naltra.data.preprocessing import (  # noqa: E402
     load_canonical_label_ids,
     load_label_map,
     map_labels,
@@ -163,8 +163,8 @@ def test_multifin_label_mapping() -> None:
     mapped = map_labels(raw_labels, label_map)
 
     assert mapped == ["accounting_assurance", "tax", "vat_customs"]
-    for l in mapped:
-        assert l in canonical_ids
+    for lbl in mapped:
+        assert lbl in canonical_ids
 
 
 def test_mn_ds_label_mapping() -> None:
@@ -176,21 +176,19 @@ def test_mn_ds_label_mapping() -> None:
     mapped = map_labels(mn_ds_labels, label_map)
 
     assert mapped == ["crime", "mass_media", "social_condition", "armed_conflict"]
-    for l in mapped:
-        assert l in canonical_ids
+    for lbl in mapped:
+        assert lbl in canonical_ids
 
 
 def test_multilabel_stratified_split() -> None:
     from naltra.data.splits import multilabel_stratified_split
 
     # Construct synthetic records with single and multi-labels
-    sample_records = [
-        {"id": f"rec_{i}", "labels": ["cat_a"]} for i in range(40)
-    ] + [
-        {"id": f"rec_{i+40}", "labels": ["cat_b"]} for i in range(40)
-    ] + [
-        {"id": f"rec_{i+80}", "labels": ["cat_a", "cat_b"]} for i in range(20)
-    ]
+    sample_records = (
+        [{"id": f"rec_{i}", "labels": ["cat_a"]} for i in range(40)]
+        + [{"id": f"rec_{i+40}", "labels": ["cat_b"]} for i in range(40)]
+        + [{"id": f"rec_{i+80}", "labels": ["cat_a", "cat_b"]} for i in range(20)]
+    )
 
     train, val, test = multilabel_stratified_split(
         sample_records,
@@ -215,7 +213,7 @@ def test_multilabel_stratified_split() -> None:
 
     # All categories present in all splits
     for s in (train, val, test):
-        labels_in_split = {l for r in s for l in r["labels"]}
+        labels_in_split = {lbl for r in s for lbl in r["labels"]}
         assert "cat_a" in labels_in_split
         assert "cat_b" in labels_in_split
 
@@ -224,8 +222,7 @@ def test_splits_same_seed_reproducibility() -> None:
     from naltra.data.splits import multilabel_stratified_split
 
     records = [
-        {"id": f"rec_{i}", "labels": ["cat_a" if i % 2 == 0 else "cat_b"]}
-        for i in range(30)
+        {"id": f"rec_{i}", "labels": ["cat_a" if i % 2 == 0 else "cat_b"]} for i in range(30)
     ]
     train1, val1, test1 = multilabel_stratified_split(records, seed=42)
     train2, val2, test2 = multilabel_stratified_split(records, seed=42)
@@ -239,10 +236,7 @@ def test_splits_different_seed_variation() -> None:
     from naltra.data.splits import multilabel_stratified_split
 
     # Multiple records tying on label length and frequency
-    records = [
-        {"id": f"rec_{i}", "labels": ["cat_x"]}
-        for i in range(30)
-    ]
+    records = [{"id": f"rec_{i}", "labels": ["cat_x"]} for i in range(30)]
     train1, val1, test1 = multilabel_stratified_split(records, seed=42)
     train2, val2, test2 = multilabel_stratified_split(records, seed=999)
 
@@ -281,7 +275,8 @@ def test_splits_tiny_datasets() -> None:
 
 def test_splits_invalid_and_negative_ratios() -> None:
     import pytest
-    from naltra.data.splits import _validate_split_ratios, multilabel_stratified_split
+
+    from naltra.data.splits import _validate_split_ratios
 
     # Negative ratio
     with pytest.raises(ValueError, match="non-negative"):
@@ -312,8 +307,7 @@ def test_splits_zero_test_ratio() -> None:
     from naltra.data.splits import multilabel_stratified_split, split_records
 
     records = [
-        {"id": f"rec_{i}", "labels": ["cat_a" if i % 2 == 0 else "cat_b"]}
-        for i in range(20)
+        {"id": f"rec_{i}", "labels": ["cat_a" if i % 2 == 0 else "cat_b"]} for i in range(20)
     ]
     train, val, test = multilabel_stratified_split(
         records,
@@ -331,6 +325,196 @@ def test_splits_zero_test_ratio() -> None:
     assert len(t_seq) == 16
     assert len(v_seq) == 4
     assert len(te_seq) == 0
+
+
+def test_splits_rejects_duplicate_ids() -> None:
+    import pytest
+
+    from naltra.data.splits import multilabel_stratified_split
+
+    records = [
+        {"id": "duplicate_id", "labels": ["cat_a"]},
+        {"id": "duplicate_id", "labels": ["cat_b"]},
+        {"id": "unique_id", "labels": ["cat_a"]},
+    ]
+
+    with pytest.raises(
+        ValueError, match="Duplicate record ID found before splitting: 'duplicate_id'"
+    ):
+        multilabel_stratified_split(records)
+
+
+def test_compute_content_fingerprint() -> None:
+    from naltra.data.preprocessing import compute_content_fingerprint
+
+    # Normalized identical text must produce identical fingerprint
+    fp1 = compute_content_fingerprint("  Hello   World!  \n")
+    fp2 = compute_content_fingerprint("Hello World!")
+    assert fp1 == fp2
+    assert len(fp1) == 64
+
+    # Different text must produce different fingerprint
+    fp3 = compute_content_fingerprint("Hello NALTRA!")
+    assert fp1 != fp3
+
+
+def test_grouped_multilabel_stratified_split_prevents_leakage() -> None:
+    from naltra.data.preprocessing import compute_content_fingerprint
+    from naltra.data.splits import grouped_multilabel_stratified_split
+
+    # Create 60 records where several records share identical texts under different IDs
+    records = []
+    for i in range(20):
+        # Unique texts
+        records.append(
+            {
+                "id": f"rec_{i}",
+                "text": f"This is unique article number {i}.",
+                "labels": ["cat_a" if i % 2 == 0 else "cat_b"],
+            }
+        )
+    # Add duplicates of the first 5 articles
+    for i in range(5):
+        records.append(
+            {
+                "id": f"dup_{i}_copy1",
+                "text": f"This is unique article number {i}.",
+                "labels": ["cat_a" if i % 2 == 0 else "cat_b"],
+            }
+        )
+        records.append(
+            {
+                "id": f"dup_{i}_copy2",
+                "text": f"This is unique article number {i}.",
+                "labels": ["cat_a" if i % 2 == 0 else "cat_b"],
+            }
+        )
+
+    train, val, test = grouped_multilabel_stratified_split(
+        records,
+        group_key=lambda r: compute_content_fingerprint(r["text"]),
+        train_ratio=0.7,
+        validation_ratio=0.15,
+        test_ratio=0.15,
+        seed=42,
+    )
+
+    # 1. Total records preserved
+    assert len(train) + len(val) + len(test) == len(records)
+
+    # 2. Zero ID leakage
+    t_ids = {r["id"] for r in train}
+    v_ids = {r["id"] for r in val}
+    te_ids = {r["id"] for r in test}
+    assert not (t_ids & v_ids)
+    assert not (t_ids & te_ids)
+    assert not (v_ids & te_ids)
+
+    # 3. Strictly zero content fingerprint leakage
+    t_fps = {compute_content_fingerprint(r["text"]) for r in train}
+    v_fps = {compute_content_fingerprint(r["text"]) for r in val}
+    te_fps = {compute_content_fingerprint(r["text"]) for r in test}
+    assert not (t_fps & v_fps)
+    assert not (t_fps & te_fps)
+    assert not (v_fps & te_fps)
+
+
+def test_generate_multifin_leakage_free_track(tmp_path: Path) -> None:
+    from naltra.data.loader import load_jsonl, save_jsonl
+    from naltra.data.preprocessing import generate_multifin_leakage_free_track
+
+    mock_in_dir = tmp_path / "official_multifin"
+    mock_out_dir = tmp_path / "leakage_free"
+    mock_in_dir.mkdir()
+
+    # Create mock official splits where val and test contain records leaking from train
+    train_data = [
+        {
+            "id": "mf:train:1",
+            "text": "Stock market rallies today.",
+            "labels": ["banking_financial_markets"],
+            "language": "en",
+            "source": "multifin",
+            "license": "CC BY-NC 4.0",
+            "split": "train",
+        },
+        {
+            "id": "mf:train:2",
+            "text": "Central bank raises interest rates.",
+            "labels": ["tax"],
+            "language": "en",
+            "source": "multifin",
+            "license": "CC BY-NC 4.0",
+            "split": "train",
+        },
+    ]
+    val_data = [
+        {
+            "id": "mf:val:1",
+            "text": "Stock market rallies today.",
+            "labels": ["banking_financial_markets"],
+            "language": "en",
+            "source": "multifin",
+            "license": "CC BY-NC 4.0",
+            "split": "validation",
+        },  # LEAK
+        {
+            "id": "mf:val:2",
+            "text": "Tech company unveils new processor.",
+            "labels": ["technology"],
+            "language": "en",
+            "source": "multifin",
+            "license": "CC BY-NC 4.0",
+            "split": "validation",
+        },  # CLEAN
+    ]
+    test_data = [
+        {
+            "id": "mf:test:1",
+            "text": "Central bank raises interest rates.",
+            "labels": ["tax"],
+            "language": "en",
+            "source": "multifin",
+            "license": "CC BY-NC 4.0",
+            "split": "test",
+        },  # LEAK
+        {
+            "id": "mf:test:2",
+            "text": "Oil prices stabilize after inventory drop.",
+            "labels": ["power_energy_renewables"],
+            "language": "en",
+            "source": "multifin",
+            "license": "CC BY-NC 4.0",
+            "split": "test",
+        },  # CLEAN
+    ]
+
+    save_jsonl(train_data, mock_in_dir / "train.jsonl")
+    save_jsonl(val_data, mock_in_dir / "validation.jsonl")
+    save_jsonl(test_data, mock_in_dir / "test.jsonl")
+
+    stats = generate_multifin_leakage_free_track(
+        official_multifin_dir=mock_in_dir,
+        output_dir=mock_out_dir,
+        taxonomy_path=PROJECT_ROOT / "taxonomy" / "taxonomy.json",
+    )
+
+    assert stats["train_count"] == 2
+    assert stats["clean_val_count"] == 1
+    assert stats["val_removed_count"] == 1
+    assert stats["clean_test_count"] == 1
+    assert stats["test_removed_count"] == 1
+
+    clean_val = load_jsonl(mock_out_dir / "validation.jsonl")
+    clean_test = load_jsonl(mock_out_dir / "test.jsonl")
+
+    assert clean_val[0]["id"] == "mf:val:2"
+    assert clean_val[0]["original_split"] == "validation"
+    assert clean_test[0]["id"] == "mf:test:2"
+    assert clean_test[0]["original_split"] == "test"
+
+    # Manifest created
+    assert (mock_out_dir / "manifest.json").exists()
 
 
 if __name__ == "__main__":
@@ -353,4 +537,7 @@ if __name__ == "__main__":
     test_splits_tiny_datasets()
     test_splits_invalid_and_negative_ratios()
     test_splits_zero_test_ratio()
-    print("All 18 preprocessing tests passed successfully!")
+    test_splits_rejects_duplicate_ids()
+    test_compute_content_fingerprint()
+    test_grouped_multilabel_stratified_split_prevents_leakage()
+    print("All preprocessing tests passed successfully!")

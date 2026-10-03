@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
-import tempfile
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -14,15 +13,16 @@ if str(PROJECT_ROOT / "src") not in sys.path:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from naltra.data.loader import load_jsonl, save_jsonl
-from naltra.data.ood import (
+from naltra.data.loader import load_jsonl, save_jsonl  # noqa: E402
+from naltra.data.ood import (  # noqa: E402
     MASSIVE_ALLOWED_SCENARIOS,
     generate_far_ood_benchmarks,
     generate_near_ood_benchmarks,
     load_massive_paired_records,
     validate_ood_record,
+    validate_sib200_source_data,
 )
-from naltra.data.preprocessing import validate_record
+from naltra.data.preprocessing import validate_record  # noqa: E402
 
 SIB200_CANONICAL_TOPICS = [
     "arts_culture_entertainment_media",
@@ -46,12 +46,12 @@ EXPECTED_NEAR_OOD_COUNTS = {
 
 
 def create_synthetic_sib200_dataset(base_dir: Path) -> Path:
-    """Create a fully compliant synthetic SIB-200 dataset with all 7 topics and paired EN/TR records."""
+    """Create compliant synthetic SIB-200 dataset with 7 topics and paired EN/TR records."""
     base_dir.mkdir(parents=True, exist_ok=True)
     split_configs = {
-        "train": 2,       # 2 pairs * 7 topics * 2 langs = 28 records
+        "train": 2,  # 2 pairs * 7 topics * 2 langs = 28 records
         "validation": 1,  # 1 pair * 7 topics * 2 langs = 14 records
-        "test": 2,        # 2 pairs * 7 topics * 2 langs = 28 records
+        "test": 2,  # 2 pairs * 7 topics * 2 langs = 28 records
     }
 
     for split_name, num_pairs in split_configs.items():
@@ -134,6 +134,210 @@ def test_validate_ood_record_schema_and_guards() -> None:
         validate_ood_record(bad_labels)
 
 
+def test_validate_ood_record_strict_types() -> None:
+    valid_record = {
+        "id": "sib200:ood:politics:validation:sib200:en:1322",
+        "text": "Sample text for OOD testing.",
+        "language": "en",
+        "source": "sib200",
+        "license": "CC BY-SA 4.0",
+        "split": "validation",
+        "is_ood": True,
+        "ood_type": "near_ood",
+        "ood_source": "sib200_heldout",
+        "ood_reason": "heldout_topic:politics",
+        "source_id": "1322",
+        "source_label": "politics",
+        "pair_id": "sib200:1322",
+    }
+
+    # numeric license
+    with pytest.raises(ValueError, match="field 'license' must be a non-empty string"):
+        validate_ood_record(dict(valid_record, license=123))
+
+    # empty license
+    with pytest.raises(ValueError, match="field 'license' must be a non-empty string"):
+        validate_ood_record(dict(valid_record, license="   "))
+
+    # empty pair_id
+    with pytest.raises(ValueError, match="field 'pair_id' must be a non-empty string"):
+        validate_ood_record(dict(valid_record, pair_id=""))
+
+    # numeric pair_id
+    with pytest.raises(ValueError, match="field 'pair_id' must be a non-empty string"):
+        validate_ood_record(dict(valid_record, pair_id=42))
+
+    # empty source
+    with pytest.raises(ValueError, match="field 'source' must be a non-empty string"):
+        validate_ood_record(dict(valid_record, source="  "))
+
+    # invalid source_id (bool)
+    with pytest.raises(ValueError, match="must be a valid non-empty scalar identifier"):
+        validate_ood_record(dict(valid_record, source_id=True))
+
+    # invalid source_id (empty string)
+    with pytest.raises(ValueError, match="must be a valid non-empty scalar identifier"):
+        validate_ood_record(dict(valid_record, source_id="   "))
+
+    # invalid split
+    with pytest.raises(ValueError, match="has invalid split"):
+        validate_ood_record(dict(valid_record, split="invalid_split"))
+
+    # invalid language
+    with pytest.raises(ValueError, match="has invalid language"):
+        validate_ood_record(dict(valid_record, language="fr"))
+
+    # invalid ood_type
+    with pytest.raises(ValueError, match="has invalid ood_type"):
+        validate_ood_record(dict(valid_record, ood_type="unknown_ood"))
+
+
+def test_validate_sib200_source_data_regressions() -> None:
+    valid_train = [
+        {
+            "id": "sib:en:1",
+            "text": "English text 1",
+            "labels": ["politics"],
+            "language": "en",
+            "source": "sib200",
+            "license": "CC BY-SA 4.0",
+            "split": "train",
+            "pair_id": "pair:1",
+        },
+        {
+            "id": "sib:tr:1",
+            "text": "Turkish text 1",
+            "labels": ["politics"],
+            "language": "tr",
+            "source": "sib200",
+            "license": "CC BY-SA 4.0",
+            "split": "train",
+            "pair_id": "pair:1",
+        },
+    ]
+    valid_val = [
+        {
+            "id": "sib:en:2",
+            "text": "English text 2",
+            "labels": ["sport"],
+            "language": "en",
+            "source": "sib200",
+            "license": "CC BY-SA 4.0",
+            "split": "validation",
+            "pair_id": "pair:2",
+        },
+        {
+            "id": "sib:tr:2",
+            "text": "Turkish text 2",
+            "labels": ["sport"],
+            "language": "tr",
+            "source": "sib200",
+            "license": "CC BY-SA 4.0",
+            "split": "validation",
+            "pair_id": "pair:2",
+        },
+    ]
+    valid_test = [
+        {
+            "id": "sib:en:3",
+            "text": "English text 3",
+            "labels": ["health"],
+            "language": "en",
+            "source": "sib200",
+            "license": "CC BY-SA 4.0",
+            "split": "test",
+            "pair_id": "pair:3",
+        },
+        {
+            "id": "sib:tr:3",
+            "text": "Turkish text 3",
+            "labels": ["health"],
+            "language": "tr",
+            "source": "sib200",
+            "license": "CC BY-SA 4.0",
+            "split": "test",
+            "pair_id": "pair:3",
+        },
+    ]
+
+    # Valid baseline passes
+    validate_sib200_source_data(valid_train, valid_val, valid_test)
+
+    # 1. Duplicate EN in one pair
+    bad_pair_dup_en = [
+        dict(valid_train[0]),
+        dict(valid_train[0], id="sib:en:1b"),
+    ]
+    with pytest.raises(ValueError, match="must have exactly one 'en' and one 'tr' record"):
+        validate_sib200_source_data(bad_pair_dup_en, valid_val, valid_test)
+
+    # 2. Missing TR record (single record in pair)
+    bad_missing_tr = [dict(valid_train[0])]
+    with pytest.raises(ValueError, match="expected exactly 2"):
+        validate_sib200_source_data(bad_missing_tr, valid_val, valid_test)
+
+    # 3. Pair split mismatch
+    bad_split_mismatch = [
+        dict(valid_train[0]),
+        dict(valid_train[1], split="validation"),
+    ]
+    with pytest.raises(ValueError, match="mismatched splits"):
+        validate_sib200_source_data(bad_split_mismatch, valid_val, valid_test)
+
+    # 4. Pair label mismatch
+    bad_label_mismatch = [
+        dict(valid_train[0]),
+        dict(valid_train[1], labels=["travel"]),
+    ]
+    with pytest.raises(ValueError, match="mismatched labels"):
+        validate_sib200_source_data(bad_label_mismatch, valid_val, valid_test)
+
+    # 5. pair_id reused across train and validation
+    bad_val_reused_pair = [
+        dict(valid_val[0], pair_id="pair:1"),
+        dict(valid_val[1], pair_id="pair:1"),
+    ]
+    with pytest.raises(ValueError, match="SIB-200 pair IDs overlap between train and validation"):
+        validate_sib200_source_data(valid_train, bad_val_reused_pair, valid_test)
+
+    # 6. Duplicate record IDs
+    bad_dup_id = [
+        dict(valid_train[0]),
+        dict(valid_train[1], id=valid_train[0]["id"]),
+    ]
+    with pytest.raises(ValueError, match="Duplicate SIB-200 record ID detected"):
+        validate_sib200_source_data(bad_dup_id, valid_val, valid_test)
+
+
+def test_missing_input_preflight_checks(tmp_path: Path) -> None:
+    from naltra.data.code_switching import generate_code_switch_benchmarks
+    from naltra.data.noise import generate_noisy_benchmarks
+    from naltra.data.ood import generate_near_ood_benchmarks
+
+    empty_dir = tmp_path / "non_existent"
+
+    # Noise generation preflight
+    with pytest.raises(FileNotFoundError, match="Cannot generate noisy benchmarks"):
+        generate_noisy_benchmarks(
+            processed_base_dir=empty_dir,
+            output_base_dir=tmp_path / "noisy_out",
+        )
+
+    # Code-switch generation preflight
+    with pytest.raises(FileNotFoundError, match="Cannot generate code-switch benchmarks"):
+        generate_code_switch_benchmarks(
+            processed_base_dir=empty_dir,
+            output_base_dir=tmp_path / "cs_out",
+        )
+
+    # Near-OOD generation preflight
+    with pytest.raises(FileNotFoundError, match="Cannot generate Near-OOD benchmarks"):
+        generate_near_ood_benchmarks(
+            sib200_dir=empty_dir,
+            output_base_dir=tmp_path / "ood_out",
+        )
+
+
 def test_near_ood_generation_synthetic(tmp_path: Path) -> None:
     """Verify Near-OOD generation on synthetic fixture: 7 folds, zero leakage, 1:1 balance."""
     sib_dir = tmp_path / "clean_sib200"
@@ -158,6 +362,9 @@ def test_near_ood_generation_synthetic(tmp_path: Path) -> None:
         val_ood = load_jsonl(fold_dir / "validation_ood.jsonl")
         test_id = load_jsonl(fold_dir / "test_id.jsonl")
         test_ood = load_jsonl(fold_dir / "test_ood.jsonl")
+
+        assert len(val_id) > 0
+        assert len(test_id) > 0
 
         # 1. Held-out topic is absent from train_id
         for r in train_id:
@@ -220,7 +427,9 @@ def test_clean_sib200_benchmark_unmodified(tmp_path: Path) -> None:
     for split in ("train", "validation", "test"):
         file_path = sib_dir / f"{split}.jsonl"
         current_bytes = file_path.read_bytes()
-        assert current_bytes == original_contents[split], f"Clean SIB-200 file {split}.jsonl was modified!"
+        assert (
+            current_bytes == original_contents[split]
+        ), f"Clean SIB-200 file {split}.jsonl was modified!"
         current_records = load_jsonl(file_path)
         assert current_records == original_records[split]
 
@@ -244,14 +453,50 @@ def test_massive_allowlist_filtering(tmp_path: Path) -> None:
 
     # Create synthetic records with allowed and disallowed scenarios
     en_recs = [
-        {"id": "1", "utt": "set alarm for 7am", "scenario": "alarm", "intent": "alarm_set", "partition": "dev"},
-        {"id": "2", "utt": "what's the weather", "scenario": "weather", "intent": "weather_query", "partition": "dev"},
-        {"id": "3", "utt": "play rock music", "scenario": "music", "intent": "music_likeness", "partition": "dev"},
+        {
+            "id": "1",
+            "utt": "set alarm for 7am",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "dev",
+        },
+        {
+            "id": "2",
+            "utt": "what's the weather",
+            "scenario": "weather",
+            "intent": "weather_query",
+            "partition": "dev",
+        },
+        {
+            "id": "3",
+            "utt": "play rock music",
+            "scenario": "music",
+            "intent": "music_likeness",
+            "partition": "dev",
+        },
     ]
     tr_recs = [
-        {"id": "1", "utt": "alarmı saat yediye kur", "scenario": "alarm", "intent": "alarm_set", "partition": "dev"},
-        {"id": "2", "utt": "hava nasıl", "scenario": "weather", "intent": "weather_query", "partition": "dev"},
-        {"id": "3", "utt": "rock müzik çal", "scenario": "music", "intent": "music_likeness", "partition": "dev"},
+        {
+            "id": "1",
+            "utt": "alarmı saat yediye kur",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "dev",
+        },
+        {
+            "id": "2",
+            "utt": "hava nasıl",
+            "scenario": "weather",
+            "intent": "weather_query",
+            "partition": "dev",
+        },
+        {
+            "id": "3",
+            "utt": "rock müzik çal",
+            "scenario": "music",
+            "intent": "music_likeness",
+            "partition": "dev",
+        },
     ]
     en_path, tr_path = create_synthetic_massive_dataset(tmp_path / "massive_raw", en_recs, tr_recs)
 
@@ -267,12 +512,36 @@ def test_load_massive_mismatched_partition(tmp_path: Path) -> None:
     """Verify that records with mismatched EN and TR partitions are excluded."""
     # Partition mismatch: EN has dev, TR has test
     en_recs = [
-        {"id": "1", "utt": "set alarm for 7am", "scenario": "alarm", "intent": "alarm_set", "partition": "dev"},
-        {"id": "2", "utt": "turn lights off", "scenario": "iot", "intent": "iot_hue_lightoff", "partition": "test"},
+        {
+            "id": "1",
+            "utt": "set alarm for 7am",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "dev",
+        },
+        {
+            "id": "2",
+            "utt": "turn lights off",
+            "scenario": "iot",
+            "intent": "iot_hue_lightoff",
+            "partition": "test",
+        },
     ]
     tr_recs = [
-        {"id": "1", "utt": "alarmı yediye kur", "scenario": "alarm", "intent": "alarm_set", "partition": "test"},  # Mismatch!
-        {"id": "2", "utt": "ışıkları kapat", "scenario": "iot", "intent": "iot_hue_lightoff", "partition": "test"},   # Match!
+        {
+            "id": "1",
+            "utt": "alarmı yediye kur",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "test",
+        },  # Mismatch!
+        {
+            "id": "2",
+            "utt": "ışıkları kapat",
+            "scenario": "iot",
+            "intent": "iot_hue_lightoff",
+            "partition": "test",
+        },  # Match!
     ]
     en_path, tr_path = create_synthetic_massive_dataset(tmp_path / "mismatch_raw", en_recs, tr_recs)
 
@@ -289,23 +558,73 @@ def test_far_ood_insufficient_data(tmp_path: Path) -> None:
     raw_dir = tmp_path / "sparse_raw"
     # Only 2 dev pairs and 2 test pairs
     en_recs = [
-        {"id": "1", "utt": "alarm 1", "scenario": "alarm", "intent": "alarm_set", "partition": "dev"},
-        {"id": "2", "utt": "alarm 2", "scenario": "alarm", "intent": "alarm_set", "partition": "dev"},
-        {"id": "3", "utt": "alarm 3", "scenario": "alarm", "intent": "alarm_set", "partition": "test"},
-        {"id": "4", "utt": "alarm 4", "scenario": "alarm", "intent": "alarm_set", "partition": "test"},
+        {
+            "id": "1",
+            "utt": "alarm 1",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "dev",
+        },
+        {
+            "id": "2",
+            "utt": "alarm 2",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "dev",
+        },
+        {
+            "id": "3",
+            "utt": "alarm 3",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "test",
+        },
+        {
+            "id": "4",
+            "utt": "alarm 4",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "test",
+        },
     ]
     tr_recs = [
-        {"id": "1", "utt": "alarm 1 tr", "scenario": "alarm", "intent": "alarm_set", "partition": "dev"},
-        {"id": "2", "utt": "alarm 2 tr", "scenario": "alarm", "intent": "alarm_set", "partition": "dev"},
-        {"id": "3", "utt": "alarm 3 tr", "scenario": "alarm", "intent": "alarm_set", "partition": "test"},
-        {"id": "4", "utt": "alarm 4 tr", "scenario": "alarm", "intent": "alarm_set", "partition": "test"},
+        {
+            "id": "1",
+            "utt": "alarm 1 tr",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "dev",
+        },
+        {
+            "id": "2",
+            "utt": "alarm 2 tr",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "dev",
+        },
+        {
+            "id": "3",
+            "utt": "alarm 3 tr",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "test",
+        },
+        {
+            "id": "4",
+            "utt": "alarm 4 tr",
+            "scenario": "alarm",
+            "intent": "alarm_set",
+            "partition": "test",
+        },
     ]
     create_synthetic_massive_dataset(raw_dir, en_recs, tr_recs)
 
     out_dir = tmp_path / "far_ood_sparse"
 
     # Requesting 5 dev pairs when only 2 exist
-    with pytest.raises(ValueError, match="Insufficient matched dev pairs: requested 5, but only 2 available"):
+    with pytest.raises(
+        ValueError, match="Insufficient matched dev pairs: requested 5, but only 2 available"
+    ):
         generate_far_ood_benchmarks(
             raw_dir=raw_dir,
             output_base_dir=out_dir,
@@ -314,7 +633,9 @@ def test_far_ood_insufficient_data(tmp_path: Path) -> None:
         )
 
     # Requesting 5 test pairs when only 2 exist
-    with pytest.raises(ValueError, match="Insufficient matched test pairs: requested 5, but only 2 available"):
+    with pytest.raises(
+        ValueError, match="Insufficient matched test pairs: requested 5, but only 2 available"
+    ):
         generate_far_ood_benchmarks(
             raw_dir=raw_dir,
             output_base_dir=out_dir,
@@ -331,11 +652,43 @@ def test_far_ood_generation_synthetic(tmp_path: Path) -> None:
 
     # 10 dev pairs and 15 test pairs
     for i in range(10):
-        en_recs.append({"id": str(i), "utt": f"en dev {i}", "scenario": "alarm", "intent": "alarm_set", "partition": "dev"})
-        tr_recs.append({"id": str(i), "utt": f"tr dev {i}", "scenario": "alarm", "intent": "alarm_set", "partition": "dev"})
+        en_recs.append(
+            {
+                "id": str(i),
+                "utt": f"en dev {i}",
+                "scenario": "alarm",
+                "intent": "alarm_set",
+                "partition": "dev",
+            }
+        )
+        tr_recs.append(
+            {
+                "id": str(i),
+                "utt": f"tr dev {i}",
+                "scenario": "alarm",
+                "intent": "alarm_set",
+                "partition": "dev",
+            }
+        )
     for i in range(10, 25):
-        en_recs.append({"id": str(i), "utt": f"en test {i}", "scenario": "alarm", "intent": "alarm_set", "partition": "test"})
-        tr_recs.append({"id": str(i), "utt": f"tr test {i}", "scenario": "alarm", "intent": "alarm_set", "partition": "test"})
+        en_recs.append(
+            {
+                "id": str(i),
+                "utt": f"en test {i}",
+                "scenario": "alarm",
+                "intent": "alarm_set",
+                "partition": "test",
+            }
+        )
+        tr_recs.append(
+            {
+                "id": str(i),
+                "utt": f"tr test {i}",
+                "scenario": "alarm",
+                "intent": "alarm_set",
+                "partition": "test",
+            }
+        )
 
     create_synthetic_massive_dataset(raw_dir, en_recs, tr_recs)
 
@@ -348,8 +701,8 @@ def test_far_ood_generation_synthetic(tmp_path: Path) -> None:
         seed=42,
     )
 
-    assert stats["validation"] == 8   # 4 pairs = 8 records (4 EN, 4 TR)
-    assert stats["test"] == 16        # 8 pairs = 16 records (8 EN, 8 TR)
+    assert stats["validation"] == 8  # 4 pairs = 8 records (4 EN, 4 TR)
+    assert stats["test"] == 16  # 8 pairs = 16 records (8 EN, 8 TR)
 
     val_records = load_jsonl(out_base / "validation_ood.jsonl")
     test_records = load_jsonl(out_base / "test_ood.jsonl")

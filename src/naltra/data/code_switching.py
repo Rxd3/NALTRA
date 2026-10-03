@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from pathlib import Path
 import random
-from typing import Any, Sequence
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
 
 from naltra.data.loader import load_jsonl, save_jsonl
 
@@ -69,11 +70,13 @@ def pair_aligned_records(
         # Validate alignment
         if en_rec.get("split") != tr_rec.get("split"):
             raise ValueError(
-                f"Split mismatch for pair_id '{pid}': en={en_rec.get('split')}, tr={tr_rec.get('split')}"
+                f"Split mismatch for pair_id '{pid}': "
+                f"en={en_rec.get('split')}, tr={tr_rec.get('split')}"
             )
         if en_rec.get("labels") != tr_rec.get("labels"):
             raise ValueError(
-                f"Label mismatch for pair_id '{pid}': en={en_rec.get('labels')}, tr={tr_rec.get('labels')}"
+                f"Label mismatch for pair_id '{pid}': "
+                f"en={en_rec.get('labels')}, tr={tr_rec.get('labels')}"
             )
         pairs.append((en_rec, tr_rec))
 
@@ -95,11 +98,13 @@ def mix_code_switched_text(
     """
     if strategy not in VALID_CODE_SWITCH_STRATEGIES:
         raise ValueError(
-            f"Unknown code-switch strategy '{strategy}'. Allowed: {sorted(VALID_CODE_SWITCH_STRATEGIES)}"
+            f"Unknown code-switch strategy '{strategy}'. "
+            f"Allowed: {sorted(VALID_CODE_SWITCH_STRATEGIES)}"
         )
     if strength not in VALID_CODE_SWITCH_STRENGTHS:
         raise ValueError(
-            f"Unknown code-switch strength '{strength}'. Allowed: {sorted(VALID_CODE_SWITCH_STRENGTHS)}"
+            f"Unknown code-switch strength '{strength}'. "
+            f"Allowed: {sorted(VALID_CODE_SWITCH_STRENGTHS)}"
         )
 
     en_clean = en_text.strip()
@@ -218,6 +223,7 @@ def create_code_switched_record(
         "code_switch_strength": strength,
         "primary_language": primary_lang,
         "original_pair_id": pair_id,
+        "base_seed": base_seed,
     }
 
 
@@ -230,16 +236,33 @@ def generate_code_switch_benchmarks(
     seed: int = 42,
 ) -> dict[str, int]:
     """Generate synthetic EN/TR code-switched validation/test benchmark copies."""
+    from naltra.data.manifest import create_manifest
+
     in_dir = Path(processed_base_dir)
     out_dir = Path(output_base_dir) / strategy / strength
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Preflight check: required SIB-200 files must exist
+    missing_files: list[str] = []
+    for split_name in splits:
+        input_file = in_dir / f"{split_name}.jsonl"
+        if not input_file.exists():
+            missing_files.append(str(input_file))
+
+    if missing_files:
+        files_str = "\n  - ".join(missing_files)
+        raise FileNotFoundError(
+            "Cannot generate code-switch benchmarks because required SIB-200 input "
+            f"files are missing:\n"
+            f"  - {files_str}\n"
+            f"Please prepare SIB-200 first:\n"
+            f"  python scripts/prepare_data.py --dataset sib200"
+        )
+
     results: dict[str, int] = {}
 
     for split_name in splits:
         input_file = in_dir / f"{split_name}.jsonl"
-        if not input_file.exists():
-            print(f"[WARN] Input file missing, skipping: {input_file}")
-            continue
-
         raw_records = load_jsonl(input_file)
         pairs = pair_aligned_records(raw_records)
 
@@ -257,11 +280,29 @@ def generate_code_switch_benchmarks(
         # Verify unique IDs
         ids = [r["id"] for r in mixed_records]
         if len(ids) != len(set(ids)):
-            raise ValueError(f"Duplicate IDs found in generated {split_name} code-switched benchmark.")
+            raise ValueError(
+                f"Duplicate IDs found in generated {split_name} code-switched benchmark."
+            )
 
         output_file = out_dir / f"{split_name}.jsonl"
         save_jsonl(mixed_records, output_file)
         results[split_name] = len(mixed_records)
         print(f"Generated {len(mixed_records)} code-switched records -> {output_file}")
+
+    # Generate reproducibility manifest
+    create_manifest(
+        benchmark_name="code_switch_sib200",
+        output_dir=out_dir,
+        generation_parameters={
+            "strategy": strategy,
+            "strength": strength,
+            "base_seed": seed,
+            "splits": list(splits),
+        },
+        source_metadata={
+            "source_dataset": "sib200",
+            "processed_base_dir": str(in_dir),
+        },
+    )
 
     return results

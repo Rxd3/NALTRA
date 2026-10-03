@@ -2,20 +2,11 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from pathlib import Path
 import sys
 import tempfile
-
-# Add repo root and src/ to sys.path so tests can be run directly with python
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT / "src") not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT / "src"))
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+from pathlib import Path
 
 from naltra.data.code_switching import (
-    VALID_CODE_SWITCH_STRATEGIES,
-    VALID_CODE_SWITCH_STRENGTHS,
     create_code_switched_record,
     generate_code_switch_benchmarks,
     get_code_switch_seed,
@@ -24,6 +15,13 @@ from naltra.data.code_switching import (
 )
 from naltra.data.loader import load_jsonl, save_jsonl
 from naltra.data.preprocessing import validate_record
+
+# Add repo root and src/ to sys.path so tests can be run directly with python
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def test_deterministic_seeding_and_repeatability() -> None:
@@ -38,16 +36,21 @@ def test_deterministic_seeding_and_repeatability() -> None:
     assert seed1 == seed2
     assert isinstance(seed1, int)
 
-    expected_digest = hashlib.sha256(
-        f"{pair_id}:{strategy}:{strength}:{seed}".encode("utf-8")
-    ).digest()
+    expected_digest = hashlib.sha256(f"{pair_id}:{strategy}:{strength}:{seed}".encode()).digest()
     assert seed1 == int.from_bytes(expected_digest[:8], byteorder="big")
 
     en_text = "With the change from the quarter to the half mile run, speed becomes less important."
-    tr_text = "Çeyrek mil koşusunun yarım mil koşusuna dönüşmesiyle birlikte, hız daha az önemli hale gelir."
+    tr_text = (
+        "Çeyrek mil koşusunun yarım mil koşusuna dönüşmesiyle birlikte, "
+        "hız daha az önemli hale gelir."
+    )
 
-    out1, lang1 = mix_code_switched_text(en_text, tr_text, strategy=strategy, strength=strength, seed=seed, pair_id=pair_id)
-    out2, lang2 = mix_code_switched_text(en_text, tr_text, strategy=strategy, strength=strength, seed=seed, pair_id=pair_id)
+    out1, lang1 = mix_code_switched_text(
+        en_text, tr_text, strategy=strategy, strength=strength, seed=seed, pair_id=pair_id
+    )
+    out2, lang2 = mix_code_switched_text(
+        en_text, tr_text, strategy=strategy, strength=strength, seed=seed, pair_id=pair_id
+    )
     assert out1 == out2
     assert lang1 == lang2
 
@@ -111,7 +114,9 @@ def test_record_structure_and_traceability() -> None:
     }
     tr_rec = {
         "id": "sib200:tr:548",
-        "text": "Hız çok daha az önemli hale geliyor ve dayanıklılık bir gereklilik haline geliyor.",
+        "text": (
+            "Hız çok daha az önemli hale geliyor ve dayanıklılık bir gereklilik haline geliyor."
+        ),
         "labels": ["sport"],
         "language": "tr",
         "source": "sib200",
@@ -167,8 +172,22 @@ def test_pair_aligned_records_validation() -> None:
     """Verify strict alignment validation for pair matching."""
     # Valid matching pair
     records = [
-        {"id": "en:1", "language": "en", "pair_id": "p1", "split": "test", "labels": ["tech"], "text": "Hi"},
-        {"id": "tr:1", "language": "tr", "pair_id": "p1", "split": "test", "labels": ["tech"], "text": "Selam"},
+        {
+            "id": "en:1",
+            "language": "en",
+            "pair_id": "p1",
+            "split": "test",
+            "labels": ["tech"],
+            "text": "Hi",
+        },
+        {
+            "id": "tr:1",
+            "language": "tr",
+            "pair_id": "p1",
+            "split": "test",
+            "labels": ["tech"],
+            "text": "Selam",
+        },
     ]
     pairs = pair_aligned_records(records)
     assert len(pairs) == 1
@@ -177,8 +196,22 @@ def test_pair_aligned_records_validation() -> None:
 
     # Mismatched labels
     bad_labels = [
-        {"id": "en:1", "language": "en", "pair_id": "p1", "split": "test", "labels": ["tech"], "text": "Hi"},
-        {"id": "tr:1", "language": "tr", "pair_id": "p1", "split": "test", "labels": ["sports"], "text": "Selam"},
+        {
+            "id": "en:1",
+            "language": "en",
+            "pair_id": "p1",
+            "split": "test",
+            "labels": ["tech"],
+            "text": "Hi",
+        },
+        {
+            "id": "tr:1",
+            "language": "tr",
+            "pair_id": "p1",
+            "split": "test",
+            "labels": ["sports"],
+            "text": "Selam",
+        },
     ]
     try:
         pair_aligned_records(bad_labels)
@@ -189,8 +222,22 @@ def test_pair_aligned_records_validation() -> None:
 
     # Mismatched split
     bad_split = [
-        {"id": "en:1", "language": "en", "pair_id": "p1", "split": "validation", "labels": ["tech"], "text": "Hi"},
-        {"id": "tr:1", "language": "tr", "pair_id": "p1", "split": "test", "labels": ["tech"], "text": "Selam"},
+        {
+            "id": "en:1",
+            "language": "en",
+            "pair_id": "p1",
+            "split": "validation",
+            "labels": ["tech"],
+            "text": "Hi",
+        },
+        {
+            "id": "tr:1",
+            "language": "tr",
+            "pair_id": "p1",
+            "split": "test",
+            "labels": ["tech"],
+            "text": "Selam",
+        },
     ]
     try:
         pair_aligned_records(bad_split)
@@ -201,7 +248,14 @@ def test_pair_aligned_records_validation() -> None:
 
     # Missing language
     missing_tr = [
-        {"id": "en:1", "language": "en", "pair_id": "p1", "split": "test", "labels": ["tech"], "text": "Hi"},
+        {
+            "id": "en:1",
+            "language": "en",
+            "pair_id": "p1",
+            "split": "test",
+            "labels": ["tech"],
+            "text": "Hi",
+        },
     ]
     try:
         pair_aligned_records(missing_tr)

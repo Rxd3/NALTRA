@@ -27,6 +27,19 @@ def preprocess_record_text(text: str) -> str:
     return normalize_text(text)
 
 
+def compute_content_fingerprint(text: str) -> str:
+    """Compute a deterministic SHA-256 fingerprint over normalized text representation.
+
+    Uses preprocess_record_text(text) to ensure the exact same normalization used by
+    processed benchmark records, providing a platform-independent hash for detecting
+    exact content duplicates without replacing unique record IDs.
+    """
+    import hashlib
+
+    normalized = preprocess_record_text(text)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def load_label_map(path: str | Path = "taxonomy/label_map.json") -> dict[str, str]:
     """Load source-to-canonical label aliases from label_map.json."""
     map_path = Path(path)
@@ -85,7 +98,9 @@ def validate_record(
 
     for field in REQUIRED_RECORD_FIELDS:
         if field not in record:
-            raise ValueError(f"Record '{record.get('id', '<unknown>')}' missing required field: '{field}'")
+            raise ValueError(
+                f"Record '{record.get('id', '<unknown>')}' missing required field: '{field}'"
+            )
 
     if not isinstance(record["id"], str) or not record["id"].strip():
         raise ValueError("Record 'id' must be a non-empty string.")
@@ -142,14 +157,9 @@ def process_sib200(
     splits = ["train", "validation", "test"]
 
     print("Loading SIB-200 English and Turkish subsets...")
-    raw_datasets = {
-        lang: load_dataset("Davlan/sib200", cfg)
-        for lang, cfg in configs.items()
-    }
+    raw_datasets = {lang: load_dataset("Davlan/sib200", cfg) for lang, cfg in configs.items()}
 
-    processed_by_split: dict[str, list[dict[str, Any]]] = {
-        split: [] for split in splits
-    }
+    processed_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in splits}
 
     for split_name in splits:
         records: list[dict[str, Any]] = []
@@ -183,7 +193,8 @@ def process_sib200(
         out_path = Path(output_dir) / f"{split_name}.jsonl"
         save_jsonl(records, out_path)
         processed_by_split[split_name] = records
-        print(f"Saved {len(records)} records ({len(records)//2} en, {len(records)//2} tr) -> {out_path}")
+        half = len(records) // 2
+        print(f"Saved {len(records)} records ({half} en, {half} tr) -> {out_path}")
 
     return processed_by_split
 
@@ -205,9 +216,7 @@ def process_multifin(
     print("Loading MultiFin all_languages_lowlevel dataset...")
     raw_dataset = load_dataset("awinml/MultiFin", "all_languages_lowlevel")
 
-    processed_by_split: dict[str, list[dict[str, Any]]] = {
-        split: [] for split in splits
-    }
+    processed_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in splits}
 
     for split_name in splits:
         records: list[dict[str, Any]] = []
@@ -251,6 +260,120 @@ def process_multifin(
     return processed_by_split
 
 
+def generate_multifin_leakage_free_track(
+    official_multifin_dir: str | Path = "data/processed/multifin",
+    output_dir: str | Path = "data/splits/multifin/leakage_free",
+    taxonomy_path: str | Path = "taxonomy/taxonomy.json",
+) -> dict[str, Any]:
+    """Generate a leakage-free MultiFin evaluation track by excluding validation and test records
+
+    whose normalized content fingerprint appears in the official training set.
+    Preserves official training split and full traceability to original records.
+    """
+    import copy
+
+    from naltra.data.loader import load_jsonl, save_jsonl
+
+    allowed_labels = load_canonical_label_ids(taxonomy_path)
+    in_dir = Path(official_multifin_dir)
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    train_file = in_dir / "train.jsonl"
+    val_file = in_dir / "validation.jsonl"
+    test_file = in_dir / "test.jsonl"
+
+    if not train_file.exists() or not val_file.exists() or not test_file.exists():
+        raise FileNotFoundError(
+            f"Official MultiFin files missing in {in_dir}. Run prepare_multifin first."
+        )
+
+    official_train = load_jsonl(train_file)
+    official_val = load_jsonl(val_file)
+    official_test = load_jsonl(test_file)
+
+    train_fps = {compute_content_fingerprint(r["text"]) for r in official_train}
+
+    clean_train = [copy.deepcopy(r) for r in official_train]
+    for r in clean_train:
+        r["original_split"] = "train"
+        r["split"] = "train"
+        validate_record(r, allowed_labels=allowed_labels)
+
+    clean_val = []
+    val_removed = []
+    for r in official_val:
+        if compute_content_fingerprint(r["text"]) in train_fps:
+            val_removed.append(r)
+        else:
+            rec = copy.deepcopy(r)
+            rec["original_split"] = "validation"
+            rec["split"] = "validation"
+            validate_record(rec, allowed_labels=allowed_labels)
+            clean_val.append(rec)
+
+    clean_test = []
+    test_removed = []
+    for r in official_test:
+        if compute_content_fingerprint(r["text"]) in train_fps:
+            test_removed.append(r)
+        else:
+            rec = copy.deepcopy(r)
+            rec["original_split"] = "test"
+            rec["split"] = "test"
+            validate_record(rec, allowed_labels=allowed_labels)
+            clean_test.append(rec)
+
+    val_fps = {compute_content_fingerprint(r["text"]) for r in clean_val}
+    test_fps = {compute_content_fingerprint(r["text"]) for r in clean_test}
+    val_test_overlap = val_fps & test_fps
+
+    save_jsonl(clean_train, out_dir / "train.jsonl")
+    save_jsonl(clean_val, out_dir / "validation.jsonl")
+    save_jsonl(clean_test, out_dir / "test.jsonl")
+
+    stats = {
+        "train_count": len(clean_train),
+        "official_val_count": len(official_val),
+        "clean_val_count": len(clean_val),
+        "val_removed_count": len(val_removed),
+        "official_test_count": len(official_test),
+        "clean_test_count": len(clean_test),
+        "test_removed_count": len(test_removed),
+        "val_test_overlap_count": len(val_test_overlap),
+    }
+
+    from naltra.data.manifest import create_manifest
+
+    create_manifest(
+        benchmark_name="multifin_leakage_free",
+        output_dir=out_dir,
+        generation_parameters={
+            "official_multifin_dir": str(in_dir),
+            "removed_val_leaks": len(val_removed),
+            "removed_test_leaks": len(test_removed),
+            "val_test_overlap_count": len(val_test_overlap),
+        },
+        source_metadata={
+            "official_train_count": len(official_train),
+            "official_val_count": len(official_val),
+            "official_test_count": len(official_test),
+        },
+    )
+
+    print(
+        f"MultiFin Leakage-Free Track Generated -> {out_dir}:\n"
+        f"  Train: {stats['train_count']} (reference)\n"
+        f"  Validation: {stats['clean_val_count']} "
+        f"(removed {stats['val_removed_count']} leaking from train)\n"
+        f"  Test: {stats['clean_test_count']} "
+        f"(removed {stats['test_removed_count']} leaking from train)\n"
+        f"  Val/Test Overlap Fingerprints: {stats['val_test_overlap_count']}"
+    )
+
+    return stats
+
+
 def process_mn_ds(
     csv_path: str | Path = "data/raw/mn_ds/MN-DS-news-classification.csv",
     output_dir: str | Path = "data/processed/mn_ds",
@@ -263,7 +386,8 @@ def process_mn_ds(
 ) -> dict[str, list[dict[str, Any]]]:
     """Load, group, preprocess, deterministically split, validate, and persist MN-DS."""
     import pandas as pd
-    from naltra.data.splits import multilabel_stratified_split
+
+    from naltra.data.splits import grouped_multilabel_stratified_split
 
     label_map = load_label_map(label_map_path)
     allowed_labels = load_canonical_label_ids(taxonomy_path)
@@ -318,10 +442,14 @@ def process_mn_ds(
         rec["labels"] = map_labels(rec["source_labels"], label_map)
         article_records.append(rec)
 
-    # Perform deterministic multi-label stratified split
-    print(f"Splitting {len(article_records)} articles using iterative stratification (seed={seed})...")
-    train_records, val_records, test_records = multilabel_stratified_split(
+    # Perform deterministic multi-label stratified split with content-fingerprint grouping
+    print(
+        f"Grouping and splitting {len(article_records)} articles using content-grouped "
+        f"iterative stratification (seed={seed})..."
+    )
+    train_records, val_records, test_records = grouped_multilabel_stratified_split(
         article_records,
+        group_key=lambda r: compute_content_fingerprint(r["text"]),
         train_ratio=train_ratio,
         validation_ratio=validation_ratio,
         test_ratio=test_ratio,
@@ -334,13 +462,21 @@ def process_mn_ds(
         "test": test_records,
     }
 
-    # Verify zero leakage across splits
+    # Verify zero ID leakage across splits
     train_ids = {r["id"] for r in train_records}
     val_ids = {r["id"] for r in val_records}
     test_ids = {r["id"] for r in test_records}
 
     if train_ids & val_ids or train_ids & test_ids or val_ids & test_ids:
         raise ValueError("Data leakage detected: article IDs overlap across splits!")
+
+    # Verify zero content-fingerprint leakage across splits
+    train_fps = {compute_content_fingerprint(r["text"]) for r in train_records}
+    val_fps = {compute_content_fingerprint(r["text"]) for r in val_records}
+    test_fps = {compute_content_fingerprint(r["text"]) for r in test_records}
+
+    if train_fps & val_fps or train_fps & test_fps or val_fps & test_fps:
+        raise ValueError("Content fingerprint leakage detected across MN-DS splits!")
 
     # Validate and save each split
     out_dir = Path(output_dir)

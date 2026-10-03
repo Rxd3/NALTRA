@@ -7,7 +7,7 @@ NALTRA maintains reproducible, cross-lingual English (`en`), Turkish (`tr`), and
 ## 1. Fairness and Evaluation Principles
 
 1. **Unified Evaluation**: Within each benchmark track, every evaluated model receives the exact same records, splits, label spaces, text representations, noise variants, and OOD sets.
-2. **Zero In-Distribution Leakage**: Split assignments are strictly stratified or grouped by source document/pair ID to prevent any overlap between training, validation, and test sets.
+2. **Zero In-Distribution Leakage**: Split assignments are strictly audited for both record ID leakage and content-fingerprint leakage. Content duplicates are atomically grouped before partitioning so identical normalized texts never cross train/evaluation boundaries.
 3. **Repository Storage Policy**: Large raw archives, clean processed datasets, noisy variants, and OOD sets remain local and are ignored by Git (`data/raw/*`, `data/processed/*`, `data/noisy/*`, `data/ood/*`). Only code, test suites, documentation, and `.gitkeep` placeholders are tracked in the repository.
 
 ---
@@ -70,33 +70,53 @@ MultiFin provides real-world financial headline multi-label classification acros
 - **License**: CC BY-NC 4.0
 - **Configuration Used**: `all_languages_lowlevel`
 - **Filtered Subset**: English (`en`) and Turkish (`tr`)
-- **Split Distribution**:
-  - `train`: 1,747 EN / 1,436 TR (3,183 records)
-  - `validation`: 437 EN / 359 TR (796 records)
-  - `test`: 546 EN / 449 TR (995 records)
-  - **Total**: 2,730 EN / 2,244 TR (4,974 records)
-- **Multi-Label Statistics**:
-  - Raw rows: 1,601 raw annotations had $>1$ raw annotation label before deduplication.
-  - Processed records: 1,591 records (31.99%) have $>1$ distinct canonical label after mapping and deduplicating repeated raw category tags.
-- **Official Splits**: Official train/validation/test partitions are strictly preserved.
+
+#### Tracks: Official vs. Leakage-Free Evaluation
+
+1. **Official Track** (`data/processed/multifin/`):
+   - Preserves official upstream train/validation/test partitions for baseline comparison.
+   - `train`: 1,747 EN / 1,436 TR (3,183 records)
+   - `validation`: 437 EN / 359 TR (796 records)
+   - `test`: 546 EN / 449 TR (995 records)
+   - **Total**: 2,730 EN / 2,244 TR (4,974 records)
+   - **Multi-Label Preservation**: 1,591 records (31.99%) have $>1$ distinct canonical label.
+   - **Documented Content Leakage**: Automated SHA-256 normalized content fingerprint analysis reveals that **120 validation records** and **157 test records** duplicate normalized texts present in the training set. Additionally, **45 content fingerprints** overlap between validation and test. Zero content leakage is **not** claimed for this official track.
+
+2. **Train/Evaluation Leakage-Free Track** (`data/splits/multifin/leakage_free/`):
+   - Formulated specifically as a **train-to-evaluation leakage-free track** that preserves the official training baseline while removing all evaluation records contaminated by training content.
+   - Uses the official training partition as the reference training set (3,183 records).
+   - Excludes validation and test records whose normalized content fingerprint appears in training.
+   - Preserves full traceability to original records and splits (`original_split`, original `id`).
+   - `train`: 3,183 records (reference)
+   - `validation`: 676 records (120 leaking records excluded)
+   - `test`: 838 records (157 leaking records excluded)
+   - **Zero Train-to-Evaluation Content Leakage**: Content overlap between training and validation is strictly **0**, and between training and test is strictly **0**.
+   - **Validation/Test Content Overlap (24 Fingerprints)**: Exactly **24 content fingerprints** still overlap between validation and test. This track is designed specifically to eliminate train-to-evaluation leakage while retaining the official evaluation splits as closely as possible; it does **not** claim complete three-way content disjointness across all three splits. (Any complete three-way repartitioning would require altering the official training baseline and requires approval from the Evaluation/configuration owner).
 
 ### 3.3 MN-DS (Hierarchical News Benchmark)
 
 MN-DS provides broad-coverage, fine-grained hierarchical English news classification.
 
-- **Source**: Zenodo (English General News)
+- **Source**: Zenodo record 7394851 (`MN-DS-news-classification.csv`)
 - **License**: CC BY 4.0
 - **Dataset Composition**: 10,917 raw annotation rows merged into 10,491 unique article records.
-- **Text Representation**: Concatenation of headline and body (`preprocess_record_text(f"{title}\n\n{content}")`).
+- **Text Representation**:
+  - Headline and body are combined according to standard sentence punctuation and spacing:
+    - If headline ends in punctuation (`.`, `!`, `?`): `f"{title} {content}"`.
+    - Otherwise: `f"{title}. {content}"`.
+    - If only headline or only body is present, that non-empty string is used directly.
+  - The combined text is then normalized via `preprocess_record_text()` (whitespace collapsed, line-breaks normalized).
 - **Label Hierarchy**: 109 fine-grained level-2 categories mapped into 17 level-1 root categories.
 - **Multi-Label Statistics**: 392 articles (3.74%) have $>1$ fine-grained label; 137 articles span multiple root categories.
-- **Grouping and Stratification**:
-  - Articles are grouped by unique article ID *before* splitting to ensure **zero article leakage**.
-  - Partitioned using iterative multi-label stratification (`seed=42`) into exact 70/15/15 target capacities.
-  - `train`: 7,344 records (covers 109/109 categories)
-  - `validation`: 1,574 records (covers 109/109 categories)
-  - `test`: 1,573 records (covers 109/109 categories)
-  - **Total**: 10,491 unique articles
+- **Content-Grouped Stratification**:
+  - Articles sharing the same normalized content fingerprint (SHA-256) are grouped as an atomic splitting unit *before* partitioning (`grouped_multilabel_stratified_split`, `seed=42`).
+  - Completely prevents duplicate content with different source IDs from crossing split boundaries.
+  - Preserves all 10,491 source records and maintains 100% (109/109) category coverage across all three splits:
+    - `train`: 7,344 records (covers 109/109 categories)
+    - `validation`: 1,574 records (covers 109/109 categories)
+    - `test`: 1,573 records (covers 109/109 categories)
+    - **Total**: 10,491 unique articles
+  - **Zero ID Leakage and Zero Content Leakage**: Both ID overlap and content-fingerprint overlap across splits are strictly **0**.
 
 ---
 
