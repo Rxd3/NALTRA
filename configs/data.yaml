@@ -5,6 +5,21 @@ project_languages:
 text_column: text
 labels_column: labels
 random_seed: 42
+# Immutable upstream versions used by preparation; update deliberately for a new release.
+sources:
+  sib200:
+    dataset_id: Davlan/sib200
+    revision: 38977a667f6fc264d5c26ec57a01e16db040b358
+  multifin:
+    dataset_id: awinml/MultiFin
+    revision: d44a842791acb83a104440a5662b787537ff980b
+  mn_ds:
+    url: https://zenodo.org/records/7394851/files/MN-DS-news-classification.csv
+    md5: cffbf48aeb7de4af2d4c615a0cdb4667
+  massive:
+    url: https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.1.tar.gz
+    en_sha256: c70f75c6a543a26e249ec383df67733ad9b1066f6c0406c2e04a3f03356e407e
+    tr_sha256: 7823b94a69fd1f249e06b3535e33dcf113ad0bb9493439bc2c9131552ac0ef29
 split_ratios:
   train: 0.70
   validation: 0.15

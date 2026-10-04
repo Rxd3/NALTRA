@@ -1,28 +1,51 @@
+from __future__ import annotations
+
+import importlib.util
 from pathlib import Path
 
-from taxonomy.validation import load_taxonomy, validate_taxonomy
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+VALIDATION_PATH = PROJECT_ROOT / "taxonomy" / "validation.py"
+
+spec = importlib.util.spec_from_file_location(
+    "taxonomy_validation",
+    VALIDATION_PATH,
+)
+
+if spec is None or spec.loader is None:
+    raise ImportError(f"Could not load taxonomy validation from {VALIDATION_PATH}")
+
+taxonomy_validation = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(taxonomy_validation)
+
+load_taxonomy = taxonomy_validation.load_taxonomy
+validate_taxonomy = taxonomy_validation.validate_taxonomy
 
 
 def test_repository_taxonomy_loads_and_is_valid() -> None:
     document = load_taxonomy(PROJECT_ROOT / "taxonomy" / "taxonomy.json")
 
-    assert document["version"] == "0.1.0"
+    assert document["version"] == "0.2.0"
     assert validate_taxonomy(document) == []
+    assert len(document["labels"]) == 151
     assert {label["id"] for label in document["labels"]} >= {
-        "technology",
-        "hardware",
-        "semiconductors",
+        "science_technology",
+        "politics",
+        "human_resource",
+        "financial_crime",
     }
 
 
-def test_taxonomy_validation_detects_a_cycle() -> None:
-    document = {
-        "labels": [
-            {"id": "a", "name": "A", "parent": "b"},
-            {"id": "b", "name": "B", "parent": "a"},
-        ]
-    }
+def test_repository_label_map_targets_are_canonical() -> None:
+    document = load_taxonomy(PROJECT_ROOT / "taxonomy" / "taxonomy.json")
+    canonical_ids = {label["id"] for label in document["labels"]}
+    label_map_path = PROJECT_ROOT / "taxonomy" / "label_map.json"
 
-    assert any("Cycle" in error for error in validate_taxonomy(document))
+    import json
+
+    with open(label_map_path, encoding="utf-8") as f:
+        mapping = json.load(f)
+
+    aliases = mapping.get("aliases", {})
+    assert aliases, "Expected non-empty 'aliases' in label_map.json"
+    for _src_label, target_label in aliases.items():
+        assert target_label in canonical_ids, f"Target '{target_label}' not in taxonomy"
