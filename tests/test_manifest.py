@@ -6,12 +6,15 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from naltra.data.loader import save_jsonl
 from naltra.data.manifest import (
     compute_file_sha256,
     create_manifest,
     get_environment_metadata,
     get_taxonomy_checksums,
+    validate_manifest,
 )
 
 
@@ -73,7 +76,7 @@ def test_create_manifest_required_fields(tmp_path: Path) -> None:
     ]:
         assert req_key in loaded, f"Missing required manifest field: {req_key}"
 
-    assert loaded["manifest_version"] == "1.0.0"
+    assert loaded["manifest_version"] == "1.1.0"
     assert loaded["benchmark_name"] == "test_benchmark"
     assert loaded["generation_parameters"]["seed"] == 42
     assert "sample.jsonl" in loaded["output_files"]
@@ -103,3 +106,91 @@ def test_create_manifest_determinism_output_files(tmp_path: Path) -> None:
     assert m1["output_files"] == m2["output_files"]
     assert m1["taxonomy"] == m2["taxonomy"]
     assert m1["generation_parameters"] == m2["generation_parameters"]
+
+
+@pytest.fixture
+def release(tmp_path: Path) -> Path:
+    output = tmp_path / "release"
+    source = tmp_path / "source.jsonl"
+    save_jsonl([{"id": "source:1", "text": "original"}], source)
+    save_jsonl([{"id": "output:1", "text": "generated"}], output / "test.jsonl")
+    create_manifest(
+        "test_release", output, {"seed": 42}, {"source": "fixture"}, input_files=[source]
+    )
+    return output
+
+
+def test_validate_manifest_accepts_intact_release(release: Path) -> None:
+    assert (
+        validate_manifest(release, "test_release", ["test.jsonl"])["output_files"]["test.jsonl"][
+            "record_count"
+        ]
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("manifest_version", "0.0.0"),
+        ("benchmark_name", "other_release"),
+        ("created_at_utc", "not a timestamp"),
+        ("taxonomy", {}),
+        ("environment", {}),
+        ("generation_parameters", []),
+        ("source_metadata", {}),
+        ("input_files", {}),
+        ("output_files", {}),
+        ("code", {}),
+    ],
+)
+def test_validate_manifest_rejects_bad_metadata(release: Path, field: str, value: object) -> None:
+    path = release / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest[field] = value
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError):
+        validate_manifest(release, "test_release", ["test.jsonl"])
+
+
+@pytest.mark.parametrize(
+    "field,value", [("sha256", "0" * 64), ("size_bytes", 0), ("record_count", 2)]
+)
+def test_validate_manifest_rejects_stale_output_metadata(
+    release: Path, field: str, value: object
+) -> None:
+    path = release / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["output_files"]["test.jsonl"][field] = value
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="mismatch"):
+        validate_manifest(release, "test_release", ["test.jsonl"])
+
+
+@pytest.mark.parametrize("target", ["output", "source", "extra", "missing", "json"])
+def test_validate_manifest_rejects_changed_release(release: Path, target: str) -> None:
+    if target == "output":
+        save_jsonl([{"id": "changed"}], release / "test.jsonl")
+    elif target == "source":
+        save_jsonl([{"id": "changed"}], release.parent / "source.jsonl")
+    elif target == "extra":
+        save_jsonl([{"id": "unexpected"}], release / "train.jsonl")
+    elif target == "missing":
+        (release / "test.jsonl").unlink()
+    else:
+        (release / "manifest.json").write_text("{invalid", encoding="utf-8")
+    with pytest.raises(ValueError):
+        validate_manifest(release, "test_release", ["test.jsonl"])
+
+
+def test_create_manifest_does_not_hide_invalid_jsonl(tmp_path: Path) -> None:
+    (tmp_path / "bad.jsonl").write_text("not json", encoding="utf-8")
+    with pytest.raises(ValueError):
+        create_manifest("bad", tmp_path, {"seed": 42})
+    assert not (tmp_path / "manifest.json").exists()
+
+
+def test_aggregate_manifest_covers_nested_outputs(tmp_path: Path) -> None:
+    save_jsonl([{"id": "nested"}], tmp_path / "child/test.jsonl")
+    manifest = create_manifest("aggregate", tmp_path, {"seed": 42})
+    assert manifest["output_files"]["child/test.jsonl"]["record_count"] == 1

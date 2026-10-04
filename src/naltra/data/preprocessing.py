@@ -7,6 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from naltra.data.loader import save_jsonl
+from naltra.data.manifest import (
+    REPO_ROOT,
+    compute_file_md5,
+    create_manifest,
+    get_source_config,
+)
 from naltra.pipeline.preprocessing import normalize_text
 
 REQUIRED_RECORD_FIELDS = (
@@ -157,7 +163,11 @@ def process_sib200(
     splits = ["train", "validation", "test"]
 
     print("Loading SIB-200 English and Turkish subsets...")
-    raw_datasets = {lang: load_dataset("Davlan/sib200", cfg) for lang, cfg in configs.items()}
+    source = get_source_config("sib200")
+    raw_datasets = {
+        lang: load_dataset(source["dataset_id"], cfg, revision=source["revision"])
+        for lang, cfg in configs.items()
+    }
 
     processed_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in splits}
 
@@ -196,6 +206,14 @@ def process_sib200(
         half = len(records) // 2
         print(f"Saved {len(records)} records ({half} en, {half} tr) -> {out_path}")
 
+    create_manifest(
+        "clean_sib200",
+        output_dir,
+        generation_parameters={"configs": configs, "splits": splits},
+        source_metadata={**source, "license": "CC BY-SA 4.0"},
+        taxonomy_dir=Path(taxonomy_path).parent,
+        input_files=[label_map_path, REPO_ROOT / "configs/data.yaml"],
+    )
     return processed_by_split
 
 
@@ -214,7 +232,10 @@ def process_multifin(
     splits = ["train", "validation", "test"]
 
     print("Loading MultiFin all_languages_lowlevel dataset...")
-    raw_dataset = load_dataset("awinml/MultiFin", "all_languages_lowlevel")
+    source = get_source_config("multifin")
+    raw_dataset = load_dataset(
+        source["dataset_id"], "all_languages_lowlevel", revision=source["revision"]
+    )
 
     processed_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in splits}
 
@@ -257,6 +278,18 @@ def process_multifin(
         tr_count = sum(1 for r in records if r["language"] == "tr")
         print(f"Saved {len(records)} records ({en_count} en, {tr_count} tr) -> {out_path}")
 
+    create_manifest(
+        "clean_multifin_official",
+        output_dir,
+        generation_parameters={
+            "config": "all_languages_lowlevel",
+            "splits": splits,
+            "languages": target_languages,
+        },
+        source_metadata={**source, "license": "CC BY-NC 4.0"},
+        taxonomy_dir=Path(taxonomy_path).parent,
+        input_files=[label_map_path, REPO_ROOT / "configs/data.yaml"],
+    )
     return processed_by_split
 
 
@@ -265,10 +298,8 @@ def generate_multifin_leakage_free_track(
     output_dir: str | Path = "data/splits/multifin/leakage_free",
     taxonomy_path: str | Path = "taxonomy/taxonomy.json",
 ) -> dict[str, Any]:
-    """Generate a leakage-free MultiFin evaluation track by excluding validation and test records
-
-    whose normalized content fingerprint appears in the official training set.
-    Preserves official training split and full traceability to original records.
+    """Preserve official training and retained test records; remove train contamination
+    from evaluation and test-content overlap from validation before model selection.
     """
     import copy
 
@@ -324,8 +355,10 @@ def generate_multifin_leakage_free_track(
             validate_record(rec, allowed_labels=allowed_labels)
             clean_test.append(rec)
 
-    val_fps = {compute_content_fingerprint(r["text"]) for r in clean_val}
     test_fps = {compute_content_fingerprint(r["text"]) for r in clean_test}
+    val_test_removed = [r for r in clean_val if compute_content_fingerprint(r["text"]) in test_fps]
+    clean_val = [r for r in clean_val if compute_content_fingerprint(r["text"]) not in test_fps]
+    val_fps = {compute_content_fingerprint(r["text"]) for r in clean_val}
     val_test_overlap = val_fps & test_fps
 
     save_jsonl(clean_train, out_dir / "train.jsonl")
@@ -336,14 +369,14 @@ def generate_multifin_leakage_free_track(
         "train_count": len(clean_train),
         "official_val_count": len(official_val),
         "clean_val_count": len(clean_val),
-        "val_removed_count": len(val_removed),
+        "val_removed_count": len(val_removed) + len(val_test_removed),
+        "val_train_removed_count": len(val_removed),
+        "val_test_removed_count": len(val_test_removed),
         "official_test_count": len(official_test),
         "clean_test_count": len(clean_test),
         "test_removed_count": len(test_removed),
         "val_test_overlap_count": len(val_test_overlap),
     }
-
-    from naltra.data.manifest import create_manifest
 
     create_manifest(
         benchmark_name="multifin_leakage_free",
@@ -352,6 +385,8 @@ def generate_multifin_leakage_free_track(
             "official_multifin_dir": str(in_dir),
             "removed_val_leaks": len(val_removed),
             "removed_test_leaks": len(test_removed),
+            "removed_val_test_overlap": len(val_test_removed),
+            "overlap_policy": "preserve_test_remove_from_validation",
             "val_test_overlap_count": len(val_test_overlap),
         },
         source_metadata={
@@ -359,13 +394,15 @@ def generate_multifin_leakage_free_track(
             "official_val_count": len(official_val),
             "official_test_count": len(official_test),
         },
+        taxonomy_dir=Path(taxonomy_path).parent,
+        input_files=[train_file, val_file, test_file],
     )
 
     print(
         f"MultiFin Leakage-Free Track Generated -> {out_dir}:\n"
         f"  Train: {stats['train_count']} (reference)\n"
         f"  Validation: {stats['clean_val_count']} "
-        f"(removed {stats['val_removed_count']} leaking from train)\n"
+        f"(removed {len(val_removed)} train leaks, {len(val_test_removed)} test overlaps)\n"
         f"  Test: {stats['clean_test_count']} "
         f"(removed {stats['test_removed_count']} leaking from train)\n"
         f"  Val/Test Overlap Fingerprints: {stats['val_test_overlap_count']}"
@@ -395,6 +432,9 @@ def process_mn_ds(
     csv_file = Path(csv_path)
     if not csv_file.exists():
         raise FileNotFoundError(f"MN-DS CSV not found at: {csv_file}")
+    source = get_source_config("mn_ds")
+    if compute_file_md5(csv_file) != source["md5"]:
+        raise ValueError("MN-DS source checksum mismatch; download the verified Zenodo file.")
 
     print(f"Loading MN-DS raw data from {csv_file}...")
     df = pd.read_csv(csv_file)
@@ -489,4 +529,18 @@ def process_mn_ds(
         save_jsonl(split_data, out_path)
         print(f"Saved {len(split_data)} records -> {out_path}")
 
+    create_manifest(
+        "clean_mn_ds",
+        out_dir,
+        generation_parameters={
+            "seed": seed,
+            "train_ratio": train_ratio,
+            "validation_ratio": validation_ratio,
+            "test_ratio": test_ratio,
+            "split_method": "content_grouped_multilabel_stratification",
+        },
+        source_metadata={**source, "license": "CC BY 4.0"},
+        taxonomy_dir=Path(taxonomy_path).parent,
+        input_files=[csv_file, label_map_path],
+    )
     return splits

@@ -489,6 +489,8 @@ def test_generate_multifin_leakage_free_track(tmp_path: Path) -> None:
         },  # CLEAN
     ]
 
+    # A retained test text must also be excluded from validation before model selection.
+    val_data.append({**val_data[1], "id": "mf:val:3", "text": test_data[1]["text"]})
     save_jsonl(train_data, mock_in_dir / "train.jsonl")
     save_jsonl(val_data, mock_in_dir / "validation.jsonl")
     save_jsonl(test_data, mock_in_dir / "test.jsonl")
@@ -501,7 +503,10 @@ def test_generate_multifin_leakage_free_track(tmp_path: Path) -> None:
 
     assert stats["train_count"] == 2
     assert stats["clean_val_count"] == 1
-    assert stats["val_removed_count"] == 1
+    assert stats["val_removed_count"] == 2
+    assert stats["val_train_removed_count"] == 1
+    assert stats["val_test_removed_count"] == 1
+    assert stats["val_test_overlap_count"] == 0
     assert stats["clean_test_count"] == 1
     assert stats["test_removed_count"] == 1
 

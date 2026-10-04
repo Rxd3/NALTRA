@@ -7,7 +7,7 @@ NALTRA maintains reproducible, cross-lingual English (`en`), Turkish (`tr`), and
 ## 1. Fairness and Evaluation Principles
 
 1. **Unified Evaluation**: Within each benchmark track, every evaluated model receives the exact same records, splits, label spaces, text representations, noise variants, and OOD sets.
-2. **Zero In-Distribution Leakage**: Split assignments are strictly audited for both record ID leakage and content-fingerprint leakage. Content duplicates are atomically grouped before partitioning so identical normalized texts never cross train/evaluation boundaries.
+2. **Leakage Policy**: Evaluation tracks are audited for record ID and normalized-content overlap across all splits. MN-DS content groups stay in one partition; MultiFin evaluation is filtered without changing official training. The official MultiFin track and its noisy copies retain upstream overlap for reference comparisons and must not be used to claim independent final evaluation.
 3. **Repository Storage Policy**: Large raw archives, clean processed datasets, noisy variants, and OOD sets remain local and are ignored by Git (`data/raw/*`, `data/processed/*`, `data/noisy/*`, `data/ood/*`). Only code, test suites, documentation, and `.gitkeep` placeholders are tracked in the repository.
 
 ---
@@ -82,16 +82,17 @@ MultiFin provides real-world financial headline multi-label classification acros
    - **Multi-Label Preservation**: 1,591 records (31.99%) have $>1$ distinct canonical label.
    - **Documented Content Leakage**: Automated SHA-256 normalized content fingerprint analysis reveals that **120 validation records** and **157 test records** duplicate normalized texts present in the training set. Additionally, **45 content fingerprints** overlap between validation and test. Zero content leakage is **not** claimed for this official track.
 
-2. **Train/Evaluation Leakage-Free Track** (`data/splits/multifin/leakage_free/`):
-   - Formulated specifically as a **train-to-evaluation leakage-free track** that preserves the official training baseline while removing all evaluation records contaminated by training content.
+2. **Leakage-Free Evaluation Track** (`data/splits/multifin/leakage_free/`):
+   - Preserves the official training baseline while removing evaluation records contaminated by training content.
    - Uses the official training partition as the reference training set (3,183 records).
    - Excludes validation and test records whose normalized content fingerprint appears in training.
+   - Preserves the retained test set and excludes validation records whose normalized content fingerprint appears in that test set. This policy is applied before tuning or model selection.
    - Preserves full traceability to original records and splits (`original_split`, original `id`).
    - `train`: 3,183 records (reference)
-   - `validation`: 676 records (120 leaking records excluded)
+   - `validation`: 651 records (120 training leaks and 25 records covering 24 test-overlap fingerprints excluded)
    - `test`: 838 records (157 leaking records excluded)
-   - **Zero Train-to-Evaluation Content Leakage**: Content overlap between training and validation is strictly **0**, and between training and test is strictly **0**.
-   - **Validation/Test Content Overlap (24 Fingerprints)**: Exactly **24 content fingerprints** still overlap between validation and test. This track is designed specifically to eliminate train-to-evaluation leakage while retaining the official evaluation splits as closely as possible; it does **not** claim complete three-way content disjointness across all three splits. (Any complete three-way repartitioning would require altering the official training baseline and requires approval from the Evaluation/configuration owner).
+   - **Three-Way Content Disjointness**: Train/validation, train/test and validation/test normalized-content overlaps are all **0**. Distinct source records with repeated content inside one split are preserved.
+   - Abdullah and the technical lead should review and use this documented policy consistently before reporting benchmark results. Existing models tuned on the earlier overlapping validation set need fresh selection on this track.
 
 ### 3.3 MN-DS (Hierarchical News Benchmark)
 
@@ -216,6 +217,7 @@ Evaluates cross-domain shift using task-oriented voice-assistant commands.
 - **License**: CC BY 4.0
 - **Locales**: `en-US` and `tr-TR`
 - **Matched Pairing**: Every English utterance is matched with its exact parallel Turkish translation sharing the same source `id` (`pair_id: massive:<id>`).
+- **Validation/Test Independence**: Sampling preserves the seeded test selection and excludes dev pairs sharing normalized English or Turkish text with that test selection before selecting validation pairs. Pair alignment and requested counts are preserved.
 - **Explicit Scenario Allowlist**: Excludes all topics with ambiguous overlap with news/article topics (e.g., weather, news, music, games, QA, transportation, recommendations). Only unambiguous smart-home and assistant commands are allowed:
   - `alarm` (set, query, remove)
   - `datetime` (query, convert)
@@ -254,3 +256,13 @@ python scripts/prepare_data.py --dataset ood
 # 5. Run full dataset-wide audit and verification
 python scripts/validate_datasets.py
 ```
+
+## 8. Release Provenance and Verification
+
+`configs/data.yaml` locks the immutable revisions of [SIB-200](https://huggingface.co/datasets/Davlan/sib200) and [MultiFin](https://huggingface.co/datasets/awinml/MultiFin), the official [MN-DS checksum](https://zenodo.org/records/7394851), and SHA-256 hashes of the official MASSIVE v1.1 English/Turkish exports. Preparation verifies local MN-DS and MASSIVE sources against these locks.
+
+Every clean dataset and derived benchmark writes a `manifest.json` (schema `1.1.0`). It records generation parameters and seeds, UTC generation time, upstream metadata, input-file SHA-256 hashes, output hashes/sizes/counts, taxonomy and label-map hashes, package versions, the Git revision, working-tree status, and hashes of the generation code/configuration. The aggregate noisy manifest includes all nested outputs.
+
+The audit reads each manifest and verifies its complete inventory and recorded values against the current files. It also checks schemas, duplicate IDs, physical split names, aligned pairs, contamination and derived-record source fidelity. Missing, malformed, stale or incomplete manifests fail the audit. Regenerate old `1.0.0` manifests using the preparation command; do not edit hashes to make an audit pass.
+
+For final benchmark runs, review and commit the generation code, regenerate and audit the release from that revision, then preserve the complete local `data/` release (including sources and manifests) with the experiment results. Changing source locks, generation code, taxonomy or input files requires regeneration. An audit pass verifies these structural rules; it does not assess label quality or semantic near-duplicates.

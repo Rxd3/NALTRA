@@ -436,6 +436,7 @@ def generate_noisy_benchmarks(
                 "source_dataset": dataset_name,
                 "processed_base_dir": str(proc_base),
             },
+            input_files=[proc_base / dataset_name / f"{split}.jsonl" for split in splits],
         )
 
     # Top-level manifest for the entire noisy benchmark configuration
@@ -452,6 +453,9 @@ def generate_noisy_benchmarks(
         source_metadata={
             "processed_base_dir": str(proc_base),
         },
+        input_files=[
+            proc_base / dataset / f"{split}.jsonl" for dataset in datasets for split in splits
+        ],
     )
 
     return results

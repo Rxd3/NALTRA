@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Any
 
 # Ensure src/ is on sys.path
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -12,10 +13,17 @@ if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
 if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
+from naltra.data.code_switching import (  # noqa: E402
+    create_code_switched_record,
+    pair_aligned_records,
+)
 from naltra.data.loader import load_jsonl  # noqa: E402
+from naltra.data.manifest import get_source_config, validate_manifest  # noqa: E402
+from naltra.data.noise import create_noisy_record  # noqa: E402
 from naltra.data.ood import (  # noqa: E402
     MASSIVE_ALLOWED_SCENARIOS,
     validate_ood_record,
@@ -25,6 +33,129 @@ from naltra.data.preprocessing import (  # noqa: E402
     load_canonical_label_ids,
     validate_record,
 )
+
+
+def load_audit_records(path: Path) -> list[dict[str, Any]]:
+    """Check schema, unique IDs and the physical partition before indexing records."""
+    records = load_jsonl(path)
+    expected_split = path.stem.split("_")[0]
+    seen = set()
+    labels = load_canonical_label_ids(REPO_ROOT / "taxonomy/taxonomy.json")
+    for record in records:
+        if path.stem.endswith("_ood"):
+            validate_ood_record(record)
+        else:
+            validate_record(record, allowed_labels=labels)
+        if record["split"] != expected_split:
+            raise ValueError(f"{path}: {record['id']} split mismatch; expected {expected_split}.")
+        if record["id"] in seen:
+            raise ValueError(f"{path}: duplicate record ID {record['id']}.")
+        seen.add(record["id"])
+    return records
+
+
+def check_manifest(directory: Path, name: str, files: list[str]) -> dict[str, Any]:
+    manifest = validate_manifest(directory, name, files, REPO_ROOT / "taxonomy")
+    expected_parameters: dict[str, Any] = {}
+    if name.startswith("noisy_"):
+        expected_parameters = {
+            "strategy": "combined",
+            "severity": "medium",
+            "base_seed": 42,
+            "splits": ["validation", "test"],
+        }
+    elif name == "code_switch_sib200":
+        expected_parameters = {
+            "strategy": "chunk_mix",
+            "strength": "balanced",
+            "base_seed": 42,
+            "splits": ["validation", "test"],
+        }
+    elif name == "clean_mn_ds":
+        expected_parameters = {
+            "seed": 42,
+            "train_ratio": 0.7,
+            "validation_ratio": 0.15,
+            "test_ratio": 0.15,
+            "split_method": "content_grouped_multilabel_stratification",
+        }
+    elif name.startswith("near_ood_sib200_"):
+        expected_parameters = {"heldout_topic": name.removeprefix("near_ood_sib200_")}
+    elif name == "far_ood_massive":
+        expected_parameters = {
+            "seed": 42,
+            "val_sample_size": 250,
+            "test_sample_size": 500,
+            "allowed_scenarios": sorted(MASSIVE_ALLOWED_SCENARIOS),
+            "overlap_policy": "preserve_test_filter_validation_content",
+        }
+    for key, value in expected_parameters.items():
+        if manifest["generation_parameters"].get(key) != value:
+            raise ValueError(
+                f"{name}: generation parameter {key} differs from this benchmark specification."
+            )
+    if name.startswith("clean_") or name == "far_ood_massive":
+        source_name = {
+            "clean_sib200": "sib200",
+            "clean_multifin_official": "multifin",
+            "clean_mn_ds": "mn_ds",
+            "far_ood_massive": "massive",
+        }[name]
+        for key, value in get_source_config(source_name).items():
+            if manifest["source_metadata"].get(key) != value:
+                raise ValueError(f"{name}: source {key} differs from the versioned source lock.")
+    # Require the complete source inventory; a manifest cannot omit a changed input.
+    if name in ("clean_sib200", "clean_multifin_official"):
+        inputs = [REPO_ROOT / "taxonomy/label_map.json", REPO_ROOT / "configs/data.yaml"]
+    elif name == "clean_mn_ds":
+        inputs = [
+            REPO_ROOT / "data/raw/mn_ds/MN-DS-news-classification.csv",
+            REPO_ROOT / "taxonomy/label_map.json",
+        ]
+    elif name == "far_ood_massive":
+        inputs = [
+            REPO_ROOT / "data/raw/massive" / f"{locale}.jsonl" for locale in ("en-US", "tr-TR")
+        ]
+    else:
+        if name == "noisy_robustness_benchmark":
+            datasets = ("sib200", "multifin", "mn_ds")
+        elif name == "multifin_leakage_free":
+            datasets = ("multifin",)
+        elif name.startswith("noisy_"):
+            datasets = (name.removeprefix("noisy_"),)
+        else:
+            datasets = ("sib200",)
+        splits = (
+            ("train", "validation", "test")
+            if name.startswith("near_ood_") or name == "multifin_leakage_free"
+            else ("validation", "test")
+        )
+        inputs = [
+            REPO_ROOT / "data/processed" / dataset / f"{split}.jsonl"
+            for dataset in datasets
+            for split in splits
+        ]
+    actual_inputs = {(directory / p).resolve() for p in manifest["input_files"]}
+    if actual_inputs != {p.resolve() for p in inputs}:
+        raise ValueError(f"{name}: manifest source inventory is incomplete or unexpected.")
+    print(f"  [OK] {name} manifest hashes, counts, taxonomy, sources and code verified")
+    return manifest
+
+
+def check_disjoint_partitions(partitions: dict[str, list[dict[str, Any]]]) -> None:
+    """Reject reused IDs, aligned pairs or normalized content across partitions."""
+    seen: dict[tuple[str, str], str] = {}
+    for split, records in partitions.items():
+        for record in records:
+            keys = [("id", record["id"]), ("content", compute_content_fingerprint(record["text"]))]
+            if record.get("pair_id"):
+                keys.append(("pair", record["pair_id"]))
+            for key in keys:
+                if key in seen and seen[key] != split:
+                    raise ValueError(
+                        f"{key[0]} contamination between {seen[key]} and {split}: {key[1]}"
+                    )
+                seen[key] = split
 
 
 def print_section(title: str) -> None:
@@ -39,6 +170,7 @@ def print_section(title: str) -> None:
 def validate_sib200(canonical_labels: set[str]) -> bool:
     print_section("1. SIB-200 Cross-Language Topic Benchmark (Clean)")
     sib_dir = REPO_ROOT / "data" / "processed" / "sib200"
+    check_manifest(sib_dir, "clean_sib200", [f"{s}.jsonl" for s in ("train", "validation", "test")])
 
     expected_counts = {"train": 1402, "validation": 198, "test": 408}
     expected_en = {"train": 701, "validation": 99, "test": 204}
@@ -61,7 +193,7 @@ def validate_sib200(canonical_labels: set[str]) -> bool:
             print(f"[FAIL] Missing file: {file_path}")
             return False
 
-        records = load_jsonl(file_path)
+        records = load_audit_records(file_path)
         split_ids[split_name] = {r["id"] for r in records}
         split_fingerprints[split_name] = {compute_content_fingerprint(r["text"]) for r in records}
         en_count = sum(1 for r in records if r["language"] == "en")
@@ -182,6 +314,9 @@ def validate_sib200(canonical_labels: set[str]) -> bool:
 def validate_multifin_official(canonical_labels: set[str]) -> bool:
     print_section("2. MultiFin Multilingual Multi-Label Benchmark (Official Track)")
     mf_dir = REPO_ROOT / "data" / "processed" / "multifin"
+    check_manifest(
+        mf_dir, "clean_multifin_official", [f"{s}.jsonl" for s in ("train", "validation", "test")]
+    )
 
     expected_counts = {"train": 3183, "validation": 796, "test": 995}
     expected_en = {"train": 1747, "validation": 437, "test": 546}
@@ -200,7 +335,7 @@ def validate_multifin_official(canonical_labels: set[str]) -> bool:
             print(f"[FAIL] Missing file: {file_path}")
             return False
 
-        records = load_jsonl(file_path)
+        records = load_audit_records(file_path)
         split_records[split_name] = records
         split_ids[split_name] = {r["id"] for r in records}
         split_fingerprints[split_name] = {compute_content_fingerprint(r["text"]) for r in records}
@@ -286,6 +421,8 @@ def validate_multifin_official(canonical_labels: set[str]) -> bool:
     val_fps = split_fingerprints["validation"]
     test_fps = split_fingerprints["test"]
     vt_overlap = len(val_fps & test_fps)
+    if (val_leaks, test_leaks, vt_overlap) != (120, 157, 45):
+        raise ValueError("Official MultiFin overlap differs from the pinned reference dataset.")
 
     print(
         f"  [INFO] Documented official MultiFin content-fingerprint leakage:\n"
@@ -312,15 +449,16 @@ def validate_multifin_leakage_free(canonical_labels: set[str]) -> bool:
             print(f"[FAIL] Missing file in leakage-free track: {fpath}")
             return False
 
-    manifest_path = lf_dir / "manifest.json"
-    if not manifest_path.exists():
-        print(f"[FAIL] Missing manifest in leakage-free track: {manifest_path}")
-        return False
-    print("  [OK] Manifest present and verified")
+    manifest = check_manifest(lf_dir, "multifin_leakage_free", expected_files)
+    if (
+        manifest["generation_parameters"].get("overlap_policy")
+        != "preserve_test_remove_from_validation"
+    ):
+        raise ValueError("MultiFin evaluation manifest has an obsolete overlap policy.")
 
-    train_records = load_jsonl(lf_dir / "train.jsonl")
-    val_records = load_jsonl(lf_dir / "validation.jsonl")
-    test_records = load_jsonl(lf_dir / "test.jsonl")
+    train_records = load_audit_records(lf_dir / "train.jsonl")
+    val_records = load_audit_records(lf_dir / "validation.jsonl")
+    test_records = load_audit_records(lf_dir / "test.jsonl")
 
     passed = True
 
@@ -364,9 +502,50 @@ def validate_multifin_leakage_free(canonical_labels: set[str]) -> bool:
     else:
         print("  [OK] Train -> Test content leakage: 0 (completely eliminated)")
 
-    expected_train = 3183
-    expected_val = 676
-    expected_test = 838
+    official_dir = REPO_ROOT / "data/processed/multifin"
+    official = {
+        s: load_audit_records(official_dir / f"{s}.jsonl") for s in ("train", "validation", "test")
+    }
+    expected_test_records = [
+        r for r in official["test"] if compute_content_fingerprint(r["text"]) not in train_fps
+    ]
+    expected_test_fps = {compute_content_fingerprint(r["text"]) for r in expected_test_records}
+    expected_val_records = [
+        r
+        for r in official["validation"]
+        if compute_content_fingerprint(r["text"]) not in train_fps | expected_test_fps
+    ]
+    expected = {
+        "train": official["train"],
+        "validation": expected_val_records,
+        "test": expected_test_records,
+    }
+    for split, records in zip(
+        ("train", "validation", "test"), (train_records, val_records, test_records), strict=True
+    ):
+        expected_by_id = {r["id"]: {**r, "original_split": split} for r in expected[split]}
+        if {r["id"]: r for r in records} != expected_by_id:
+            raise ValueError(
+                f"MultiFin {split} does not match the policy-filtered official records."
+            )
+    check_disjoint_partitions(
+        {"train": train_records, "validation": val_records, "test": test_records}
+    )
+    expected_train = len(expected["train"])
+    expected_val = len(expected["validation"])
+    expected_test = len(expected["test"])
+    params = manifest["generation_parameters"]
+    val_train_leaks = sum(
+        compute_content_fingerprint(r["text"]) in train_fps for r in official["validation"]
+    )
+    expected_stats = {
+        "removed_val_leaks": val_train_leaks,
+        "removed_val_test_overlap": len(official["validation"]) - val_train_leaks - expected_val,
+        "removed_test_leaks": len(official["test"]) - expected_test,
+        "val_test_overlap_count": 0,
+    }
+    if any(params.get(key) != value for key, value in expected_stats.items()):
+        raise ValueError("MultiFin manifest exclusion statistics do not match the source records.")
 
     if len(train_records) != expected_train:
         print(f"[FAIL] Train count mismatch: got {len(train_records)}, expected {expected_train}")
@@ -378,7 +557,7 @@ def validate_multifin_leakage_free(canonical_labels: set[str]) -> bool:
         print(f"[FAIL] Validation count mismatch: got {len(val_records)}, expected {expected_val}")
         passed = False
     else:
-        print(f"  [OK] Validation count: {len(val_records)} (120 leaks removed from 796)")
+        print(f"  [OK] Validation count: {len(val_records)} (train and test contamination removed)")
 
     if len(test_records) != expected_test:
         print(f"[FAIL] Test count mismatch: got {len(test_records)}, expected {expected_test}")
@@ -389,15 +568,7 @@ def validate_multifin_leakage_free(canonical_labels: set[str]) -> bool:
     vt_overlap = len(val_fps & test_fps)
     print(f"  [INFO] Validation/Test content overlap: {vt_overlap} content fingerprints")
 
-    missing_trace = 0
-    for r in val_records + test_records:
-        if "original_id" not in r and "id" not in r:
-            missing_trace += 1
-    if missing_trace > 0:
-        print(f"[FAIL] Traceability missing on {missing_trace} records")
-        passed = False
-    else:
-        print("  [OK] Full traceability preserved to original records and splits")
+    print("  [OK] Full traceability verified against original records and splits")
 
     return passed
 
@@ -408,6 +579,7 @@ def validate_multifin_leakage_free(canonical_labels: set[str]) -> bool:
 def validate_mn_ds(canonical_labels: set[str]) -> bool:
     print_section("4. MN-DS Hierarchical News Benchmark (Clean)")
     mnds_dir = REPO_ROOT / "data" / "processed" / "mn_ds"
+    check_manifest(mnds_dir, "clean_mn_ds", [f"{s}.jsonl" for s in ("train", "validation", "test")])
 
     expected_counts = {"train": 7344, "validation": 1574, "test": 1573}
     all_ids = set()
@@ -423,7 +595,7 @@ def validate_mn_ds(canonical_labels: set[str]) -> bool:
             print(f"[FAIL] Missing file: {file_path}")
             return False
 
-        records = load_jsonl(file_path)
+        records = load_audit_records(file_path)
         split_ids[split_name] = {r["id"] for r in records}
         split_fingerprints[split_name] = {compute_content_fingerprint(r["text"]) for r in records}
         split_labels[split_name] = {lbl for r in records for lbl in r.get("labels", [])}
@@ -528,11 +700,11 @@ def validate_noisy(canonical_labels: set[str]) -> bool:
     print_section("5. Noisy Robustness Benchmark")
     noisy_base = REPO_ROOT / "data" / "noisy" / "combined" / "medium"
 
-    manifest_path = noisy_base / "manifest.json"
-    if not manifest_path.exists() and not (noisy_base / "sib200" / "manifest.json").exists():
-        print(f"[FAIL] Missing manifest in noisy benchmark: {manifest_path}")
-        return False
-    print("  [OK] Manifest present and verified")
+    check_manifest(
+        noisy_base,
+        "noisy_robustness_benchmark",
+        [f"{d}/{s}.jsonl" for d in ("sib200", "multifin", "mn_ds") for s in ("validation", "test")],
+    )
 
     configs = {
         "sib200": {
@@ -553,6 +725,7 @@ def validate_noisy(canonical_labels: set[str]) -> bool:
 
     for ds_name, cfg in configs.items():
         ds_dir = noisy_base / ds_name
+        manifest = check_manifest(ds_dir, f"noisy_{ds_name}", ["validation.jsonl", "test.jsonl"])
 
         train_file = ds_dir / "train.jsonl"
         if train_file.exists():
@@ -562,7 +735,7 @@ def validate_noisy(canonical_labels: set[str]) -> bool:
         clean_train_ids = set()
         clean_train_path = cfg["clean_dir"] / "train.jsonl"
         if clean_train_path.exists():
-            clean_train_ids = {r["id"] for r in load_jsonl(clean_train_path)}
+            clean_train_ids = {r["id"] for r in load_audit_records(clean_train_path)}
 
         for split_name, expected_count in cfg["splits"].items():
             noisy_file = ds_dir / f"{split_name}.jsonl"
@@ -575,8 +748,13 @@ def validate_noisy(canonical_labels: set[str]) -> bool:
                 print(f"[FAIL] Missing clean source file: {clean_file}")
                 return False
 
-            clean_records = {r["id"]: r for r in load_jsonl(clean_file)}
-            noisy_records = load_jsonl(noisy_file)
+            clean_records = {r["id"]: r for r in load_audit_records(clean_file)}
+            noisy_records = load_audit_records(noisy_file)
+            originals = [r.get("original_id") for r in noisy_records]
+            if len(originals) != len(set(originals)) or set(originals) != set(clean_records):
+                raise ValueError(
+                    f"{ds_name} noisy {split_name} must cover each clean record exactly once."
+                )
 
             if len(noisy_records) != expected_count:
                 print(
@@ -606,6 +784,17 @@ def validate_noisy(canonical_labels: set[str]) -> bool:
                     passed = False
 
                 clean_r = clean_records[orig_id]
+                params = manifest["generation_parameters"]
+                expected = create_noisy_record(
+                    clean_r,
+                    strategy=params["strategy"],
+                    severity=params["severity"],
+                    base_seed=params["base_seed"],
+                )
+                if nr != expected:
+                    raise ValueError(
+                        f"Noisy record {nr['id']} does not reproduce from its source and seed."
+                    )
 
                 for field in ["labels", "language", "source", "license", "split"]:
                     if nr.get(field) != clean_r.get(field):
@@ -640,11 +829,7 @@ def validate_code_switch(canonical_labels: set[str]) -> bool:
     print_section("6. Synthetic EN/TR Code-Switch Benchmark")
     cs_dir = REPO_ROOT / "data" / "processed" / "code_switch" / "chunk_mix" / "balanced"
 
-    manifest_path = cs_dir / "manifest.json"
-    if not manifest_path.exists():
-        print(f"[FAIL] Missing manifest in code-switch benchmark: {manifest_path}")
-        return False
-    print("  [OK] Manifest present and verified")
+    manifest = check_manifest(cs_dir, "code_switch_sib200", ["validation.jsonl", "test.jsonl"])
 
     train_file = cs_dir / "train.jsonl"
     if train_file.exists():
@@ -668,9 +853,25 @@ def validate_code_switch(canonical_labels: set[str]) -> bool:
             print(f"[FAIL] Missing clean source SIB-200 file: {sib_file}")
             return False
 
-        sib_records = load_jsonl(sib_file)
+        sib_records = load_audit_records(sib_file)
         sib_by_id = {r["id"]: r for r in sib_records}
-        cs_records = load_jsonl(cs_file)
+        cs_records = load_audit_records(cs_file)
+        expected_pairs = pair_aligned_records(sib_records)
+        params = manifest["generation_parameters"]
+        expected_records = [
+            create_code_switched_record(
+                en,
+                tr,
+                strategy=params["strategy"],
+                strength=params["strength"],
+                base_seed=params["base_seed"],
+            )
+            for en, tr in expected_pairs
+        ]
+        if {r["id"]: r for r in cs_records} != {r["id"]: r for r in expected_records}:
+            raise ValueError(
+                f"Code-switch {split_name} does not reproduce from all aligned source pairs."
+            )
 
         if len(cs_records) != expected_count:
             print(
@@ -785,10 +986,7 @@ def validate_near_ood(canonical_labels: set[str]) -> bool:
             print(f"[FAIL] Missing fold directory: {fold_dir}")
             return False
 
-        manifest_path = fold_dir / "manifest.json"
-        if not manifest_path.exists():
-            print(f"[FAIL] Missing manifest in fold {topic}: {manifest_path}")
-            return False
+        check_manifest(fold_dir, f"near_ood_sib200_{topic}", expected_files)
 
         fold_files = {}
         for fname in expected_files:
@@ -796,13 +994,59 @@ def validate_near_ood(canonical_labels: set[str]) -> bool:
             if not fpath.exists():
                 print(f"[FAIL] Missing file in fold {topic}: {fpath}")
                 return False
-            fold_files[fname] = load_jsonl(fpath)
+            fold_files[fname] = load_audit_records(fpath)
 
         train_id_records = fold_files["train_id.jsonl"]
         val_id_records = fold_files["validation_id.jsonl"]
         val_ood_records = fold_files["validation_ood.jsonl"]
         test_id_records = fold_files["test_id.jsonl"]
         test_ood_records = fold_files["test_ood.jsonl"]
+        partitions = {
+            "train": train_id_records,
+            "validation": val_id_records + val_ood_records,
+            "test": test_id_records + test_ood_records,
+        }
+        check_disjoint_partitions(partitions)
+        for split, records in partitions.items():
+            pair_aligned_records(records)
+            source_records = load_audit_records(
+                REPO_ROOT / "data/processed/sib200" / f"{split}.jsonl"
+            )
+            id_expected = {r["id"]: r for r in source_records if topic not in r["labels"]}
+            id_actual = {r["id"]: r for r in records if not r.get("is_ood")}
+            if id_actual != id_expected:
+                raise ValueError(
+                    f"Fold {topic} {split}: ID records differ from the six-topic clean source."
+                )
+            ood_expected = {
+                (r["pair_id"], r["language"]): r
+                for r in source_records
+                if topic in r["labels"] and split != "train"
+            }
+            ood_actual = {(r["pair_id"], r["language"]): r for r in records if r.get("is_ood")}
+            if set(ood_actual) != set(ood_expected):
+                raise ValueError(f"Fold {topic} {split}: held-out source coverage mismatch.")
+            for key, r in ood_actual.items():
+                orig = ood_expected[key]
+                if (
+                    any(
+                        r.get(field) != orig.get(field)
+                        for field in (
+                            "text",
+                            "language",
+                            "source",
+                            "license",
+                            "split",
+                            "pair_id",
+                            "source_id",
+                        )
+                    )
+                    or r["ood_type"] != "near_ood"
+                    or r["source_label"] != topic
+                ):
+                    raise ValueError(
+                        f"Fold {topic} OOD record {r['id']} changed source metadata or text."
+                    )
 
         for r in train_id_records + val_id_records + test_id_records:
             try:
@@ -893,11 +1137,7 @@ def validate_far_ood() -> bool:
     print_section("8. Far-OOD Benchmark (Amazon MASSIVE EN/TR)")
     far_dir = REPO_ROOT / "data" / "ood" / "far" / "massive"
 
-    manifest_path = far_dir / "manifest.json"
-    if not manifest_path.exists():
-        print(f"[FAIL] Missing manifest in Far-OOD: {manifest_path}")
-        return False
-    print("  [OK] Manifest present and verified")
+    check_manifest(far_dir, "far_ood_massive", ["validation_ood.jsonl", "test_ood.jsonl"])
 
     val_file = far_dir / "validation_ood.jsonl"
     test_file = far_dir / "test_ood.jsonl"
@@ -909,8 +1149,29 @@ def validate_far_ood() -> bool:
         print(f"[FAIL] Missing Far-OOD file: {test_file}")
         return False
 
-    val_records = load_jsonl(val_file)
-    test_records = load_jsonl(test_file)
+    val_records = load_audit_records(val_file)
+    test_records = load_audit_records(test_file)
+    check_disjoint_partitions({"validation": val_records, "test": test_records})
+    raw_dir = REPO_ROOT / "data/raw/massive"
+    raw_by_language = {
+        lang: {str(r["id"]): r for r in load_jsonl(raw_dir / f"{locale}.jsonl")}
+        for lang, locale in (("en", "en-US"), ("tr", "tr-TR"))
+    }
+    for r in val_records + test_records:
+        raw = raw_by_language[r["language"]].get(str(r["source_id"]))
+        if raw is None or raw["partition"] != {"validation": "dev", "test": "test"}[r["split"]]:
+            raise ValueError(
+                f"Far-OOD {r['id']} does not come from the declared upstream partition."
+            )
+        if (
+            raw["scenario"] not in MASSIVE_ALLOWED_SCENARIOS
+            or r["source_label"] != f"{raw['scenario']}:{raw['intent']}"
+            or r["text"] != raw["utt"].strip()
+            or r["ood_type"] != "far_ood"
+        ):
+            raise ValueError(
+                f"Far-OOD {r['id']} changed source content or uses an excluded scenario."
+            )
 
     passed = True
 
@@ -957,29 +1218,13 @@ def validate_far_ood() -> bool:
             if langs != {"en", "tr"}:
                 print(f"[FAIL] Far-OOD {split_name} pair {p_id} languages {langs} != {'en', 'tr'}")
                 passed = False
+                continue
 
             r_en = next(r for r in p_recs if r["language"] == "en")
             r_tr = next(r for r in p_recs if r["language"] == "tr")
 
-            if r_en.get("scenario") != r_tr.get("scenario"):
-                print(
-                    f"[FAIL] Far-OOD pair {p_id} scenario mismatch: "
-                    f"{r_en.get('scenario')} vs {r_tr.get('scenario')}"
-                )
-                passed = False
-            if r_en.get("intent") != r_tr.get("intent"):
-                print(
-                    f"[FAIL] Far-OOD pair {p_id} intent mismatch: "
-                    f"{r_en.get('intent')} vs {r_tr.get('intent')}"
-                )
-                passed = False
             if r_en.get("source_label") != r_tr.get("source_label"):
                 print(f"[FAIL] Far-OOD pair {p_id} source_label mismatch")
-                passed = False
-
-            scen = r_en.get("scenario")
-            if scen and scen not in MASSIVE_ALLOWED_SCENARIOS:
-                print(f"[FAIL] Far-OOD pair {p_id} scenario '{scen}' not in allowlist")
                 passed = False
 
     val_pids = {r["pair_id"] for r in val_records}
@@ -1003,16 +1248,23 @@ def main() -> int:
     canonical_labels = load_canonical_label_ids(tax_path)
     print(f"Loaded canonical taxonomy with {len(canonical_labels)} labels.")
 
-    results = {
-        "Clean SIB-200": validate_sib200(canonical_labels),
-        "Clean MultiFin (Official)": validate_multifin_official(canonical_labels),
-        "MultiFin Leakage-Free Track": validate_multifin_leakage_free(canonical_labels),
-        "Clean MN-DS": validate_mn_ds(canonical_labels),
-        "Noisy Robustness Benchmark": validate_noisy(canonical_labels),
-        "Synthetic EN/TR Code-Switch Benchmark": validate_code_switch(canonical_labels),
-        "Near-OOD (7 Folds)": validate_near_ood(canonical_labels),
-        "Far-OOD (MASSIVE)": validate_far_ood(),
+    audits = {
+        "Clean SIB-200": lambda: validate_sib200(canonical_labels),
+        "Clean MultiFin (Official)": lambda: validate_multifin_official(canonical_labels),
+        "MultiFin Leakage-Free Track": lambda: validate_multifin_leakage_free(canonical_labels),
+        "Clean MN-DS": lambda: validate_mn_ds(canonical_labels),
+        "Noisy Robustness Benchmark": lambda: validate_noisy(canonical_labels),
+        "Synthetic EN/TR Code-Switch Benchmark": lambda: validate_code_switch(canonical_labels),
+        "Near-OOD (7 Folds)": lambda: validate_near_ood(canonical_labels),
+        "Far-OOD (MASSIVE)": validate_far_ood,
     }
+    results = {}
+    for track, audit in audits.items():
+        try:
+            results[track] = audit()
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f"[FAIL] {track}: {exc}")
+            results[track] = False
 
     print_section("AUDIT SUMMARY")
     all_passed = True
@@ -1024,6 +1276,10 @@ def main() -> int:
 
     if all_passed:
         print("\n[PASSED] ALL 8 BENCHMARK TRACK AUDITS PASSED SUCCESSFULLY!\n")
+        print(
+            "Official MultiFin and its noisy variants retain documented overlap; "
+            "use the leakage-free track for model selection and final evaluation."
+        )
         return 0
     else:
         print("\n[FAIL] ONE OR MORE BENCHMARK TRACK AUDITS FAILED. See log above.\n")

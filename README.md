@@ -88,6 +88,15 @@ make dashboard    # start the Streamlit dashboard
 
 The model packages currently contain interface-compatible placeholders only. No datasets or pretrained weights are downloaded by setup or by the tests.
 
+Prepare and audit the implemented benchmark datasets from the repository root:
+
+```bash
+python scripts/prepare_data.py --dataset all
+python scripts/validate_datasets.py
+```
+
+MN-DS needs the verified local CSV first; see [data setup](data/README.md). Individual generators use `--dataset noisy` and `--dataset code_switch`. The installed `naltra-prepare-data` command accepts the same dataset choices. Source versions, manifests and evaluation policies are documented in [the dataset specification](docs/dataset.md).
+
 ## Collaboration
 
 All work is reviewed through pull requests; direct commits to `main` are not allowed. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branching, testing, secret-handling, and review rules.

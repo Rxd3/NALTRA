@@ -11,8 +11,9 @@ if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
 if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 from naltra.data.code_switching import (  # noqa: E402
     create_code_switched_record,
@@ -205,8 +206,7 @@ def prepare_code_switch() -> None:
         records = load_jsonl(val_file)
         pairs = pair_aligned_records(records)
         if pairs:
-            first_pair_id = sorted(pairs.keys())[0]
-            en_r, tr_r = pairs[first_pair_id]
+            en_r, tr_r = pairs[0]
             sample_cs = create_code_switched_record(
                 en_r, tr_r, strategy=strategy, strength=strength
             )
@@ -278,7 +278,7 @@ def prepare_ood() -> None:
                     print(f"Pair ID:      {en_r['pair_id']}")
                     print(f"EN ID:        {en_r['id']}")
                     print(f"TR ID:        {tr_r['id']}")
-                    scen = f"{en_r.get('scenario')}:{en_r.get('intent')}"
+                    scen = en_r["source_label"]
                     print(f"Scenario:     {scen}")
                     print(f"EN Text:      {en_r['text']}")
                     print(f"TR Text:      {tr_r['text']}")

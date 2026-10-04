@@ -741,6 +741,36 @@ def test_far_ood_generation_synthetic(tmp_path: Path) -> None:
 # Optional integration tests requiring real local datasets
 
 
+def test_far_ood_excludes_test_content_from_validation(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "massive_overlap"
+    en_records, tr_records = [], []
+    for index, partition, text in (
+        (1, "dev", "repeated command"),
+        (2, "dev", "independent command"),
+        (3, "test", "repeated command"),
+    ):
+        for language, records in (("en", en_records), ("tr", tr_records)):
+            records.append(
+                {
+                    "id": str(index),
+                    "partition": partition,
+                    "utt": f"{language} {text}",
+                    "scenario": "alarm",
+                    "intent": "alarm_set",
+                }
+            )
+    create_synthetic_massive_dataset(raw_dir, en_records, tr_records)
+    output = tmp_path / "far"
+    generate_far_ood_benchmarks(raw_dir, output, val_sample_size=1, test_sample_size=1)
+    validation = load_jsonl(output / "validation_ood.jsonl")
+    test = load_jsonl(output / "test_ood.jsonl")
+    assert {r["source_id"] for r in validation} == {"2"}
+    assert {r["source_id"] for r in test} == {"3"}
+    assert not {r["text"] for r in validation} & {r["text"] for r in test}
+    with pytest.raises(ValueError, match="after excluding test overlap"):
+        generate_far_ood_benchmarks(raw_dir, output, val_sample_size=2, test_sample_size=1)
+
+
 def test_real_sib200_near_ood_integration(tmp_path: Path) -> None:
     """Optional integration test on real processed SIB-200 benchmark files."""
     sib200_dir = PROJECT_ROOT / "data" / "processed" / "sib200"

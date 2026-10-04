@@ -17,7 +17,7 @@ Large dataset files are intentionally ignored by Git (`.gitignore`). Only docume
   - `processed/code_switch/`: Synthetic English/Turkish code-switched benchmark records.
 
 - `splits/`: Alternative experiment partitions.
-  - `splits/multifin/leakage_free/`: Leakage-free MultiFin evaluation track (train: 3,183, validation: 676, test: 838).
+  - `splits/multifin/leakage_free/`: Leakage-free MultiFin evaluation track (train: 3,183, validation: 651, test: 838).
 
 - `noisy/`: Deterministic noisy robustness benchmark data.
   - Example: `noisy/combined/medium/{dataset}/`
@@ -74,7 +74,7 @@ SIB-200 (`Davlan/sib200`) and MultiFin (`awinml/MultiFin`) are automatically dow
 
 ### 3. MASSIVE (Far-OOD)
 
-Amazon MASSIVE is loaded directly from Hugging Face (`qanastek/MASSIVE` or `AmazonScience/MASSIVE`) or extracted locally under `data/raw/massive/`.
+Amazon MASSIVE v1.1 is downloaded from the official Amazon archive and its English/Turkish exports are verified against the SHA-256 locks in `configs/data.yaml`. Existing verified files under `data/raw/massive/` are reused.
 
 ---
 
@@ -100,10 +100,10 @@ python scripts/prepare_data.py --dataset multifin
 python scripts/prepare_data.py --dataset mn_ds
 
 # Noisy robustness benchmark (validation & test)
-python scripts/prepare_data.py --dataset noise
+python scripts/prepare_data.py --dataset noisy
 
 # Synthetic EN/TR code-switch benchmark (validation & test)
-python scripts/prepare_data.py --dataset codeswitch
+python scripts/prepare_data.py --dataset code_switch
 
 # Out-of-Distribution benchmarks (Near-OOD 7-folds & Far-OOD MASSIVE)
 python scripts/prepare_data.py --dataset ood
@@ -118,3 +118,5 @@ After preparation, run the comprehensive dataset audit script to verify schema c
 ```bash
 python scripts/validate_datasets.py
 ```
+
+The audit verifies manifest contents, source/code/output hashes, duplicate records, split membership and contamination. Old manifests must be regenerated. Use `data/splits/multifin/leakage_free/` for model selection and final evaluation; official MultiFin and its noisy variants retain documented upstream overlap. See [the dataset specification](../docs/dataset.md) for the overlap policy and release provenance.

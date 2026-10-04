@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from naltra.data.loader import load_jsonl, save_jsonl
-from naltra.data.preprocessing import validate_record
+from naltra.data.preprocessing import compute_content_fingerprint, validate_record
 
 MASSIVE_TAR_URL = (
     "https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.1.tar.gz"
@@ -355,6 +355,7 @@ def generate_near_ood_benchmarks(
             source_metadata={
                 "sib200_dir": str(sib_path),
             },
+            input_files=[sib_path / f"{split}.jsonl" for split in ("train", "validation", "test")],
         )
 
         fold_stats[heldout_topic] = {
@@ -373,12 +374,23 @@ def download_and_extract_massive(
     raw_dir: str | Path = "data/raw/massive",
 ) -> tuple[Path, Path]:
     """Download and extract official Amazon MASSIVE en-US and tr-TR files if not present."""
+    from naltra.data.manifest import REPO_ROOT, compute_file_sha256, get_source_config
+
     target_dir = Path(raw_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     en_file = target_dir / "en-US.jsonl"
     tr_file = target_dir / "tr-TR.jsonl"
 
     if en_file.exists() and tr_file.exists():
+        if target_dir.resolve() == (REPO_ROOT / "data/raw/massive").resolve():
+            source = get_source_config("massive")
+            if (
+                compute_file_sha256(en_file) != source["en_sha256"]
+                or compute_file_sha256(tr_file) != source["tr_sha256"]
+            ):
+                raise ValueError(
+                    "MASSIVE source checksum mismatch; restore the official v1.1 files."
+                )
         return en_file, tr_file
 
     print(f"Downloading MASSIVE dataset archive from: {MASSIVE_TAR_URL}")
@@ -394,6 +406,12 @@ def download_and_extract_massive(
                     if f:
                         tr_file.write_bytes(f.read())
 
+    source = get_source_config("massive")
+    if (
+        compute_file_sha256(en_file) != source["en_sha256"]
+        or compute_file_sha256(tr_file) != source["tr_sha256"]
+    ):
+        raise ValueError("Downloaded MASSIVE source checksum mismatch.")
     return en_file, tr_file
 
 
@@ -405,6 +423,10 @@ def load_massive_paired_records(
     """Load, filter, and pair MASSIVE utterances by ID across en-US and tr-TR."""
     en_records = load_jsonl(en_path)
     tr_records = load_jsonl(tr_path)
+    for language, records in (("en", en_records), ("tr", tr_records)):
+        ids = [r["id"] for r in records]
+        if len(ids) != len(set(ids)):
+            raise ValueError(f"Duplicate MASSIVE {language} source IDs.")
 
     # Index Turkish records by ID
     tr_by_id = {r["id"]: r for r in tr_records}
@@ -478,8 +500,25 @@ def generate_far_ood_benchmarks(
     rng.shuffle(dev_pairs)
     rng.shuffle(test_pairs)
 
-    selected_val_pairs = dev_pairs[:val_sample_size]
     selected_test_pairs = test_pairs[:test_sample_size]
+    # Keep the sampled test set fixed and prevent repeated assistant commands
+    # from influencing model selection through validation in either language.
+    test_fingerprints = {
+        compute_content_fingerprint(r["utt"]) for pair in selected_test_pairs for r in pair
+    }
+    test_ids = {pair[0]["id"] for pair in selected_test_pairs}
+    clean_dev_pairs = [
+        pair
+        for pair in dev_pairs
+        if pair[0]["id"] not in test_ids
+        and all(compute_content_fingerprint(r["utt"]) not in test_fingerprints for r in pair)
+    ]
+    if len(clean_dev_pairs) < val_sample_size:
+        raise ValueError(
+            f"Insufficient matched dev pairs after excluding test overlap: "
+            f"requested {val_sample_size}, but only {len(clean_dev_pairs)} available."
+        )
+    selected_val_pairs = clean_dev_pairs[:val_sample_size]
 
     # Sort by ID for deterministic, stable file order
     selected_val_pairs.sort(key=lambda p: int(p[0]["id"]))
@@ -575,12 +614,17 @@ def generate_far_ood_benchmarks(
             "test_sample_size": test_sample_size,
             "seed": seed,
             "allowed_scenarios": sorted(MASSIVE_ALLOWED_SCENARIOS),
+            "overlap_policy": "preserve_test_filter_validation_content",
+            "excluded_dev_pairs": len(dev_pairs) - len(clean_dev_pairs),
         },
         source_metadata={
             "source": "Amazon MASSIVE 1.1",
+            "url": MASSIVE_TAR_URL,
+            "license": "CC BY 4.0",
             "en_sha256": compute_file_sha256(en_path),
             "tr_sha256": compute_file_sha256(tr_path),
         },
+        input_files=[en_path, tr_path],
     )
 
     return results

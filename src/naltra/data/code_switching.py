@@ -303,6 +303,7 @@ def generate_code_switch_benchmarks(
             "source_dataset": "sib200",
             "processed_base_dir": str(in_dir),
         },
+        input_files=[in_dir / f"{split}.jsonl" for split in splits],
     )
 
     return results
