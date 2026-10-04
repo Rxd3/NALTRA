@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from math import isfinite
 from typing import Any
 
 
 def _validate_probability(value: float, field_name: str) -> None:
-    if not 0.0 <= value <= 1.0:
+    if not isfinite(value) or not 0.0 <= value <= 1.0:
         raise ValueError(f"{field_name} must be between 0.0 and 1.0.")
 
 
@@ -67,12 +68,18 @@ class PredictionResult:
     ood: OODResult = field(default_factory=lambda: OODResult(is_ood=False, score=0.0))
     latency_ms: float = 0.0
     explanation: Explanation | None = None
+    label_scores: dict[str, float] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.model.strip():
             raise ValueError("Model name cannot be empty.")
-        if self.latency_ms < 0:
-            raise ValueError("Latency cannot be negative.")
+        if not isfinite(self.latency_ms) or self.latency_ms < 0:
+            raise ValueError("Latency must be finite and cannot be negative.")
+        if len({item.label for item in self.labels}) != len(self.labels):
+            raise ValueError("Prediction labels must be unique.")
+        for label, score in self.label_scores.items():
+            LabelScore(label=label, score=score)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable dictionary."""

@@ -3,5 +3,16 @@ enabled: false
 api_key_env: LAYA_API_KEY
 base_url_env: LAYA_API_BASE_URL
 request_timeout_seconds: 30
+# Fill from actual provider documentation before enabling.
+contract:
+  configured: false
+  request_path: ""
+  text_field: text
+  scores_path: scores
+  auth_header: Authorization
+  auth_prefix: "Bearer "
+supported_labels: []
+label_map: {}
 multilabel:
   threshold: 0.5
+  per_label: {}

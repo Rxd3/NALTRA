@@ -12,6 +12,8 @@ license = { text = "MIT" }
 authors = [{ name = "NALTRA Contributors" }]
 dependencies = [
     "datasets",
+    "httpx>=0.28,<1",
+    "lingua-language-detector>=2,<3",
     "matplotlib",
     "numpy",
     "pandas",
@@ -21,8 +23,8 @@ dependencies = [
     "scikit-learn",
     "sentencepiece",
     "streamlit",
-    "torch",
-    "transformers",
+    "torch>=2.6",
+    "transformers>=4.45,<6",
 ]
 
 [project.optional-dependencies]

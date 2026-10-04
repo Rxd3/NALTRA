@@ -10,7 +10,10 @@ The canonical taxonomy lives in `taxonomy/taxonomy.json`. Each label has a stabl
 4. Run `python taxonomy/validation.py taxonomy/taxonomy.json` and the test suite.
 5. Record breaking or semantic changes by incrementing the taxonomy version.
 
-Hierarchy resolution should add required ancestors to a prediction path without inventing a score. The final scoring policy will be documented alongside experiments.
+Hierarchy resolution adds required ancestors to `hierarchy_paths` without inventing a
+score. Direct dataset labels remain in `labels`; complete model probabilities live in
+`label_scores`. Hierarchical metrics expand ancestor paths while ordinary classification
+metrics compare direct labels. See [core ML operation](core_ml.md).
 
 ## Current taxonomy
 

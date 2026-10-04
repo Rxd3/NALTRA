@@ -1,0 +1,18 @@
+models: [bilstm, transformer]
+datasets: [sib200, multifin, mn_ds]
+device: auto
+output_dir: models
+smoke_records: 32
+tracks:
+  sib200:
+    path: data/processed/sib200
+    benchmark_name: clean_sib200
+    name: clean
+  multifin:
+    path: data/splits/multifin/leakage_free
+    benchmark_name: multifin_leakage_free
+    name: leakage_free
+  mn_ds:
+    path: data/processed/mn_ds
+    benchmark_name: clean_mn_ds
+    name: clean

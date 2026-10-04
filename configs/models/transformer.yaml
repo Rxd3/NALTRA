@@ -1,12 +1,21 @@
 model: transformer
 enabled: true
 seed: 42
+device: auto
 architecture:
   pretrained_name: xlm-roberta-base
   max_length: 256
+  local_files_only: false
 training:
-  batch_size: 16
+  batch_size: 2
   learning_rate: 0.00002
   epochs: 3
+  gradient_accumulation_steps: 8
+  gradient_clip: 1.0
+  patience: 2
+  weight_decay: 0.01
+  mixed_precision: true
+  gradient_checkpointing: true
 multilabel:
   threshold: 0.5
+  per_label: {}
