@@ -44,3 +44,44 @@ def expected_calibration_error(
         accuracy = sum(outcomes[index] for index in members) / len(members)
         error += len(members) / total * abs(accuracy - confidence)
     return error
+
+import numpy as np
+from typing import List, Dict
+from naltra.schemas import PredictionResult
+
+def compute_calibration_ece(
+    predictions: List[PredictionResult],
+    ground_truth: List[Dict[str, int]],
+    n_bins: int = 10
+) -> Dict[str, float]:
+    """Computes Expected Calibration Error (ECE)."""
+    confidences = []
+    accuracies = []
+
+    for pred, gt in zip(predictions, ground_truth):
+        for item in pred.labels:
+            confidences.append(item.score)
+            is_correct = 1.0 if gt.get(item.label, 0) == 1 else 0.0
+            accuracies.append(is_correct)
+
+    if not confidences:
+        return {"ece": 0.0}
+
+    conf_arr = np.array(confidences)
+    acc_arr = np.array(accuracies)
+
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    ece = 0.0
+
+    for i in range(n_bins):
+        bin_lower, bin_upper = bin_boundaries[i], bin_boundaries[i + 1]
+        in_bin = (conf_arr > bin_lower) & (conf_arr <= bin_upper)
+        prop_in_bin = np.mean(in_bin)
+
+        if prop_in_bin > 0:
+            accuracy_in_bin = np.mean(acc_arr[in_bin])
+            avg_confidence_in_bin = np.mean(conf_arr[in_bin])
+            ece += np.abs(accuracy_in_bin - avg_confidence_in_bin) * prop_in_bin
+
+    return {"ece": float(ece)}
+    

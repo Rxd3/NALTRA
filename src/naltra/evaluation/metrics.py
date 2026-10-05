@@ -72,3 +72,18 @@ def multilabel_metrics(y_true: Iterable[set[str]], y_pred: Iterable[set[str]]) -
         "macro_recall": macro_recall,
         "macro_f1": macro_f1,
     }
+
+def compute_classification_metrics(
+    predictions: list[PredictionResult],
+    ground_truth: list[set[str]],
+    all_labels: list[str] | None = None,
+    threshold: float = 0.5
+) -> dict[str, float]:
+    """Computes multi-label precision, recall, micro-F1, and macro-F1 for PredictionResult objects."""
+    y_pred_sets = []
+    for pred in predictions:
+        pred_set = {item.label for item in pred.labels if item.score >= threshold}
+        y_pred_sets.append(pred_set)
+
+    return multilabel_metrics(ground_truth, y_pred_sets)
+    

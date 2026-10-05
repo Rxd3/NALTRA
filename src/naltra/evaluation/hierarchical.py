@@ -24,3 +24,27 @@ def hierarchical_precision_recall_f1(
         expand_with_ancestors(true_labels, parent_by_label),
         expand_with_ancestors(predicted_labels, parent_by_label),
     )
+
+import json
+from pathlib import Path
+
+def load_parent_child_pairs(taxonomy_path: str = "taxonomy/taxonomy.json") -> list[tuple[str, str]]:
+    """Extracts (parent_id, child_id) pairs from taxonomy.json if present."""
+    path = Path(taxonomy_path)
+    if not path.exists():
+        return []
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        pairs = []
+        for label in data.get("labels", []):
+            parent_id = label.get("parent")
+            child_id = label.get("id")
+            if parent_id is not None and child_id is not None:
+                pairs.append((str(parent_id), str(child_id)))
+        return pairs
+    except Exception:
+        return []
+        
