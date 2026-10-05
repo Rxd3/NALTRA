@@ -1,40 +1,18 @@
 """Out-of-Distribution (OOD) benchmark generation for NALTRA.
 
-Supports two separate, complementary OOD evaluation settings:
-1. Near-OOD: SIB-200 Leave-One-Topic-Out (7 deterministic topic folds).
-2. Far-OOD: Amazon MASSIVE dataset (voice-assistant commands filtered to non-news domains).
+Uses SIB-200 Leave-One-Topic-Out to create deterministic Near-OOD folds
+without introducing any additional dataset.
 """
 
 from __future__ import annotations
 
-import random
-import tarfile
-import urllib.request
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from naltra.data.loader import load_jsonl, save_jsonl
 from naltra.data.preprocessing import validate_record
-
-MASSIVE_TAR_URL = (
-    "https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.1.tar.gz"
-)
-
-# Explicit allowlist of voice-assistant command scenarios that do not overlap SIB-200 news topics
-MASSIVE_ALLOWED_SCENARIOS: set[str] = {
-    "alarm",  # alarm_set, alarm_query, alarm_remove
-    "datetime",  # datetime_query, datetime_convert
-    "calendar",  # calendar_set, calendar_query, calendar_remove
-    "lists",  # lists_createoradd, lists_query, lists_remove
-    "iot",  # iot_hue_lighton, iot_hue_lightoff, iot_coffee, iot_wemo_on, etc.
-    "audio",  # audio_volume_up, audio_volume_down, audio_volume_mute, audio_volume_other
-    "takeaway",  # takeaway_order, takeaway_query
-}
-
-# Excluded scenarios with potential semantic overlap with taxonomy or news topics:
-# weather, news, music, play, qa, recommendation, transport, social, email, cooking, general
 
 REQUIRED_OOD_FIELDS = (
     "id",
@@ -105,10 +83,10 @@ def validate_ood_record(record: dict[str, Any]) -> None:
     if record["is_ood"] is not True:
         raise ValueError(f"OOD record '{record['id']}' must have is_ood=True.")
 
-    if record["ood_type"] not in ("near_ood", "far_ood"):
+    if record["ood_type"] != "near_ood":
         raise ValueError(
             f"OOD record '{record['id']}' has invalid ood_type '{record['ood_type']}'. "
-            "Must be 'near_ood' or 'far_ood'."
+            "Must be 'near_ood'."
         )
 
     # Critical requirement: OOD records must NOT contain non-empty canonical labels
@@ -367,220 +345,3 @@ def generate_near_ood_benchmarks(
         }
 
     return fold_stats
-
-
-def download_and_extract_massive(
-    raw_dir: str | Path = "data/raw/massive",
-) -> tuple[Path, Path]:
-    """Download and extract official Amazon MASSIVE en-US and tr-TR files if not present."""
-    target_dir = Path(raw_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    en_file = target_dir / "en-US.jsonl"
-    tr_file = target_dir / "tr-TR.jsonl"
-
-    if en_file.exists() and tr_file.exists():
-        return en_file, tr_file
-
-    print(f"Downloading MASSIVE dataset archive from: {MASSIVE_TAR_URL}")
-    with urllib.request.urlopen(MASSIVE_TAR_URL) as resp:
-        with tarfile.open(fileobj=resp, mode="r|gz") as tar:
-            for member in tar:
-                if member.name == "1.1/data/en-US.jsonl":
-                    f = tar.extractfile(member)
-                    if f:
-                        en_file.write_bytes(f.read())
-                elif member.name == "1.1/data/tr-TR.jsonl":
-                    f = tar.extractfile(member)
-                    if f:
-                        tr_file.write_bytes(f.read())
-
-    return en_file, tr_file
-
-
-def load_massive_paired_records(
-    en_path: str | Path,
-    tr_path: str | Path,
-    allowed_scenarios: set[str] = MASSIVE_ALLOWED_SCENARIOS,
-) -> dict[str, list[tuple[dict[str, Any], dict[str, Any]]]]:
-    """Load, filter, and pair MASSIVE utterances by ID across en-US and tr-TR."""
-    en_records = load_jsonl(en_path)
-    tr_records = load_jsonl(tr_path)
-
-    # Index Turkish records by ID
-    tr_by_id = {r["id"]: r for r in tr_records}
-
-    paired_by_partition: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {
-        "dev": [],
-        "test": [],
-        "train": [],
-    }
-
-    for en_rec in en_records:
-        scenario = en_rec.get("scenario")
-        if scenario not in allowed_scenarios:
-            continue
-
-        item_id = en_rec["id"]
-        if item_id not in tr_by_id:
-            continue
-        tr_rec = tr_by_id[item_id]
-
-        # Verify scenario, intent, and partition match
-        if (
-            tr_rec.get("scenario") != scenario
-            or tr_rec.get("intent") != en_rec.get("intent")
-            or tr_rec.get("partition") != en_rec.get("partition")
-        ):
-            continue
-
-        partition = en_rec.get("partition", "test")
-        if partition in paired_by_partition:
-            paired_by_partition[partition].append((en_rec, tr_rec))
-
-    # Sort deterministically by integer ID
-    for partition in paired_by_partition:
-        paired_by_partition[partition].sort(key=lambda pair: int(pair[0]["id"]))
-
-    return paired_by_partition
-
-
-def generate_far_ood_benchmarks(
-    raw_dir: str | Path = "data/raw/massive",
-    output_base_dir: str | Path = "data/ood/far/massive",
-    val_sample_size: int = 250,
-    test_sample_size: int = 500,
-    seed: int = 42,
-) -> dict[str, int]:
-    """Generate deterministic, balanced EN/TR Far-OOD benchmarks from MASSIVE."""
-    en_path, tr_path = download_and_extract_massive(raw_dir)
-    paired_by_partition = load_massive_paired_records(en_path, tr_path)
-
-    out_dir = Path(output_base_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    rng = random.Random(seed)
-
-    # Sample matched pairs for validation and test
-    dev_pairs = list(paired_by_partition["dev"])
-    test_pairs = list(paired_by_partition["test"])
-
-    if len(dev_pairs) < val_sample_size:
-        raise ValueError(
-            f"Insufficient matched dev pairs: requested {val_sample_size}, "
-            f"but only {len(dev_pairs)} available."
-        )
-    if len(test_pairs) < test_sample_size:
-        raise ValueError(
-            f"Insufficient matched test pairs: requested {test_sample_size}, "
-            f"but only {len(test_pairs)} available."
-        )
-
-    rng.shuffle(dev_pairs)
-    rng.shuffle(test_pairs)
-
-    selected_val_pairs = dev_pairs[:val_sample_size]
-    selected_test_pairs = test_pairs[:test_sample_size]
-
-    # Sort by ID for deterministic, stable file order
-    selected_val_pairs.sort(key=lambda p: int(p[0]["id"]))
-    selected_test_pairs.sort(key=lambda p: int(p[0]["id"]))
-
-    results: dict[str, int] = {}
-    expected_pair_counts = {"validation": val_sample_size, "test": test_sample_size}
-
-    for split_name, pairs in (("validation", selected_val_pairs), ("test", selected_test_pairs)):
-        expected_pairs = expected_pair_counts[split_name]
-        ood_records: list[dict[str, Any]] = []
-        for en_rec, tr_rec in pairs:
-            item_id = en_rec["id"]
-            scenario = en_rec["scenario"]
-            intent = en_rec["intent"]
-            pair_id = f"massive:{item_id}"
-
-            # English OOD record
-            en_ood = {
-                "id": f"massive:{split_name}:{item_id}:en",
-                "text": en_rec["utt"].strip(),
-                "language": "en",
-                "source": "massive",
-                "license": "CC BY 4.0",
-                "split": split_name,
-                "is_ood": True,
-                "ood_type": "far_ood",
-                "ood_source": "massive",
-                "ood_reason": f"smart_assistant_command:{scenario}",
-                "source_id": item_id,
-                "source_label": f"{scenario}:{intent}",
-                "pair_id": pair_id,
-            }
-            validate_ood_record(en_ood)
-            ood_records.append(en_ood)
-
-            # Turkish OOD record
-            tr_ood = {
-                "id": f"massive:{split_name}:{item_id}:tr",
-                "text": tr_rec["utt"].strip(),
-                "language": "tr",
-                "source": "massive",
-                "license": "CC BY 4.0",
-                "split": split_name,
-                "is_ood": True,
-                "ood_type": "far_ood",
-                "ood_source": "massive",
-                "ood_reason": f"smart_assistant_command:{scenario}",
-                "source_id": item_id,
-                "source_label": f"{scenario}:{intent}",
-                "pair_id": pair_id,
-            }
-            validate_ood_record(tr_ood)
-            ood_records.append(tr_ood)
-
-        # Verify uniqueness
-        ids = [r["id"] for r in ood_records]
-        assert len(ids) == len(set(ids)), f"Duplicate IDs in Far-OOD {split_name}"
-
-        # Verify exact requested pair counts and exact 1:1 English/Turkish pair_id matching
-        assert (
-            len(pairs) == expected_pairs
-        ), f"Expected {expected_pairs} pairs for Far-OOD {split_name}, got {len(pairs)}"
-        assert (
-            len(ood_records) == 2 * expected_pairs
-        ), f"Expected {2 * expected_pairs} records for Far-OOD {split_name}, got {len(ood_records)}"
-        pair_counts = Counter(r["pair_id"] for r in ood_records)
-        assert (
-            len(pair_counts) == expected_pairs
-        ), f"Expected {expected_pairs} unique pair_ids, got {len(pair_counts)}"
-        assert all(
-            cnt == 2 for cnt in pair_counts.values()
-        ), f"Every pair_id must appear exactly twice in Far-OOD {split_name}"
-        pair_langs: dict[str, set[str]] = {}
-        for r in ood_records:
-            pair_langs.setdefault(r["pair_id"], set()).add(r["language"])
-        assert all(
-            langs == {"en", "tr"} for langs in pair_langs.values()
-        ), f"Every pair_id must have exactly one 'en' and one 'tr' record in Far-OOD {split_name}"
-
-        out_file = out_dir / f"{split_name}_ood.jsonl"
-        save_jsonl(ood_records, out_file)
-        results[split_name] = len(ood_records)
-
-    # Generate reproducibility manifest for Far-OOD
-    from naltra.data.manifest import compute_file_sha256, create_manifest
-
-    create_manifest(
-        benchmark_name="far_ood_massive",
-        output_dir=out_dir,
-        generation_parameters={
-            "val_sample_size": val_sample_size,
-            "test_sample_size": test_sample_size,
-            "seed": seed,
-            "allowed_scenarios": sorted(MASSIVE_ALLOWED_SCENARIOS),
-        },
-        source_metadata={
-            "source": "Amazon MASSIVE 1.1",
-            "en_sha256": compute_file_sha256(en_path),
-            "tr_sha256": compute_file_sha256(tr_path),
-        },
-    )
-
-    return results

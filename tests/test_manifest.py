@@ -28,7 +28,7 @@ def test_compute_file_sha256(tmp_path: Path) -> None:
 
 def test_get_taxonomy_checksums() -> None:
     meta = get_taxonomy_checksums()
-    assert meta["taxonomy_version"] == "0.2.0"
+    assert meta["taxonomy_version"] == "0.3.0"
     assert "taxonomy_sha256" in meta
     assert len(meta["taxonomy_sha256"]) == 64
     assert "label_map_sha256" in meta

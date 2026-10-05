@@ -5,7 +5,7 @@ All model families are evaluated through the same `PredictionResult` schema and 
 ## Areas
 
 - Classification: precision, recall, micro-F1, macro-F1, and confusion matrices.
-- Hierarchy: ancestor consistency and hierarchy-aware precision/recall/F1.
+- Hierarchy: ancestor consistency and hierarchy-aware precision/recall/F1 (retained for generic hierarchical extensions; under the active flat 7-topic SIB-200 taxonomy, all categories are root-level).
 - Language: English, Turkish, code-switched, and cross-language transfer slices.
 - Calibration: expected calibration error (ECE), Brier score, and reliability plots.
 - OOD: detection AUROC and false-positive rate at 95% true-positive rate.

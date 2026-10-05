@@ -27,7 +27,7 @@ def test_load_label_map_and_canonical_ids() -> None:
 
     assert isinstance(label_map, dict)
     assert len(label_map) > 0
-    assert len(canonical_ids) == 151
+    assert len(canonical_ids) == 7
     for target in label_map.values():
         assert target in canonical_ids
 
@@ -65,6 +65,19 @@ def test_validate_record_valid() -> None:
         "split": "train",
     }
     validate_record(record, allowed_labels={"science_technology"})
+
+
+def test_validate_record_multilabel() -> None:
+    record = {
+        "id": "synthetic:1",
+        "text": "Synthetic multi-label example",
+        "labels": ["topic_a", "topic_b"],
+        "language": "en",
+        "source": "synthetic",
+        "license": "TEST",
+        "split": "train",
+    }
+    validate_record(record, allowed_labels={"topic_a", "topic_b"})
 
 
 def test_validate_record_missing_field() -> None:
@@ -139,45 +152,34 @@ def test_save_and_load_jsonl_roundtrip() -> None:
         assert loaded[0]["text"] == "Türkçe özel karakterler: ğüşöçıİ test."
 
 
-def test_validate_record_multilabel() -> None:
-    record = {
-        "id": "multifin:Israel-4145",
-        "text": "Revenue Recognition and corporate tax audit",
-        "labels": ["accounting_assurance", "tax"],
-        "language": "en",
-        "source": "multifin",
-        "license": "CC BY-NC 4.0",
-        "split": "train",
-        "source_id": "Israel-4145",
-        "source_labels": ["Accounting & Assurance", "Tax"],
-    }
-    validate_record(record, allowed_labels={"accounting_assurance", "tax"})
-
-
-def test_multifin_label_mapping() -> None:
+def test_sib200_label_mapping() -> None:
     label_map = load_label_map(PROJECT_ROOT / "taxonomy" / "label_map.json")
     canonical_ids = load_canonical_label_ids(PROJECT_ROOT / "taxonomy" / "taxonomy.json")
 
-    # Real MultiFin multi-label combination
-    raw_labels = ["Accounting & Assurance", "Tax", "VAT & Customs"]
+    raw_labels = [
+        "science/technology",
+        "travel",
+        "politics",
+        "sports",
+        "health",
+        "entertainment",
+        "geography",
+    ]
+
     mapped = map_labels(raw_labels, label_map)
 
-    assert mapped == ["accounting_assurance", "tax", "vat_customs"]
-    for lbl in mapped:
-        assert lbl in canonical_ids
+    assert mapped == [
+        "science_technology",
+        "travel",
+        "politics",
+        "sport",
+        "health",
+        "arts_culture_entertainment_media",
+        "geography",
+    ]
 
-
-def test_mn_ds_label_mapping() -> None:
-    label_map = load_label_map(PROJECT_ROOT / "taxonomy" / "label_map.json")
-    canonical_ids = load_canonical_label_ids(PROJECT_ROOT / "taxonomy" / "taxonomy.json")
-
-    # Real MN-DS L2 labels
-    mn_ds_labels = ["crime", "mass media", "social condition", "armed conflict"]
-    mapped = map_labels(mn_ds_labels, label_map)
-
-    assert mapped == ["crime", "mass_media", "social_condition", "armed_conflict"]
-    for lbl in mapped:
-        assert lbl in canonical_ids
+    for label in mapped:
+        assert label in canonical_ids
 
 
 def test_multilabel_stratified_split() -> None:
@@ -268,9 +270,8 @@ def test_splits_tiny_datasets() -> None:
     assert len(t2) + len(v2) + len(te2) == 2
     assert _compute_split_capacities(2, [0.7, 0.15, 0.15]) == [2, 0, 0]
 
-    # Preserves MN-DS capacity: 10,491 records at 0.70/0.15/0.15 -> [7344, 1574, 1573]
-    mnds_caps = _compute_split_capacities(10491, [0.70, 0.15, 0.15])
-    assert mnds_caps == [7344, 1574, 1573]
+    generic_caps = _compute_split_capacities(101, [0.70, 0.15, 0.15])
+    assert generic_caps == [71, 15, 15]
 
 
 def test_splits_invalid_and_negative_ratios() -> None:
@@ -419,104 +420,6 @@ def test_grouped_multilabel_stratified_split_prevents_leakage() -> None:
     assert not (v_fps & te_fps)
 
 
-def test_generate_multifin_leakage_free_track(tmp_path: Path) -> None:
-    from naltra.data.loader import load_jsonl, save_jsonl
-    from naltra.data.preprocessing import generate_multifin_leakage_free_track
-
-    mock_in_dir = tmp_path / "official_multifin"
-    mock_out_dir = tmp_path / "leakage_free"
-    mock_in_dir.mkdir()
-
-    # Create mock official splits where val and test contain records leaking from train
-    train_data = [
-        {
-            "id": "mf:train:1",
-            "text": "Stock market rallies today.",
-            "labels": ["banking_financial_markets"],
-            "language": "en",
-            "source": "multifin",
-            "license": "CC BY-NC 4.0",
-            "split": "train",
-        },
-        {
-            "id": "mf:train:2",
-            "text": "Central bank raises interest rates.",
-            "labels": ["tax"],
-            "language": "en",
-            "source": "multifin",
-            "license": "CC BY-NC 4.0",
-            "split": "train",
-        },
-    ]
-    val_data = [
-        {
-            "id": "mf:val:1",
-            "text": "Stock market rallies today.",
-            "labels": ["banking_financial_markets"],
-            "language": "en",
-            "source": "multifin",
-            "license": "CC BY-NC 4.0",
-            "split": "validation",
-        },  # LEAK
-        {
-            "id": "mf:val:2",
-            "text": "Tech company unveils new processor.",
-            "labels": ["technology"],
-            "language": "en",
-            "source": "multifin",
-            "license": "CC BY-NC 4.0",
-            "split": "validation",
-        },  # CLEAN
-    ]
-    test_data = [
-        {
-            "id": "mf:test:1",
-            "text": "Central bank raises interest rates.",
-            "labels": ["tax"],
-            "language": "en",
-            "source": "multifin",
-            "license": "CC BY-NC 4.0",
-            "split": "test",
-        },  # LEAK
-        {
-            "id": "mf:test:2",
-            "text": "Oil prices stabilize after inventory drop.",
-            "labels": ["power_energy_renewables"],
-            "language": "en",
-            "source": "multifin",
-            "license": "CC BY-NC 4.0",
-            "split": "test",
-        },  # CLEAN
-    ]
-
-    save_jsonl(train_data, mock_in_dir / "train.jsonl")
-    save_jsonl(val_data, mock_in_dir / "validation.jsonl")
-    save_jsonl(test_data, mock_in_dir / "test.jsonl")
-
-    stats = generate_multifin_leakage_free_track(
-        official_multifin_dir=mock_in_dir,
-        output_dir=mock_out_dir,
-        taxonomy_path=PROJECT_ROOT / "taxonomy" / "taxonomy.json",
-    )
-
-    assert stats["train_count"] == 2
-    assert stats["clean_val_count"] == 1
-    assert stats["val_removed_count"] == 1
-    assert stats["clean_test_count"] == 1
-    assert stats["test_removed_count"] == 1
-
-    clean_val = load_jsonl(mock_out_dir / "validation.jsonl")
-    clean_test = load_jsonl(mock_out_dir / "test.jsonl")
-
-    assert clean_val[0]["id"] == "mf:val:2"
-    assert clean_val[0]["original_split"] == "validation"
-    assert clean_test[0]["id"] == "mf:test:2"
-    assert clean_test[0]["original_split"] == "test"
-
-    # Manifest created
-    assert (mock_out_dir / "manifest.json").exists()
-
-
 if __name__ == "__main__":
     print("Running test_preprocessing suite...")
     test_load_label_map_and_canonical_ids()
@@ -529,8 +432,7 @@ if __name__ == "__main__":
     test_validate_record_invalid_language()
     test_validate_record_unknown_canonical_label()
     test_save_and_load_jsonl_roundtrip()
-    test_multifin_label_mapping()
-    test_mn_ds_label_mapping()
+    test_sib200_label_mapping()
     test_multilabel_stratified_split()
     test_splits_same_seed_reproducibility()
     test_splits_different_seed_variation()

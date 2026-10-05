@@ -2,13 +2,24 @@ project_languages:
   - en
   - tr
   - en-tr
+
 text_column: text
 labels_column: labels
 random_seed: 42
+
+# Single dataset used by NALTRA
+sources:
+  sib200:
+    dataset_id: Davlan/sib200
+    revision: 38977a667f6fc264d5c26ec57a01e16db040b358
+
+# SIB-200 uses official upstream train/validation/test splits.
+# split_ratios below is retained as default configuration for generic split utilities.
 split_ratios:
   train: 0.70
   validation: 0.15
   test: 0.15
+
 paths:
   raw: data/raw
   processed: data/processed

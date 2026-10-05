@@ -1,21 +1,24 @@
 # NALTRA
 
-**Natural Language Analysis & Taxonomy Robust Architecture** is a student research project for multilingual, multi-label, hierarchical text classification. The repository is organized so five contributors can develop data, models, ensemble decisions, evaluation, and the user interface in parallel behind shared interfaces.
+**Natural Language Analysis & Taxonomy Robust Architecture** is a student research project for multilingual text classification. The repository is organized so five contributors can develop data, models, ensemble decisions, evaluation, and the user interface in parallel behind shared interfaces.
 
 ## Research goal
 
-NALTRA compares classical, neural, transformer, and external-service approaches under the same prediction contract. The project studies not only label quality, but also cross-language transfer, hierarchy consistency, out-of-distribution (OOD) behavior, confidence calibration, robustness, and inference latency.
+NALTRA compares classical, neural, transformer, and external-service approaches under the same prediction contract. The active benchmark focuses on multilingual single-label topic classification using SIB-200 across English and Turkish, studying label quality, cross-language transfer, out-of-distribution (Near-OOD) detection, confidence calibration, typographical/orthographic noise robustness, synthetic English–Turkish code-switching, and inference latency.
 
 Supported language settings:
 
-- English
-- Turkish
-- English-Turkish code-switching
+- English (`en`)
+- Turkish (`tr`)
+- English–Turkish code-switching (`en-tr`, synthetic chunk-mixing derived from aligned SIB-200 pairs)
 
-Classification setting:
+Active benchmark setting:
 
-- Multi-label: one text may receive multiple labels.
-- Hierarchical: predictions are resolved into valid taxonomy paths.
+- **Source Dataset**: SIB-200 (`Davlan/sib200`) as the single source dataset.
+- **Classification Task**: Multilingual single-label topic classification across seven canonical topics (`science_technology`, `travel`, `politics`, `sport`, `health`, `arts_culture_entertainment_media`, `geography`).
+- **Taxonomy**: Version `0.3.0`, flat canonical taxonomy where all seven topics are root categories (`parent: null`).
+- **Robustness Tracks**: Clean in-distribution evaluation, typographical/orthographic noise robustness, synthetic code-switching, and SIB-200 leave-one-topic-out Near-OOD folds.
+*(Note: Core pipeline utilities maintain generic capability for multi-label thresholding and hierarchical resolution for future experimental extensions, but the active benchmark task is strictly single-label topic classification on SIB-200).*
 
 Planned model families:
 
@@ -27,9 +30,9 @@ Planned model families:
 - Laya integration
 - Configurable ensemble voting across all six model families
 
-The ensemble layer supports strict hard-majority voting, average-probability soft voting, and configurable weighted soft voting. All methods vote independently per label and return the same `PredictionResult` schema as an individual model, so hierarchy, OOD, evaluation, and dashboard stages remain unchanged.
+The ensemble layer supports strict hard-majority voting, average-probability soft voting, and configurable weighted soft voting. All methods vote independently per label and return the same `PredictionResult` schema as an individual model, so downstream OOD, evaluation, and dashboard stages remain unchanged.
 
-Evaluation covers standard classification metrics, cross-language evaluation, OOD detection, confidence calibration, robustness, and latency.
+Evaluation covers standard classification metrics, cross-language evaluation, Near-OOD detection, confidence calibration, noise robustness, and latency.
 
 ## Repository map
 

@@ -1,20 +1,21 @@
 # Dataset and Benchmark Specification
 
-NALTRA maintains reproducible, cross-lingual English (`en`), Turkish (`tr`), and synthetic English-Turkish (`en-tr`) benchmark tracks for hierarchical topic classification and model robustness.
+NALTRA uses **SIB-200** as its single source dataset for cross-lingual English (`en`), Turkish (`tr`), and synthetic English–Turkish (`en-tr`) topic classification and model robustness benchmarking.
 
 ---
 
-## 1. Fairness and Evaluation Principles
+## 1. Principles and Repository Policy
 
-1. **Unified Evaluation**: Within each benchmark track, every evaluated model receives the exact same records, splits, label spaces, text representations, noise variants, and OOD sets.
-2. **Zero In-Distribution Leakage**: Split assignments are strictly audited for both record ID leakage and content-fingerprint leakage. Content duplicates are atomically grouped before partitioning so identical normalized texts never cross train/evaluation boundaries.
-3. **Repository Storage Policy**: Large raw archives, clean processed datasets, noisy variants, and OOD sets remain local and are ignored by Git (`data/raw/*`, `data/processed/*`, `data/noisy/*`, `data/ood/*`). Only code, test suites, documentation, and `.gitkeep` placeholders are tracked in the repository.
+1. **Single Source Dataset**: SIB-200 (`Davlan/sib200`) is the only source dataset for the project. All benchmark tracks (clean, noisy, code-switched, and Near-OOD) derive entirely from SIB-200.
+2. **Unified Evaluation**: Within each benchmark track, every evaluated model receives the exact same records, splits, label space, text representations, noise variants, and OOD folds.
+3. **Zero Split Leakage**: Split assignments strictly respect official SIB-200 upstream partitions (`train`, `validation`, `test`). All partitions are audited for record ID overlap and SHA-256 normalized content-fingerprint leakage (both strictly zero).
+4. **Local Data Storage Policy**: Large raw dataset caches, clean processed files, noisy variants, and OOD benchmark folds remain local and are ignored by Git (`data/raw/*`, `data/processed/*`, `data/noisy/*`, `data/ood/*`). Only code, test suites, documentation, and `.gitkeep` placeholders are tracked in version control.
 
 ---
 
-## 2. Unified Schema
+## 2. Unified Record Schema
 
-All in-distribution benchmark records share a consistent, strongly typed schema validated by `validate_record()` in `src/naltra/data/preprocessing.py`:
+All clean in-distribution benchmark records share a strongly typed, common JSONL record schema validated by `validate_record()` in `src/naltra/data/preprocessing.py`:
 
 ```json
 {
@@ -32,107 +33,75 @@ All in-distribution benchmark records share a consistent, strongly typed schema 
 ```
 
 ### Schema Fields
-- `id` (str): Unique machine-readable identifier.
-- `text` (str): Normalized UTF-8 text string (whitespace collapsed, line-breaks normalized).
-- `labels` (list[str]): Canonical taxonomy identifiers from `taxonomy/taxonomy.json`.
+- `id` (str): Unique machine-readable identifier (`sib200:{lang}:{index_id}`).
+- `text` (str): Normalized UTF-8 text string (whitespace collapsed, line-breaks normalized via `preprocess_record_text`).
+- `labels` (list[str]): Canonical taxonomy identifiers from `taxonomy/taxonomy.json`. Note that while the internal schema stores labels as a list (`["sport"]`), SIB-200 is strictly a single-label topic classification benchmark.
 - `language` (str): Language code (`en`, `tr`, or `en-tr`).
-- `source` (str): Source dataset name (`sib200`, `multifin`, `mn_ds`).
-- `license` (str): Dataset distribution license.
-- `split` (str): Partition name (`train`, `validation`, `test`).
-- Traceability metadata: `pair_id` (cross-lingual alignment), `source_id` (original dataset key), `source_labels` (raw source labels).
+- `source` (str): Source dataset name (`sib200`).
+- `license` (str): Dataset distribution license (`CC BY-SA 4.0`).
+- `split` (str): Upstream partition name (`train`, `validation`, `test`).
+- Traceability metadata:
+  - `pair_id` (str): Cross-lingual parallel alignment identifier (`sib200:{index_id}`).
+  - `source_id` (int): Upstream row identifier (`index_id`).
+  - `source_labels` (list[str]): Raw upstream category labels (e.g. `["sports"]`).
 
 ---
 
-## 3. Core Benchmark Datasets
+## 3. SIB-200 Source Dataset
 
-### 3.1 SIB-200 (Multilingual Topic Benchmark)
-
-SIB-200 provides parallel, cross-lingual sentence-level topic classification across English and Turkish.
-
-- **Source**: `Davlan/sib200`
+### 3.1 Overview
+- **Dataset**: SIB-200 (Simple, Inclusive, and Big evaluation dataset for topic classification)
+- **Hugging Face ID**: `Davlan/sib200`
+- **Revision**: `38977a667f6fc264d5c26ec57a01e16db040b358`
 - **Paper**: Adelani et al., "SIB-200: A Simple, Inclusive, and Big Evaluation Dataset for Topic Classification in 200+ Languages and Dialects"
 - **License**: CC BY-SA 4.0
 - **Configurations Used**: `eng_Latn` (English) and `tur_Latn` (Turkish)
-- **Pair Alignment**: 1,004 perfectly aligned English/Turkish pairs (2,008 total records) with matching `pair_id` and category labels across all splits.
-- **Split Distribution**:
-  - `train`: 701 EN / 701 TR (1,402 records)
-  - `validation`: 99 EN / 99 TR (198 records)
-  - `test`: 204 EN / 204 TR (408 records)
-  - **Total**: 1,004 EN / 1,004 TR (2,008 records)
-- **Topic Classes (7 canonical labels)**: `science_technology`, `travel`, `politics`, `sport`, `health`, `entertainment` (`arts_culture_entertainment_media`), `geography`.
 
-### 3.2 MultiFin (Multilingual Financial Multi-Label Benchmark)
+### 3.2 Record Counts and Split Distribution
+SIB-200 provides official, parallel train/validation/test partitions. The dataset contains 1,004 parallel English/Turkish pairs, yielding 2,008 total records:
 
-MultiFin provides real-world financial headline multi-label classification across English and Turkish.
+| Split | English (`en`) | Turkish (`tr`) | Total Records | Aligned Pairs (`pair_id`) |
+| :--- | :---: | :---: | :---: | :---: |
+| `train` | 701 | 701 | 1,402 | 701 |
+| `validation` | 99 | 99 | 198 | 99 |
+| `test` | 204 | 204 | 408 | 204 |
+| **Total** | **1,004** | **1,004** | **2,008** | **1,004** |
 
-- **Source**: `awinml/MultiFin`
-- **Paper**: Jørgensen et al., "MultiFin: A Dataset for Multilingual Financial NLP" (Findings of EACL 2023)
-- **License**: CC BY-NC 4.0
-- **Configuration Used**: `all_languages_lowlevel`
-- **Filtered Subset**: English (`en`) and Turkish (`tr`)
+### 3.3 Cross-Lingual Alignment (`pair_id`)
+English and Turkish records sharing the same underlying sentence share an identical `pair_id` (`sib200:<index_id>`) and identical canonical topic labels. This enables matched paired evaluation across languages.
 
-#### Tracks: Official vs. Leakage-Free Evaluation
+### 3.4 Canonical Taxonomy Mapping
+The active taxonomy (`taxonomy/taxonomy.json`, version `0.3.0`) defines seven flat canonical topics (`parent: null`). Upstream SIB-200 categories are mapped through `taxonomy/label_map.json`:
 
-1. **Official Track** (`data/processed/multifin/`):
-   - Preserves official upstream train/validation/test partitions for baseline comparison.
-   - `train`: 1,747 EN / 1,436 TR (3,183 records)
-   - `validation`: 437 EN / 359 TR (796 records)
-   - `test`: 546 EN / 449 TR (995 records)
-   - **Total**: 2,730 EN / 2,244 TR (4,974 records)
-   - **Multi-Label Preservation**: 1,591 records (31.99%) have $>1$ distinct canonical label.
-   - **Documented Content Leakage**: Automated SHA-256 normalized content fingerprint analysis reveals that **120 validation records** and **157 test records** duplicate normalized texts present in the training set. Additionally, **45 content fingerprints** overlap between validation and test. Zero content leakage is **not** claimed for this official track.
+| SIB-200 Source Category | Canonical Topic ID | Display Name | Total Records |
+| :--- | :--- | :--- | :---: |
+| `science/technology` | `science_technology` | Science and Technology | 504 |
+| `travel` | `travel` | Travel | 396 |
+| `politics` | `politics` | Politics | 292 |
+| `sports` | `sport` | Sport | 244 |
+| `health` | `health` | Health | 220 |
+| `entertainment` | `arts_culture_entertainment_media` | Arts, Culture, Entertainment and Media | 186 |
+| `geography` | `geography` | Geography | 166 |
+| **Total** | | | **2,008** |
 
-2. **Train/Evaluation Leakage-Free Track** (`data/splits/multifin/leakage_free/`):
-   - Formulated specifically as a **train-to-evaluation leakage-free track** that preserves the official training baseline while removing all evaluation records contaminated by training content.
-   - Uses the official training partition as the reference training set (3,183 records).
-   - Excludes validation and test records whose normalized content fingerprint appears in training.
-   - Preserves full traceability to original records and splits (`original_split`, original `id`).
-   - `train`: 3,183 records (reference)
-   - `validation`: 676 records (120 leaking records excluded)
-   - `test`: 838 records (157 leaking records excluded)
-   - **Zero Train-to-Evaluation Content Leakage**: Content overlap between training and validation is strictly **0**, and between training and test is strictly **0**.
-   - **Validation/Test Content Overlap (24 Fingerprints)**: Exactly **24 content fingerprints** still overlap between validation and test. This track is designed specifically to eliminate train-to-evaluation leakage while retaining the official evaluation splits as closely as possible; it does **not** claim complete three-way content disjointness across all three splits. (Any complete three-way repartitioning would require altering the official training baseline and requires approval from the Evaluation/configuration owner).
-
-### 3.3 MN-DS (Hierarchical News Benchmark)
-
-MN-DS provides broad-coverage, fine-grained hierarchical English news classification.
-
-- **Source**: Zenodo record 7394851 (`MN-DS-news-classification.csv`)
-- **License**: CC BY 4.0
-- **Dataset Composition**: 10,917 raw annotation rows merged into 10,491 unique article records.
-- **Text Representation**:
-  - Headline and body are combined according to standard sentence punctuation and spacing:
-    - If headline ends in punctuation (`.`, `!`, `?`): `f"{title} {content}"`.
-    - Otherwise: `f"{title}. {content}"`.
-    - If only headline or only body is present, that non-empty string is used directly.
-  - The combined text is then normalized via `preprocess_record_text()` (whitespace collapsed, line-breaks normalized).
-- **Label Hierarchy**: 109 fine-grained level-2 categories mapped into 17 level-1 root categories.
-- **Multi-Label Statistics**: 392 articles (3.74%) have $>1$ fine-grained label; 137 articles span multiple root categories.
-- **Content-Grouped Stratification**:
-  - Articles sharing the same normalized content fingerprint (SHA-256) are grouped as an atomic splitting unit *before* partitioning (`grouped_multilabel_stratified_split`, `seed=42`).
-  - Completely prevents duplicate content with different source IDs from crossing split boundaries.
-  - Preserves all 10,491 source records and maintains 100% (109/109) category coverage across all three splits:
-    - `train`: 7,344 records (covers 109/109 categories)
-    - `validation`: 1,574 records (covers 109/109 categories)
-    - `test`: 1,573 records (covers 109/109 categories)
-    - **Total**: 10,491 unique articles
-  - **Zero ID Leakage and Zero Content Leakage**: Both ID overlap and content-fingerprint overlap across splits are strictly **0**.
+Output location: `data/processed/sib200/` (`train.jsonl`, `validation.jsonl`, `test.jsonl`).
 
 ---
 
 ## 4. Noisy Robustness Benchmark
 
-The noisy benchmark evaluates model resilience to typographical slips, casing changes, punctuation mutations, and language-specific orthography shifts.
+The noisy benchmark evaluates model resilience against typographical slips, capitalization changes, punctuation mutations, and Turkish orthographic shifts.
 
-- **Target Splits**: Generated only for `validation` and `test` splits by default. Clean training data is **never** perturbed.
-- **Seeding and Determinism**: Uses platform-independent SHA-256 seeding (`f"{record_id}:{strategy}:{severity}:{base_seed}"`). Python's non-deterministic built-in `hash()` is never used.
-- **Metadata Invariance**: Canonical `labels`, `language`, `source`, `license`, `split`, and `pair_id` are preserved with 100% fidelity using `copy.deepcopy()`.
-- **Minimum-Edit Guarantee**: Low-probability edge cases on short texts employ a deterministic fallback to guarantee at least one valid edit without returning empty text.
-- **Storage Location**: `data/noisy/{strategy}/{severity}/{dataset}/{split}.jsonl` (ignored by Git).
+- **Perturbation Target**: Generated exclusively for `validation` (198 records) and `test` (408 records). Clean training data is **never** perturbed.
+- **Seeding and Determinism**: Uses platform-independent SHA-256 seeding (`f"{record_id}:{strategy}:{severity}:{base_seed}"`).
+- **Metadata Invariance**: Canonical `labels`, `language`, `source`, `license`, `split`, and `pair_id` are preserved with 100% fidelity.
 - **Default Robustness Setting**:
-  - **Strategy**: `combined` (realistic composite of 35% character swap, 35% duplicate, 30% deletion, casing variation, and punctuation substitution).
+  - **Strategy**: `combined` (composite of character swap, duplication, deletion, casing shift, punctuation change, and Turkish diacritic mutation).
   - **Severity**: `medium` (10% perturbation probability).
-  - **Total Generated**: 5,544 records (SIB-200: 606; MultiFin: 1,791; MN-DS: 3,147).
+  - **Validation Count**: 198 records
+  - **Test Count**: 408 records
+  - **Total**: 606 records
+- **Storage Location**: `data/noisy/combined/medium/sib200/` (`validation.jsonl`, `test.jsonl`, `manifest.json`).
 
 ---
 
@@ -140,30 +109,30 @@ The noisy benchmark evaluates model resilience to typographical slips, casing ch
 
 The code-switch benchmark evaluates model performance on mixed-language English-Turkish inputs.
 
-- **Source Material**: Generated exclusively from aligned SIB-200 English and Turkish pairs matching on `pair_id`.
+- **Source Material**: Generated exclusively from aligned SIB-200 English and Turkish pairs sharing `pair_id`.
 - **Synthetic Chunk-Mixing**:
   > [!NOTE]
-  > This is explicitly a **controlled synthetic chunk-mixing robustness benchmark**. It preserves token order within source-language chunks, but does **not** claim to represent linguistically natural, word-aligned, or grammatical code-switching.
+  > This is a **controlled synthetic chunk-mixing robustness benchmark**. It preserves token order within source-language chunks, but does **not** claim to represent linguistically natural, word-aligned, or grammatical code-switching.
 - **Language Code**: `language="en-tr"`.
 - **Default Setting**:
-  - **Strategy**: `chunk_mix` (deterministic contiguous spans from English and Turkish).
-  - **Strength**: `balanced` (~50/50 token mix from aligned pairs, alternating primary language deterministically per pair seed to avoid systematic English dominance).
+  - **Strategy**: `chunk_mix` (contiguous phrases sampled alternately from English and Turkish parallel sentences).
+  - **Strength**: `balanced` (~50/50 token mix from aligned pairs, alternating start language deterministically per pair seed).
 - **Benchmark Record Counts**:
   - `validation`: 99 mixed records
   - `test`: 204 mixed records
-  - **Total**: 303 mixed records (Train split remains 0 / untouched).
-- **Storage Location**: `data/processed/code_switch/{strategy}/{strength}/{split}.jsonl` (ignored by Git).
+  - `train`: 0 (clean training data remains untouched)
+  - **Total**: 303 unique mixed records
+- **Storage Location**: `data/processed/code_switch/chunk_mix/balanced/` (`validation.jsonl`, `test.jsonl`, `manifest.json`).
 - **Record Identifier**: `f"{pair_id}:codeswitch:{strategy}:{strength}"` (e.g. `sib200:548:codeswitch:chunk_mix:balanced`).
 
 ---
 
-## 6. Out-of-Distribution (OOD) Benchmark
+## 6. SIB-200 Near-OOD Benchmark (Leave-One-Topic-Out, 7 Folds)
 
-OOD evaluation evaluates whether models can detect inputs that do **not** belong to the in-distribution label space. NALTRA provides two unmerged OOD regimes.
+Out-of-Distribution evaluation determines whether models can detect inputs that do not belong to the in-distribution topic set. NALTRA implements a **purely SIB-200-derived Near-OOD benchmark** using leave-one-topic-out cross-validation across all seven canonical topics. No external OOD dataset is used.
 
 ### 6.1 Dedicated OOD Record Schema
-
-OOD records use a dedicated schema validated by `validate_ood_record()` in `src/naltra/data/ood.py`:
+OOD evaluation records use a dedicated schema validated by `validate_ood_record()` in `src/naltra/data/ood.py`:
 
 ```json
 {
@@ -184,21 +153,18 @@ OOD records use a dedicated schema validated by `validate_ood_record()` in `src/
 ```
 
 > [!IMPORTANT]
-> **No Fake Canonical Labels**: OOD records are **never** assigned an in-distribution canonical label from the 151 taxonomy classes, nor is an artificial "OOD" taxonomy class created. The `source_label` field preserves original dataset ground truth strictly for diagnostic logging and AUROC evaluation.
+> **No Fake Canonical Labels**: OOD records are **never** assigned an in-distribution canonical label from the taxonomy, nor is an artificial "OOD" taxonomy class created. The `source_label` field preserves original topic ground truth strictly for diagnostic logging and AUROC evaluation.
 
-### 6.2 Near-OOD: SIB-200 Leave-One-Topic-Out (7 Folds)
-
-Evaluates semantic topic boundary detection between news/article categories. In each fold $k \in \{1..7\}$, one SIB-200 topic is completely excluded from training:
-
-- **ID Training (`train_id.jsonl`)**: Contains only records from the remaining 6 topics.
-- **ID Evaluation (`validation_id.jsonl`, `test_id.jsonl`)**: In-distribution validation/test records from the remaining 6 topics.
+### 6.2 Leave-One-Topic-Out Folds
+In each fold $k \in \{1..7\}$, one SIB-200 canonical topic is held out:
+- **In-Distribution Training (`train_id.jsonl`)**: Contains all training records belonging to the other 6 topics.
+- **In-Distribution Evaluation (`validation_id.jsonl`, `test_id.jsonl`)**: Validation and test records belonging to the other 6 topics.
 - **Near-OOD Evaluation (`validation_ood.jsonl`, `test_ood.jsonl`)**: Validation and test records belonging exclusively to the held-out topic.
-- **Leakage Prevention**: Verified 0 occurrences of held-out topic in `train_id.jsonl`, and zero pair ID overlap between ID training and OOD evaluation.
-- **Storage Location**: `data/ood/near/sib200/<heldout_topic>/` (ignored by Git).
+- **Storage Location**: `data/ood/near/sib200/<heldout_topic>/` (each fold directory contains `train_id.jsonl`, `validation_id.jsonl`, `test_id.jsonl`, `validation_ood.jsonl`, `test_ood.jsonl`, and `manifest.json`).
 
-#### Held-Out Evaluation Counts per Fold
+### 6.3 Verified Fold Counts
 
-| Held-out Topic | Train ID Recs | Val OOD Recs (EN / TR) | Test OOD Recs (EN / TR) | Total Near-OOD Recs |
+| Held-Out Topic | Train ID Recs | Val OOD Recs (EN / TR) | Test OOD Recs (EN / TR) | Total Near-OOD Recs |
 | :--- | :---: | :---: | :---: | :---: |
 | `arts_culture_entertainment_media` | 1,272 | 18 (9 / 9) | 38 (19 / 19) | **56** |
 | `geography` | 1,286 | 16 (8 / 8) | 34 (17 / 17) | **50** |
@@ -208,39 +174,15 @@ Evaluates semantic topic boundary detection between news/article categories. In 
 | `sport` | 1,232 | 24 (12 / 12) | 50 (25 / 25) | **74** |
 | `travel` | 1,126 | 40 (20 / 20) | 80 (40 / 40) | **120** |
 
-### 6.3 Far-OOD: Amazon MASSIVE (English & Turkish)
-
-Evaluates cross-domain shift using task-oriented voice-assistant commands.
-
-- **Source**: Amazon MASSIVE Dataset v1.1 (`AmazonScience/massive`)
-- **License**: CC BY 4.0
-- **Locales**: `en-US` and `tr-TR`
-- **Matched Pairing**: Every English utterance is matched with its exact parallel Turkish translation sharing the same source `id` (`pair_id: massive:<id>`).
-- **Explicit Scenario Allowlist**: Excludes all topics with ambiguous overlap with news/article topics (e.g., weather, news, music, games, QA, transportation, recommendations). Only unambiguous smart-home and assistant commands are allowed:
-  - `alarm` (set, query, remove)
-  - `datetime` (query, convert)
-  - `calendar` (set, query, remove)
-  - `lists` (create, query, remove)
-  - `iot` (smart lighting, appliances, coffee maker)
-  - `audio` (volume control, mute)
-  - `takeaway` (food ordering)
-- **Balanced Benchmark Counts**:
-  - `validation`: 250 matched pairs = **500 records** (250 EN, 250 TR)
-  - `test`: 500 matched pairs = **1,000 records** (500 EN, 500 TR)
-  - **Total**: 750 matched pairs = **1,500 records** (750 EN, 750 TR)
-- **Storage Location**: `data/ood/far/massive/` (ignored by Git).
-
 ---
 
-## 7. Reproduction Commands
+## 7. Reproduction and Audit Commands
 
-To reproduce all clean, perturbed, code-switched, and out-of-distribution benchmark datasets locally:
+All clean, perturbed, code-switched, and Near-OOD benchmarks can be reproduced deterministically with the following commands:
 
 ```bash
-# 1. Clean in-distribution datasets
+# 1. Clean in-distribution SIB-200 dataset
 python scripts/prepare_data.py --dataset sib200
-python scripts/prepare_data.py --dataset multifin
-python scripts/prepare_data.py --dataset mn_ds
 
 # 2. Noisy robustness benchmark (combined/medium)
 python scripts/prepare_data.py --dataset noisy
@@ -248,8 +190,11 @@ python scripts/prepare_data.py --dataset noisy
 # 3. Synthetic EN/TR code-switched benchmark (chunk_mix/balanced)
 python scripts/prepare_data.py --dataset code_switch
 
-# 4. Out-of-Distribution benchmarks (Near-OOD 7 folds + Far-OOD MASSIVE)
+# 4. Near-OOD SIB-200 leave-one-topic-out folds (7 folds)
 python scripts/prepare_data.py --dataset ood
+
+# Alternatively, prepare all benchmark tracks in one pass:
+python scripts/prepare_data.py --dataset all
 
 # 5. Run full dataset-wide audit and verification
 python scripts/validate_datasets.py

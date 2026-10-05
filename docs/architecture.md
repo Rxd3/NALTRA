@@ -52,4 +52,6 @@ flowchart LR
 
 The initial scaffold deliberately avoids dependency injection frameworks, service layers, and deployment infrastructure. Add abstractions only when two or more implementations need them.
 
-For ensemble mode, Naive Bayes, SVM, BiLSTM, Multilingual Transformer, Jev, and Laya each return a `PredictionResult`. The ensemble combines their label scores, returns another `PredictionResult`, and then follows the same hierarchy and OOD path as a single-model prediction. Soft voting treats a label omitted by one model as probability zero; hard voting treats it as a negative vote.
+For ensemble mode, Naive Bayes, SVM, BiLSTM, Multilingual Transformer, Jev, and Laya each return a `PredictionResult`. The ensemble combines their label scores, returns another `PredictionResult`, and then follows the same downstream OOD and confidence path as a single-model prediction. Soft voting treats a label omitted by one model as probability zero; hard voting treats it as a negative vote.
+
+*(Note: While the pipeline retains generic capabilities for multi-label thresholding and hierarchical resolution for future extensions, the active NALTRA benchmark focuses on single-label topic classification over SIB-200's flat seven-topic taxonomy).*

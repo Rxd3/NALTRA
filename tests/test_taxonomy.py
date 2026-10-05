@@ -24,14 +24,17 @@ validate_taxonomy = taxonomy_validation.validate_taxonomy
 def test_repository_taxonomy_loads_and_is_valid() -> None:
     document = load_taxonomy(PROJECT_ROOT / "taxonomy" / "taxonomy.json")
 
-    assert document["version"] == "0.2.0"
+    assert document["version"] == "0.3.0"
     assert validate_taxonomy(document) == []
-    assert len(document["labels"]) == 151
-    assert {label["id"] for label in document["labels"]} >= {
+    assert len(document["labels"]) == 7
+    assert {label["id"] for label in document["labels"]} == {
         "science_technology",
+        "travel",
         "politics",
-        "human_resource",
-        "financial_crime",
+        "sport",
+        "health",
+        "arts_culture_entertainment_media",
+        "geography",
     }
 
 

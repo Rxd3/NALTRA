@@ -16,10 +16,7 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from naltra.data.loader import load_jsonl  # noqa: E402
-from naltra.data.ood import (  # noqa: E402
-    MASSIVE_ALLOWED_SCENARIOS,
-    validate_ood_record,
-)
+from naltra.data.ood import validate_ood_record  # noqa: E402
 from naltra.data.preprocessing import (  # noqa: E402
     compute_content_fingerprint,
     load_canonical_label_ids,
@@ -177,355 +174,10 @@ def validate_sib200(canonical_labels: set[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Track 2: MultiFin Multilingual Multi-Label Benchmark (Official Track)
-# ---------------------------------------------------------------------------
-def validate_multifin_official(canonical_labels: set[str]) -> bool:
-    print_section("2. MultiFin Multilingual Multi-Label Benchmark (Official Track)")
-    mf_dir = REPO_ROOT / "data" / "processed" / "multifin"
-
-    expected_counts = {"train": 3183, "validation": 796, "test": 995}
-    expected_en = {"train": 1747, "validation": 437, "test": 546}
-    expected_tr = {"train": 1436, "validation": 359, "test": 449}
-
-    all_ids = set()
-    split_ids: dict[str, set[str]] = {}
-    split_fingerprints: dict[str, set[str]] = {}
-    split_records: dict[str, list[dict]] = {}
-    total_multi_label = 0
-    passed = True
-
-    for split_name, expected_total in expected_counts.items():
-        file_path = mf_dir / f"{split_name}.jsonl"
-        if not file_path.exists():
-            print(f"[FAIL] Missing file: {file_path}")
-            return False
-
-        records = load_jsonl(file_path)
-        split_records[split_name] = records
-        split_ids[split_name] = {r["id"] for r in records}
-        split_fingerprints[split_name] = {compute_content_fingerprint(r["text"]) for r in records}
-        en_count = sum(1 for r in records if r["language"] == "en")
-        tr_count = sum(1 for r in records if r["language"] == "tr")
-
-        if (
-            len(records) != expected_total
-            or en_count != expected_en[split_name]
-            or tr_count != expected_tr[split_name]
-        ):
-            print(
-                f"[FAIL] Split '{split_name}' size mismatch: got {len(records)}, "
-                f"expected {expected_total}"
-            )
-            passed = False
-        else:
-            print(
-                f"  [OK] Split '{split_name}': {len(records)} records "
-                f"({en_count} en, {tr_count} tr)"
-            )
-
-        for r in records:
-            all_ids.add(r["id"])
-
-            try:
-                validate_record(r, allowed_labels=canonical_labels)
-            except Exception as exc:
-                rec_id = r.get("id", "unknown")
-                print(f"[FAIL] MultiFin record {rec_id} schema validation failed: {exc}")
-                passed = False
-
-            if r.get("split") != split_name:
-                print(
-                    f"[FAIL] MultiFin record {r.get('id')} split mismatch: "
-                    f"got '{r.get('split')}', expected '{split_name}'"
-                )
-                passed = False
-
-            if len(r.get("labels", [])) > 1:
-                total_multi_label += 1
-            for lbl in r.get("labels", []):
-                if lbl not in canonical_labels:
-                    print(f"[FAIL] Record {r['id']} has unknown label: {lbl}")
-                    passed = False
-
-    expected_sum = sum(expected_counts.values())
-    if len(all_ids) != expected_sum:
-        print(f"[FAIL] Unique ID count mismatch: got {len(all_ids)}, expected {expected_sum}")
-        passed = False
-    else:
-        print(f"  [OK] Unique IDs: {len(all_ids)} / {expected_sum} (zero duplicates)")
-
-    t_v = split_ids["train"] & split_ids["validation"]
-    t_te = split_ids["train"] & split_ids["test"]
-    v_te = split_ids["validation"] & split_ids["test"]
-    if t_v or t_te or v_te:
-        print(
-            f"[FAIL] Split ID leakage in MultiFin: "
-            f"t_v={len(t_v)}, t_te={len(t_te)}, v_te={len(v_te)}"
-        )
-        passed = False
-    else:
-        print("  [OK] Split ID leakage: 0 (zero ID overlap between train, val, and test)")
-
-    if total_multi_label != 1591:
-        print(f"[FAIL] Multi-label count unexpected: got {total_multi_label}, expected 1591")
-        passed = False
-    else:
-        pct = total_multi_label / sum(expected_counts.values()) * 100
-        print(f"  [OK] Multi-label preservation: {total_multi_label} examples ({pct:.2f}%)")
-
-    # Content-fingerprint leakage audit (official track documentation)
-    train_fps = split_fingerprints["train"]
-    val_leaks = sum(
-        1
-        for r in split_records["validation"]
-        if compute_content_fingerprint(r["text"]) in train_fps
-    )
-    test_leaks = sum(
-        1 for r in split_records["test"] if compute_content_fingerprint(r["text"]) in train_fps
-    )
-    val_fps = split_fingerprints["validation"]
-    test_fps = split_fingerprints["test"]
-    vt_overlap = len(val_fps & test_fps)
-
-    print(
-        f"  [INFO] Documented official MultiFin content-fingerprint leakage:\n"
-        f"         Validation records leaking from train: {val_leaks}\n"
-        f"         Test records leaking from train: {test_leaks}\n"
-        f"         Validation/Test content overlap: {vt_overlap}\n"
-        f"         (Official track preserved for baseline comparison; see leakage-free track)"
-    )
-
-    return passed
-
-
-# ---------------------------------------------------------------------------
-# Track 3: MultiFin Leakage-Free Evaluation Track
-# ---------------------------------------------------------------------------
-def validate_multifin_leakage_free(canonical_labels: set[str]) -> bool:
-    print_section("3. MultiFin Leakage-Free Evaluation Track")
-    lf_dir = REPO_ROOT / "data" / "splits" / "multifin" / "leakage_free"
-
-    expected_files = ["train.jsonl", "validation.jsonl", "test.jsonl"]
-    for fname in expected_files:
-        fpath = lf_dir / fname
-        if not fpath.exists():
-            print(f"[FAIL] Missing file in leakage-free track: {fpath}")
-            return False
-
-    manifest_path = lf_dir / "manifest.json"
-    if not manifest_path.exists():
-        print(f"[FAIL] Missing manifest in leakage-free track: {manifest_path}")
-        return False
-    print("  [OK] Manifest present and verified")
-
-    train_records = load_jsonl(lf_dir / "train.jsonl")
-    val_records = load_jsonl(lf_dir / "validation.jsonl")
-    test_records = load_jsonl(lf_dir / "test.jsonl")
-
-    passed = True
-
-    # Validate schemas
-    for r in train_records + val_records + test_records:
-        try:
-            validate_record(r, allowed_labels=canonical_labels)
-        except Exception as exc:
-            rec_id = r.get("id", "unknown")
-            print(f"[FAIL] Leakage-free MultiFin record {rec_id} schema error: {exc}")
-            passed = False
-
-    # Check ID leakage
-    train_ids = {r["id"] for r in train_records}
-    val_ids = {r["id"] for r in val_records}
-    test_ids = {r["id"] for r in test_records}
-
-    if (train_ids & val_ids) or (train_ids & test_ids) or (val_ids & test_ids):
-        print("[FAIL] ID leakage detected in MultiFin leakage-free track")
-        passed = False
-    else:
-        print("  [OK] Split ID leakage: 0 (zero ID overlap)")
-
-    # Check content-fingerprint leakage from training reference
-    train_fps = {compute_content_fingerprint(r["text"]) for r in train_records}
-    val_fps = {compute_content_fingerprint(r["text"]) for r in val_records}
-    test_fps = {compute_content_fingerprint(r["text"]) for r in test_records}
-
-    leaking_val = train_fps & val_fps
-    leaking_test = train_fps & test_fps
-
-    if leaking_val:
-        print(f"[FAIL] Validation set still contains {len(leaking_val)} records leaking from train")
-        passed = False
-    else:
-        print("  [OK] Train -> Validation content leakage: 0 (completely eliminated)")
-
-    if leaking_test:
-        print(f"[FAIL] Test set still contains {len(leaking_test)} records leaking from train")
-        passed = False
-    else:
-        print("  [OK] Train -> Test content leakage: 0 (completely eliminated)")
-
-    expected_train = 3183
-    expected_val = 676
-    expected_test = 838
-
-    if len(train_records) != expected_train:
-        print(f"[FAIL] Train count mismatch: got {len(train_records)}, expected {expected_train}")
-        passed = False
-    else:
-        print(f"  [OK] Train count: {len(train_records)} (matches official reference)")
-
-    if len(val_records) != expected_val:
-        print(f"[FAIL] Validation count mismatch: got {len(val_records)}, expected {expected_val}")
-        passed = False
-    else:
-        print(f"  [OK] Validation count: {len(val_records)} (120 leaks removed from 796)")
-
-    if len(test_records) != expected_test:
-        print(f"[FAIL] Test count mismatch: got {len(test_records)}, expected {expected_test}")
-        passed = False
-    else:
-        print(f"  [OK] Test count: {len(test_records)} (157 leaks removed from 995)")
-
-    vt_overlap = len(val_fps & test_fps)
-    print(f"  [INFO] Validation/Test content overlap: {vt_overlap} content fingerprints")
-
-    missing_trace = 0
-    for r in val_records + test_records:
-        if "original_id" not in r and "id" not in r:
-            missing_trace += 1
-    if missing_trace > 0:
-        print(f"[FAIL] Traceability missing on {missing_trace} records")
-        passed = False
-    else:
-        print("  [OK] Full traceability preserved to original records and splits")
-
-    return passed
-
-
-# ---------------------------------------------------------------------------
-# Track 4: Clean MN-DS Benchmark
-# ---------------------------------------------------------------------------
-def validate_mn_ds(canonical_labels: set[str]) -> bool:
-    print_section("4. MN-DS Hierarchical News Benchmark (Clean)")
-    mnds_dir = REPO_ROOT / "data" / "processed" / "mn_ds"
-
-    expected_counts = {"train": 7344, "validation": 1574, "test": 1573}
-    all_ids = set()
-    split_ids: dict[str, set[str]] = {}
-    split_fingerprints: dict[str, set[str]] = {}
-    split_labels: dict[str, set[str]] = {}
-    total_multi_label = 0
-    passed = True
-
-    for split_name, expected_total in expected_counts.items():
-        file_path = mnds_dir / f"{split_name}.jsonl"
-        if not file_path.exists():
-            print(f"[FAIL] Missing file: {file_path}")
-            return False
-
-        records = load_jsonl(file_path)
-        split_ids[split_name] = {r["id"] for r in records}
-        split_fingerprints[split_name] = {compute_content_fingerprint(r["text"]) for r in records}
-        split_labels[split_name] = {lbl for r in records for lbl in r.get("labels", [])}
-
-        if len(records) != expected_total:
-            print(
-                f"[FAIL] Split '{split_name}' size mismatch: got {len(records)}, "
-                f"expected {expected_total}"
-            )
-            passed = False
-        else:
-            num_cats = len(split_labels[split_name])
-            print(
-                f"  [OK] Split '{split_name}': {len(records)} records "
-                f"(covers {num_cats} categories)"
-            )
-
-        for r in records:
-            all_ids.add(r["id"])
-
-            try:
-                validate_record(r, allowed_labels=canonical_labels)
-            except Exception as exc:
-                rec_id = r.get("id", "unknown")
-                print(f"[FAIL] MN-DS record {rec_id} schema validation failed: {exc}")
-                passed = False
-
-            if r.get("split") != split_name:
-                print(
-                    f"[FAIL] MN-DS record {r.get('id')} split mismatch: "
-                    f"got '{r.get('split')}', expected '{split_name}'"
-                )
-                passed = False
-
-            if len(r.get("labels", [])) > 1:
-                total_multi_label += 1
-            for lbl in r.get("labels", []):
-                if lbl not in canonical_labels:
-                    print(f"[FAIL] Record {r['id']} has unknown label: {lbl}")
-                    passed = False
-
-    if len(all_ids) != 10491:
-        print(f"[FAIL] Unique ID count mismatch: got {len(all_ids)}, expected 10491")
-        passed = False
-    else:
-        print(f"  [OK] Unique articles: {len(all_ids)} / 10,491 (zero duplicate article IDs)")
-
-    # Split ID leakage
-    t_v = split_ids["train"] & split_ids["validation"]
-    t_te = split_ids["train"] & split_ids["test"]
-    v_te = split_ids["validation"] & split_ids["test"]
-    if t_v or t_te or v_te:
-        print(
-            f"[FAIL] Article ID leakage in MN-DS: "
-            f"t_v={len(t_v)}, t_te={len(t_te)}, v_te={len(v_te)}"
-        )
-        passed = False
-    else:
-        print("  [OK] Article ID leakage: 0 (zero overlap between train, val, and test)")
-
-    # Content-fingerprint leakage
-    fp_tv = split_fingerprints["train"] & split_fingerprints["validation"]
-    fp_tte = split_fingerprints["train"] & split_fingerprints["test"]
-    fp_vte = split_fingerprints["validation"] & split_fingerprints["test"]
-    if fp_tv or fp_tte or fp_vte:
-        print(
-            f"[FAIL] Content-fingerprint leakage in MN-DS: "
-            f"t_v={len(fp_tv)}, t_te={len(fp_tte)}, v_te={len(fp_vte)}"
-        )
-        passed = False
-    else:
-        print("  [OK] Content-fingerprint leakage: 0 (zero content overlap after atomic grouping)")
-
-    if total_multi_label != 392:
-        print(f"[FAIL] Multi-label article count unexpected: got {total_multi_label}, expected 392")
-        passed = False
-    else:
-        print(f"  [OK] Multi-label preservation: {total_multi_label} articles (3.74%)")
-
-    all_covered = set().union(*split_labels.values())
-    if (
-        len(all_covered) != 109
-        or len(split_labels["train"]) != 109
-        or len(split_labels["validation"]) != 109
-        or len(split_labels["test"]) != 109
-    ):
-        print(
-            f"[FAIL] Category coverage incomplete: train={len(split_labels['train'])}, "
-            f"val={len(split_labels['validation'])}, test={len(split_labels['test'])}"
-        )
-        passed = False
-    else:
-        print("  [OK] Full 109/109 category coverage achieved across train, val, and test splits")
-
-    return passed
-
-
-# ---------------------------------------------------------------------------
-# Track 5: Noisy Robustness Benchmark
+# Track 2: Noisy Robustness Benchmark
 # ---------------------------------------------------------------------------
 def validate_noisy(canonical_labels: set[str]) -> bool:
-    print_section("5. Noisy Robustness Benchmark")
+    print_section("2. Noisy Robustness Benchmark")
     noisy_base = REPO_ROOT / "data" / "noisy" / "combined" / "medium"
 
     manifest_path = noisy_base / "manifest.json"
@@ -538,14 +190,6 @@ def validate_noisy(canonical_labels: set[str]) -> bool:
         "sib200": {
             "clean_dir": REPO_ROOT / "data" / "processed" / "sib200",
             "splits": {"validation": 198, "test": 408},
-        },
-        "multifin": {
-            "clean_dir": REPO_ROOT / "data" / "processed" / "multifin",
-            "splits": {"validation": 796, "test": 995},
-        },
-        "mn_ds": {
-            "clean_dir": REPO_ROOT / "data" / "processed" / "mn_ds",
-            "splits": {"validation": 1574, "test": 1573},
         },
     }
 
@@ -634,10 +278,10 @@ def validate_noisy(canonical_labels: set[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Track 6: Synthetic EN/TR Code-Switch Benchmark
+# Track 3: Synthetic EN/TR Code-Switch Benchmark
 # ---------------------------------------------------------------------------
 def validate_code_switch(canonical_labels: set[str]) -> bool:
-    print_section("6. Synthetic EN/TR Code-Switch Benchmark")
+    print_section("3. Synthetic EN/TR Code-Switch Benchmark")
     cs_dir = REPO_ROOT / "data" / "processed" / "code_switch" / "chunk_mix" / "balanced"
 
     manifest_path = cs_dir / "manifest.json"
@@ -753,10 +397,10 @@ def validate_code_switch(canonical_labels: set[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Track 7: Near-OOD SIB-200 Leave-One-Topic-Out Benchmark (7 Folds)
+# Track 4: Near-OOD SIB-200 Leave-One-Topic-Out Benchmark (7 Folds)
 # ---------------------------------------------------------------------------
 def validate_near_ood(canonical_labels: set[str]) -> bool:
-    print_section("7. Near-OOD SIB-200 Leave-One-Topic-Out Benchmark (7 Folds)")
+    print_section("4. Near-OOD SIB-200 Leave-One-Topic-Out Benchmark (7 Folds)")
     near_dir = REPO_ROOT / "data" / "ood" / "near" / "sib200"
 
     expected_topics = [
@@ -887,115 +531,6 @@ def validate_near_ood(canonical_labels: set[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Track 8: Far-OOD Benchmark (MASSIVE)
-# ---------------------------------------------------------------------------
-def validate_far_ood() -> bool:
-    print_section("8. Far-OOD Benchmark (Amazon MASSIVE EN/TR)")
-    far_dir = REPO_ROOT / "data" / "ood" / "far" / "massive"
-
-    manifest_path = far_dir / "manifest.json"
-    if not manifest_path.exists():
-        print(f"[FAIL] Missing manifest in Far-OOD: {manifest_path}")
-        return False
-    print("  [OK] Manifest present and verified")
-
-    val_file = far_dir / "validation_ood.jsonl"
-    test_file = far_dir / "test_ood.jsonl"
-
-    if not val_file.exists():
-        print(f"[FAIL] Missing Far-OOD file: {val_file}")
-        return False
-    if not test_file.exists():
-        print(f"[FAIL] Missing Far-OOD file: {test_file}")
-        return False
-
-    val_records = load_jsonl(val_file)
-    test_records = load_jsonl(test_file)
-
-    passed = True
-
-    expected_val = 500
-    expected_test = 1000
-
-    if len(val_records) != expected_val:
-        print(
-            f"[FAIL] Far-OOD validation count mismatch: got {len(val_records)}, "
-            f"expected {expected_val}"
-        )
-        passed = False
-    else:
-        print(f"  [OK] Far-OOD validation: {len(val_records)} records")
-
-    if len(test_records) != expected_test:
-        print(
-            f"[FAIL] Far-OOD test count mismatch: got {len(test_records)}, "
-            f"expected {expected_test}"
-        )
-        passed = False
-    else:
-        print(f"  [OK] Far-OOD test: {len(test_records)} records")
-
-    for r in val_records + test_records:
-        try:
-            validate_ood_record(r)
-        except Exception as exc:
-            print(f"[FAIL] Far-OOD record {r.get('id', 'unknown')} failed OOD schema: {exc}")
-            passed = False
-
-    for split_name, recs in [("validation", val_records), ("test", test_records)]:
-        pairs = defaultdict(list)
-        for r in recs:
-            pairs[r["pair_id"]].append(r)
-
-        for p_id, p_recs in pairs.items():
-            if len(p_recs) != 2:
-                print(f"[FAIL] Far-OOD {split_name} pair {p_id} has {len(p_recs)} records")
-                passed = False
-                continue
-
-            langs = {r["language"] for r in p_recs}
-            if langs != {"en", "tr"}:
-                print(f"[FAIL] Far-OOD {split_name} pair {p_id} languages {langs} != {'en', 'tr'}")
-                passed = False
-
-            r_en = next(r for r in p_recs if r["language"] == "en")
-            r_tr = next(r for r in p_recs if r["language"] == "tr")
-
-            if r_en.get("scenario") != r_tr.get("scenario"):
-                print(
-                    f"[FAIL] Far-OOD pair {p_id} scenario mismatch: "
-                    f"{r_en.get('scenario')} vs {r_tr.get('scenario')}"
-                )
-                passed = False
-            if r_en.get("intent") != r_tr.get("intent"):
-                print(
-                    f"[FAIL] Far-OOD pair {p_id} intent mismatch: "
-                    f"{r_en.get('intent')} vs {r_tr.get('intent')}"
-                )
-                passed = False
-            if r_en.get("source_label") != r_tr.get("source_label"):
-                print(f"[FAIL] Far-OOD pair {p_id} source_label mismatch")
-                passed = False
-
-            scen = r_en.get("scenario")
-            if scen and scen not in MASSIVE_ALLOWED_SCENARIOS:
-                print(f"[FAIL] Far-OOD pair {p_id} scenario '{scen}' not in allowlist")
-                passed = False
-
-    val_pids = {r["pair_id"] for r in val_records}
-    test_pids = {r["pair_id"] for r in test_records}
-    if val_pids & test_pids:
-        print(
-            f"[FAIL] Far-OOD pair_id overlap between val and test: " f"{len(val_pids & test_pids)}"
-        )
-        passed = False
-    else:
-        print("  [OK] Validation and test pair IDs are completely disjoint (zero overlap)")
-
-    return passed
-
-
-# ---------------------------------------------------------------------------
 # Main Audit Entrypoint
 # ---------------------------------------------------------------------------
 def main() -> int:
@@ -1005,13 +540,9 @@ def main() -> int:
 
     results = {
         "Clean SIB-200": validate_sib200(canonical_labels),
-        "Clean MultiFin (Official)": validate_multifin_official(canonical_labels),
-        "MultiFin Leakage-Free Track": validate_multifin_leakage_free(canonical_labels),
-        "Clean MN-DS": validate_mn_ds(canonical_labels),
         "Noisy Robustness Benchmark": validate_noisy(canonical_labels),
         "Synthetic EN/TR Code-Switch Benchmark": validate_code_switch(canonical_labels),
         "Near-OOD (7 Folds)": validate_near_ood(canonical_labels),
-        "Far-OOD (MASSIVE)": validate_far_ood(),
     }
 
     print_section("AUDIT SUMMARY")
@@ -1023,7 +554,7 @@ def main() -> int:
             all_passed = False
 
     if all_passed:
-        print("\n[PASSED] ALL 8 BENCHMARK TRACK AUDITS PASSED SUCCESSFULLY!\n")
+        print("\n[PASSED] ALL SIB-200 BENCHMARK AUDITS PASSED SUCCESSFULLY!\n")
         return 0
     else:
         print("\n[FAIL] ONE OR MORE BENCHMARK TRACK AUDITS FAILED. See log above.\n")

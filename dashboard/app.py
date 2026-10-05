@@ -42,6 +42,6 @@ if st.button("Analyze", type="primary", disabled=not text.strip()):
 with st.expander("Research scope"):
     st.markdown(
         "- English, Turkish, and English–Turkish code-switching\n"
-        "- Multi-label hierarchical classification\n"
-        "- Calibration, robustness, OOD, explainability, and latency evaluation"
+        "- Multilingual single-label topic classification on SIB-200\n"
+        "- Calibration, robustness, Near-OOD, explainability, and latency evaluation"
     )

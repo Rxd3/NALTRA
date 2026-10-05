@@ -1,5 +1,6 @@
 taxonomy_path: taxonomy/taxonomy.json
 label_map_path: taxonomy/label_map.json
-require_parent_predictions: true
-allow_multiple_paths: true
+# SIB-200 canonical taxonomy is flat (7 root labels, parent=null)
+require_parent_predictions: false
+allow_multiple_paths: false
 unknown_label_policy: error
