@@ -1,61 +1,64 @@
 # Data Workspace
 
-This directory contains the SIB-200 dataset and the derived benchmark data used by NALTRA.
+This directory manages the CORDIS Horizon 2020 source data and derived multilingual benchmark tracks used by NALTRA.
 
-Large dataset files are intentionally ignored by Git through `.gitignore`. Only documentation, code, and placeholder files are versioned.
+Large raw files, processed corpora, and translation caches are ignored by Git through `.gitignore`. Only documentation, schema definitions, and `.gitkeep` directory anchors are tracked.
 
 ## Directory Layout
 
-- `processed/sib200/`
-  - Clean normalized SIB-200 records.
-  - 2,008 records total.
-  - 1,004 aligned English/Turkish pairs.
-  - Splits:
-    - train: 1,402 records
-    - validation: 198 records
-    - test: 408 records
-
-- `processed/code_switch/`
-  - Synthetic English/Turkish code-switched evaluation records derived from aligned SIB-200 pairs.
-
-- `noisy/`
-  - Deterministic noisy robustness evaluation data derived from SIB-200 validation and test records.
-  - Default path:
-    `noisy/combined/medium/sib200/`
-
-- `ood/near/sib200/`
-  - Seven leave-one-topic-out Near-OOD folds derived from SIB-200.
+```
+data/
+├── raw/
+│   ├── cordis_h2020/            # Official EU open data release
+│   │   ├── cordis-h2020projects-csv.zip
+│   │   ├── project.csv          # 35,389 project records
+│   │   └── euroSciVoc.csv       # EuroSciVoc category paths & project assignments
+│   └── euroscivoc/
+│       └── euroSciVoc.csv       # Snapshot copy of official EuroSciVoc paths
+├── processed/
+│   └── cordis_h2020/
+│       ├── en/                  # Canonical English scientific classification benchmark
+│       │   ├── train.jsonl      # 21,985 projects (70.0%)
+│       │   ├── validation.jsonl # 4,711 projects (15.0%)
+│       │   ├── test.jsonl       # 4,711 projects (15.0%)
+│       │   └── manifest.json    # SHA-256 provenance & parameter manifest
+│       ├── tr/                  # Derived Turkish machine-translated records
+│       └── code_switch/         # Derived sentence-aligned EN/TR code-switched records
+├── splits/
+│   └── cordis_h2020/
+│       └── project_splits.json  # Pre-translation project-level split assignment map
+├── cache/
+│   └── translations/
+│       └── cordis_h2020/        # Resumable SHA-256 translation cache
+└── noisy/
+    └── combined/medium/
+        └── cordis_h2020/en/     # Typographical/orthographic noise robustness evaluation splits
+```
 
 ## Source Dataset
 
-NALTRA uses a single source dataset:
+NALTRA strictly uses **one source dataset**:
 
-- **Dataset**: SIB-200
-- **Hugging Face ID**: `Davlan/sib200`
-- **Languages used**:
-  - English
-  - Turkish
-- **License**: CC BY-SA 4.0
+- **Title**: CORDIS - EU research projects under Horizon 2020 (2014-2020)
+- **Publisher**: European Commission / Publications Office of the European Union
+- **Canonical URL**: `https://cordis.europa.eu/data/cordis-h2020projects-csv.zip`
+- **License**: CC BY 4.0 (reuse under European Union open data principles)
+- **Primary Text Field**: `objective` (project summary text)
+- **Ontology**: European Science Vocabulary (EuroSciVoc), 6 OECD root fields, 586 active categories (v0.4.0)
 
-The English and Turkish records are aligned so that corresponding translations share a common `pair_id`.
+## Derived Multilingual Variants
 
-## SIB-200 Topics
+1. **English (`en`)**: Original source text from CORDIS project objectives.
+2. **Turkish (`tr`)**: Reproducibly translated variant derived from the identical English project text.
+3. **Code-Switching (`en-tr`)**: Controlled sentence-aligned mixed variants derived from aligned English and Turkish sentence pairs of the identical projects.
 
-The project uses the following seven canonical topics:
+All derived records preserve:
+- Source project ID (`project_id`) and pair ID (`pair_id = cordis:<project_id>`)
+- Split assignment (`train`, `validation`, `test`)
+- Direct EuroSciVoc labels (`labels_direct`) and hierarchy closure (`labels`)
 
-- `science_technology`
-- `travel`
-- `politics`
-- `sport`
-- `health`
-- `arts_culture_entertainment_media`
-- `geography`
+## Data Integrity Guarantees
 
-The original SIB-200 labels are mapped through `taxonomy/label_map.json`.
-
-## Prerequisites
-
-Activate the project virtual environment and install the project with development dependencies:
-
-```bash
-python -m pip install -e ".[dev]"
+- **Zero Project Leakage**: Stratification is computed strictly on source project IDs *before* any language derivation occurs.
+- **Zero Content Leakage**: Projects with identical normalized English descriptions are grouped by SHA-256 content fingerprints so identical text never crosses train, validation, or test splits.
+- **Zero Label Mutation**: Machine translation affects only textual content; canonical target labels and hierarchical ontology structures remain identical across language variants.
