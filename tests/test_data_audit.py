@@ -211,6 +211,46 @@ def test_cache_identity_changes_with_pipeline_revision(tmp_path):
     )
 
 
+@pytest.mark.parametrize(
+    "mutation", ["grouped", "missing_source", "reordered_source", "empty_target", "changed_target"]
+)
+def test_imported_alignment_preserves_complete_source_and_output(cordis_release, mutation):
+    base, taxonomy = cordis_release
+    translate_cordis_dataset(
+        en_processed_dir=base / "en",
+        output_dir=base / "tr",
+        cache_dir=base.parent / "cache",
+        taxonomy_path=taxonomy,
+        translator=MockTranslator(),
+        review_sample_path=base.parent / "review.csv",
+        allow_mock=True,
+    )
+    rows = load_jsonl(base / "tr/validation.jsonl")
+    record = rows[0]
+    source = record["english_source_text"]
+    if mutation == "reordered_source":
+        record["sentence_alignment"].reverse()
+        for index, pair in enumerate(record["sentence_alignment"]):
+            pair["index"] = index
+        record["text"] = " ".join(p["tr"] for p in record["sentence_alignment"])
+    else:
+        record["sentence_alignment"] = [{"index": 0, "en": source, "tr": record["text"]}]
+        if mutation == "missing_source":
+            record["sentence_alignment"][0]["en"] = source.split(". ")[0]
+        elif mutation == "empty_target":
+            record["sentence_alignment"][0]["tr"] = ""
+            record["text"] = ""
+        elif mutation == "changed_target":
+            record["text"] += " Changed output."
+    save_jsonl(rows, base / "tr/validation.jsonl")
+    republish(base, taxonomy, "tr")
+    if mutation == "grouped":
+        validate_cordis_release(base, ["en", "tr"], taxonomy_path=taxonomy, allow_mock=True)
+    else:
+        with pytest.raises(ValueError):
+            validate_cordis_release(base, ["en", "tr"], taxonomy_path=taxonomy, allow_mock=True)
+
+
 def test_missing_cordis_release_fails_without_traceback(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(audit, "REPO_ROOT", tmp_path)
     assert audit.main(["--languages", "en"]) == 1
