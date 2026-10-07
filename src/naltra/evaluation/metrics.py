@@ -23,14 +23,21 @@ def precision_recall_f1(
     return precision, recall, f1
 
 
-def multilabel_metrics(y_true: Iterable[set[str]], y_pred: Iterable[set[str]]) -> dict[str, float]:
+def multilabel_metrics(
+    y_true: Iterable[set[str]],
+    y_pred: Iterable[set[str]],
+    all_labels: Iterable[str] | None = None,
+) -> dict[str, float]:
     """Calculate micro and macro precision/recall/F1 for multilabel sets."""
     truth = list(y_true)
     predictions = list(y_pred)
     if len(truth) != len(predictions):
         raise ValueError("y_true and y_pred must have the same number of examples.")
 
-    label_universe = set().union(*truth, *predictions) if truth or predictions else set()
+    observed = set().union(*truth, *predictions) if truth or predictions else set()
+    label_universe = set(all_labels) if all_labels is not None else observed
+    if observed - label_universe:
+        raise ValueError("Labels fall outside the evaluation label universe.")
     micro_tp = sum(
         len(actual & predicted) for actual, predicted in zip(truth, predictions, strict=False)
     )
@@ -88,4 +95,4 @@ def compute_classification_metrics(
         pred_set = {item.label for item in pred.labels if item.score >= threshold}
         y_pred_sets.append(pred_set)
 
-    return multilabel_metrics(ground_truth, y_pred_sets)
+    return multilabel_metrics(ground_truth, y_pred_sets, all_labels)
