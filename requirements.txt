@@ -1,8 +1,10 @@
 numpy
 pandas
 scikit-learn
-torch
-transformers
+torch>=2.6
+transformers>=4.45,<6
+httpx>=0.28,<1
+lingua-language-detector>=2,<3
 datasets
 sentencepiece
 pydantic

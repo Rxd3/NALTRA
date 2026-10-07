@@ -86,7 +86,19 @@ make format       # apply Ruff fixes and Black formatting
 make dashboard    # start the Streamlit dashboard
 ```
 
-The model packages currently contain interface-compatible placeholders only. No datasets or pretrained weights are downloaded by setup or by the tests.
+BiLSTM and Transformer support training, batch inference, and offline artifact reload.
+The shared pipeline supports language detection, thresholds, hierarchy, OOD, and ensemble decisions.
+Jev/Laya provide configurable adapters; their live services remain disabled until real provider
+contracts and credentials are supplied. Naive Bayes and SVM remain placeholders.
+No datasets or pretrained weights are downloaded by setup or by the tests.
+
+See [core ML operation and integration](docs/core_ml.md) for training, artifact loading,
+the prediction contract, and external setup. After preparing and auditing data:
+
+```bash
+python scripts/train_all.py --smoke --device cpu --output-dir models/smoke
+python scripts/train_all.py --device auto
+```
 
 Prepare and audit the implemented benchmark datasets from the repository root:
 
