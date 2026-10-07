@@ -25,7 +25,8 @@ def get_source_config(name: str) -> dict[str, str]:
     import yaml
 
     with (REPO_ROOT / "configs/data.yaml").open(encoding="utf-8") as handle:
-        return yaml.safe_load(handle)["sources"][name]
+        config = yaml.safe_load(handle)
+        return config["translation"] if name == "translation" else config["sources"][name]
 
 
 def compute_file_sha256(path: str | Path) -> str:

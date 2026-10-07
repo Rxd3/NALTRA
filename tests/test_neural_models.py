@@ -26,15 +26,15 @@ def small_cpu_pool():
 def records(split: str) -> list[dict]:
     texts = [
         "New science research",
-        "Football teams play sport",
-        "Science helps sport",
+        "Football teams play optics",
+        "Science helps optics",
         "Yeni bilim araştırması",
     ]
     labels = [
-        ["science_technology"],
-        ["sport"],
-        ["science_technology", "sport"],
-        ["science_technology"],
+        ["acoustics"],
+        ["optics"],
+        ["acoustics", "optics"],
+        ["acoustics"],
     ]
     return [
         {
@@ -90,7 +90,7 @@ def test_training_updates_weights_and_roundtrips_offline(family, tmp_path, monke
         model = tiny_transformer(defaults, train)
         captured = {key: value.clone() for key, value in model.network.state_dict().items()}
     model.train(train, validation)
-    assert model.labels == ["science_technology", "sport"]
+    assert model.labels == ["acoustics", "optics"]
     assert any(
         not torch.equal(value.cpu(), captured[key])
         for key, value in model.network.state_dict().items()
@@ -100,10 +100,10 @@ def test_training_updates_weights_and_roundtrips_offline(family, tmp_path, monke
         for epoch in model.history
     )
     assert 0 <= model.ood_threshold <= 1
-    texts = (text for text in ["Science helps sport", "Football", "bilim araştırması"])
+    texts = (text for text in ["Science helps optics", "Football", "bilim araştırması"])
     predictions = model.predict_batch(texts)
     assert [result.text for result in predictions] == [
-        "Science helps sport",
+        "Science helps optics",
         "Football",
         "bilim araştırması",
     ]
@@ -167,7 +167,7 @@ def test_early_stopping_restores_best_checkpoint(monkeypatch):
         {"device": "invalid"},
         {"architecture": {"max_vocab": 2}},
         {"architecture": {"max_length": 0}},
-        {"multilabel": {"per_label": {"sport": 2}}},
+        {"multilabel": {"per_label": {"optics": 2}}},
     ],
 )
 def test_rejects_invalid_configuration(config):
@@ -186,7 +186,7 @@ def test_requires_fitted_state_and_valid_records():
     with pytest.raises(ValueError, match="other splits"):
         model.train(records("test"))
     validation = records("validation")
-    validation[0]["labels"] = ["health"]
+    validation[0]["labels"] = ["biochemistry"]
     with pytest.raises(ValueError, match="absent from training"):
         model.train(records("train"), validation)
     model.train(records("train"))
@@ -240,3 +240,25 @@ def test_custom_taxonomy_is_hashed_and_cannot_change_after_training(tmp_path):
         model.save(tmp_path / "other_artifact")
     with pytest.raises(ValueError, match="taxonomy"):
         BiLSTMModel(small_config(), taxonomy_path=custom).load(tmp_path / "artifact")
+
+
+@pytest.mark.parametrize("family", ["bilstm", "transformer"])
+def test_cordis_targets_exclude_structural_ancestors(family, tmp_path):
+    from naltra.data.preprocessing import hierarchy_closure
+
+    config = {**small_config(), "target_field": "labels_direct"}
+    model = BiLSTMModel(config)
+    train, validation = records("train"), records("validation")
+    for row in train + validation:
+        row["labels_direct"] = list(row["labels"])
+        row["labels"] = sorted(hierarchy_closure(row["labels_direct"], model.parents))
+    if family == "transformer":
+        model = tiny_transformer(TransformerModel(config).config, train)
+    model.train(train, validation)
+    assert model.labels == ["acoustics", "optics"]
+    assert "natural_sciences" not in model.predict("Scientific research").label_scores
+    model.save(tmp_path)
+    reloaded = type(model)({"device": "cpu"})
+    reloaded.load(tmp_path)
+    assert reloaded.config["target_field"] == "labels_direct"
+    assert set(reloaded.predict("Scientific research").label_scores) == {"acoustics", "optics"}

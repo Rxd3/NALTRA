@@ -1,6 +1,8 @@
 """Hierarchy-aware label expansion and metrics."""
 
+import json
 from collections.abc import Mapping
+from pathlib import Path
 
 from naltra.evaluation.metrics import precision_recall_f1
 from naltra.pipeline.hierarchy import hierarchy_path
@@ -25,8 +27,6 @@ def hierarchical_precision_recall_f1(
         expand_with_ancestors(predicted_labels, parent_by_label),
     )
 
-import json
-from pathlib import Path
 
 def load_parent_child_pairs(taxonomy_path: str = "taxonomy/taxonomy.json") -> list[tuple[str, str]]:
     """Extracts (parent_id, child_id) pairs from taxonomy.json if present."""
@@ -35,7 +35,7 @@ def load_parent_child_pairs(taxonomy_path: str = "taxonomy/taxonomy.json") -> li
         return []
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         pairs = []
@@ -47,4 +47,3 @@ def load_parent_child_pairs(taxonomy_path: str = "taxonomy/taxonomy.json") -> li
         return pairs
     except Exception:
         return []
-        

@@ -266,35 +266,34 @@ def test_invalid_parameters_raise_appropriate_errors() -> None:
 
 
 def test_generate_noisy_benchmarks_directory_structure_and_counts() -> None:
-    """Verify benchmark generation respects strategy/severity directories and split filtering."""
+    """Verify SIB-200 noisy benchmark generation and split filtering."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_proc = Path(tmp_dir) / "processed"
         tmp_noisy = Path(tmp_dir) / "noisy"
 
-        # Create mock clean datasets
-        for ds in ("sib200", "multifin"):
-            ds_dir = tmp_proc / ds
-            ds_dir.mkdir(parents=True, exist_ok=True)
-            for split in ("train", "validation", "test"):
-                records = [
-                    {
-                        "id": f"{ds}:{split}:{i}",
-                        "text": f"This is mock record {i} for {ds} {split}.",
-                        "labels": ["general"],
-                        "language": "en",
-                        "source": ds,
-                        "source_id": f"s_{i}",
-                        "split": split,
-                    }
-                    for i in range(5)
-                ]
-                save_jsonl(records, ds_dir / f"{split}.jsonl")
+        ds = "sib200"
+        ds_dir = tmp_proc / ds
+        ds_dir.mkdir(parents=True, exist_ok=True)
 
-        # Run benchmark generation for validation and test only
+        for split in ("train", "validation", "test"):
+            records = [
+                {
+                    "id": f"{ds}:{split}:{i}",
+                    "text": f"This is mock record {i} for {ds} {split}.",
+                    "labels": ["general"],
+                    "language": "en",
+                    "source": ds,
+                    "source_id": f"s_{i}",
+                    "split": split,
+                }
+                for i in range(5)
+            ]
+            save_jsonl(records, ds_dir / f"{split}.jsonl")
+
         counts = generate_noisy_benchmarks(
             processed_base_dir=tmp_proc,
             output_base_dir=tmp_noisy,
-            datasets=["sib200", "multifin"],
+            datasets=["sib200"],
             splits=["validation", "test"],
             strategy="combined",
             severity="medium",
@@ -303,25 +302,23 @@ def test_generate_noisy_benchmarks_directory_structure_and_counts() -> None:
 
         assert counts == {
             "sib200": {"validation": 5, "test": 5},
-            "multifin": {"validation": 5, "test": 5},
         }
 
-        # Check directory structure: data/noisy/combined/medium/{dataset}/{split}.jsonl
-        for ds in ("sib200", "multifin"):
-            for split in ("validation", "test"):
-                expected_path = tmp_noisy / "combined" / "medium" / ds / f"{split}.jsonl"
-                assert expected_path.exists(), f"Missing expected output file: {expected_path}"
-                loaded = load_jsonl(expected_path)
-                assert len(loaded) == 5
-                for rec in loaded:
-                    assert ":noise:combined:medium" in rec["id"]
-                    assert rec["noise_strategy"] == "combined"
-                    assert rec["noise_severity"] == "medium"
-                    assert rec["labels"] == ["general"]
+        for split in ("validation", "test"):
+            expected_path = tmp_noisy / "combined" / "medium" / "sib200" / f"{split}.jsonl"
+            assert expected_path.exists()
 
-            # Train split must NOT exist in noisy benchmark directory
-            train_path = tmp_noisy / "combined" / "medium" / ds / "train.jsonl"
-            assert not train_path.exists(), "Noisy training split should not be generated"
+            loaded = load_jsonl(expected_path)
+            assert len(loaded) == 5
+
+            for rec in loaded:
+                assert ":noise:combined:medium" in rec["id"]
+                assert rec["noise_strategy"] == "combined"
+                assert rec["noise_severity"] == "medium"
+                assert rec["labels"] == ["general"]
+
+        train_path = tmp_noisy / "combined" / "medium" / "sib200" / "train.jsonl"
+        assert not train_path.exists()
 
 
 def test_single_character_inputs_across_strategies() -> None:

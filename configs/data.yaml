@@ -7,6 +7,12 @@ labels_column: labels
 random_seed: 42
 # Immutable upstream versions used by preparation; update deliberately for a new release.
 sources:
+  cordis_h2020:
+    url: https://cordis.europa.eu/data/cordis-h2020projects-csv.zip
+    archive_sha256: d4a8e3645d0b1896b967618e8e7a7f7928738b469737363a30816c217cbd48f2
+    project_sha256: 60221f84edb4a23c058120179ef786331dd39cf209a93ab5bf19b0daae0b5e7a
+    euroscivoc_sha256: cb3c1344d3d32b7eeb7c983e3a86a4c0ba37151ff8ad3e87bf134d9306e396b7
+  # Historical source locks retained for compatibility; active training uses CORDIS only.
   sib200:
     dataset_id: Davlan/sib200
     revision: 38977a667f6fc264d5c26ec57a01e16db040b358
@@ -30,3 +36,6 @@ paths:
   splits: data/splits
   ood: data/ood
   noisy: data/noisy
+translation:
+  model: Helsinki-NLP/opus-mt-tc-big-en-tr
+  revision: e539fc16a8a1a0ea5950eb339b595bfcce990e90

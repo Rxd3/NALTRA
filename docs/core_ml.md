@@ -19,11 +19,11 @@ requires a compatible PyTorch build; CPU is supported. Dataset manifests include
 dependency-file hashes, so changes require genuine regeneration, not hash edits:
 
 ```powershell
-python scripts/prepare_data.py --dataset all
+python scripts/prepare_data.py --dataset all --download
 python scripts/validate_datasets.py
 ```
 
-Verified local MN-DS/MASSIVE sources are reused. Data source locks are unchanged.
+Preparation verifies the locked CORDIS raw CSVs and publishes manifest schema 1.1.0. Translation pins the OPUS-MT checkpoint and versions its cache with the generation code.
 Preserve the complete data release and model artifacts with experiments; final
 release data should be generated from reviewed code as described in [dataset
 provenance](dataset.md).
@@ -33,36 +33,25 @@ Run bounded offline smoke training or full experiments:
 ```powershell
 python scripts/train_all.py --smoke --device cpu --output-dir models/smoke
 python scripts/train_all.py --device auto
-python scripts/train_all.py --models bilstm --datasets multifin --device cpu
-python scripts/train_all.py --models transformer --datasets sib200 --device cuda --batch-size 2 --accumulation 8
-python scripts/train_all.py --datasets sib200 --heldout-topic politics --device auto
+python scripts/train_all.py --models bilstm --datasets cordis_h2020 --languages en --device cpu
+python scripts/train_all.py --models transformer --datasets cordis_h2020 --languages en tr --device cuda --batch-size 2 --accumulation 8
+python scripts/train_all.py --datasets cordis_h2020 --languages en tr --device auto --output-dir models/cordis_v0.4.0
 ```
 
-`configs/training.yaml` selects clean SIB-200, leakage-free MultiFin and clean
-MN-DS independently. Model YAML files control architecture/training. Overrides
-include `--epochs`, `--batch-size`, `--accumulation`, `--device`, `--output-dir`,
-`--config`, and `--smoke-records`. Relative configured paths resolve from the
-repository root. Existing artifacts require a new output directory or explicit
-`--overwrite`. Each run prints status and the command writes
-`training_summary.json`; independent runs continue after failure and any failure
-produces a nonzero exit status. Disabled configs are reported as disabled.
-Explicit requests to train classical placeholders or inference services fail.
+`configs/training.yaml` selects CORDIS English and Turkish jointly by default. Use `--languages en` for the original-language baseline. The loader audits each manifest and checks project/content partition isolation, complete direct-label training coverage, translation provenance, and aligned source fidelity before initializing any model. Missing Turkish records fail a bilingual request explicitly.
 
-Selected manifests are verified before model initialization. Training never
-prepares datasets. The existing audit reads test files to verify integrity, but
-test records are not used for fitting, vocabulary building, or model selection.
-Noise, code-switch and OOD examples remain evaluation inputs. Held-out SIB-200
-experiments use existing ID fold training/validation files and exclude the
-held-out label from the output head.
+Model YAML files control architecture and training. Overrides include `--epochs`, `--batch-size`, `--accumulation`, `--device`, `--output-dir`, `--config`, and `--smoke-records`. Existing artifacts require a new output directory or explicit `--overwrite`. Failures produce a nonzero exit status and are recorded in `training_summary.json`. Classical placeholders and inference services are not locally trainable.
 
-Smoke mode uses at most 32 training and compatible validation records, one epoch
+Training never prepares data. Test files are audited for integrity but never used for fitting, vocabulary construction, or checkpoint selection. Noise and code-switch records remain evaluation-only. Historical SIB-200 OOD folds are not CORDIS training inputs; a CORDIS held-out-domain protocol must be defined separately.
+
+Smoke mode uses at most 128 training and compatible validation records, one epoch
 unless overridden, smaller BiLSTM dimensions, and a tiny randomly initialized
 Transformer with a training-only tokenizer. Smoke artifacts have a `_smoke`
 track suffix and `smoke: true`; they are not benchmark models. Validation records
 with labels absent from the bounded training subset are excluded. Increase
 `--smoke-records` if no compatible validation records remain.
 
-Both models train multi-hot direct-label targets with binary cross-entropy with
+Both CORDIS models explicitly use `target_field: labels_direct` to train multi-hot direct-label targets with binary cross-entropy with
 logits. Labels are sorted canonical IDs from training. BiLSTM preserves Unicode
 and casing, builds its vocabulary only from training, uses learned random
 embeddings, and packs sequences so padding does not affect recurrent state. This
@@ -89,14 +78,14 @@ nested config overrides and optional `taxonomy_path`; Transformer also accepts
 an injected tokenizer/network pair for local fixtures. Existing wrappers work.
 
 `PredictionResult.label_scores` contains probabilities for every supported direct
-label. `labels` contains threshold-selected labels and may be empty. `metadata`
+label. `labels` in `PredictionResult` contains threshold-selected direct labels and may be empty. `metadata`
 records label space, taxonomy, calibration status and OOD configuration. New
 fields have defaults for compatibility. Probabilities/latencies must be finite;
 duplicate selected labels are rejected. Serialization includes the new fields.
 Hard ensemble scores are explicitly marked as vote fractions rather than class
 probabilities in metadata.
 
-Artifacts live under `<output>/<dataset>/<track>/<model>/`. `naltra.json` records
+Artifacts live under `<output>/<dataset>/<track>/<model>/`. CORDIS tracks are `en_direct`, `tr_direct`, or `en_tr_direct`; the artifact records `target_field`, language selection, and dataset manifests. Older artifacts use a different taxonomy and must be retained as historical runs. `naltra.json` records
 configuration, label order, taxonomy/label-map hashes, history, OOD threshold and
 provenance. BiLSTM adds weights/vocabulary; Transformer saves Hugging Face model
 and tokenizer files. Loading checks family and taxonomy compatibility and uses
@@ -108,7 +97,7 @@ from naltra.pipeline.prediction import PredictionPipeline
 from naltra.schemas.prediction import LanguageInfo
 
 model = BiLSTMModel({"device": "cpu"})
-model.load("models/sib200/clean/bilstm")
+model.load("models/cordis_v0.4.0/cordis_h2020/en_tr_direct/bilstm")
 pipeline = PredictionPipeline(model=model)
 result = pipeline.predict("Türkiye'de yeni bilimsel araştırmalar yapılıyor.")
 batch = pipeline.predict_batch(
@@ -161,7 +150,7 @@ from naltra.pipeline.ensemble import EnsembleConfig
 from naltra.utils.config import load_yaml
 
 transformer = TransformerModel({"device": "cpu"})
-transformer.load("models/sib200/clean/transformer")
+transformer.load("models/cordis_v0.4.0/cordis_h2020/en_tr_direct/transformer")
 config = EnsembleConfig(**load_yaml("configs/ensemble_neural.yaml")["ensemble"])
 ensemble = PredictionPipeline(
     models={"bilstm": model, "transformer": transformer}, ensemble_config=config,

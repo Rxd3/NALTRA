@@ -19,7 +19,7 @@ def test_external_contract_mapping_and_secret_free_persistence(model_type, clien
         assert json.loads(request.content) == {"input": "some text"}
         assert request.url.path == "/api/classify"
         return httpx.Response(
-            200, json={"result": {"probabilities": {"Sports": 0.8, "Health": 0.2}}}
+            200, json={"result": {"probabilities": {"Acoustics": 0.8, "Optics": 0.2}}}
         )
 
     client = client_type(
@@ -37,13 +37,13 @@ def test_external_contract_mapping_and_secret_free_persistence(model_type, clien
         client,
         {
             "enabled": True,
-            "supported_labels": ["health", "sport"],
-            "label_map": {"Sports": "sport", "Health": "health"},
+            "supported_labels": ["optics", "acoustics"],
+            "label_map": {"Acoustics": "acoustics", "Optics": "optics"},
         },
     )
     result = model.predict(" some   text ")
-    assert result.label_scores == {"sport": 0.8, "health": 0.2}
-    assert [label.label for label in result.labels] == ["sport"]
+    assert result.label_scores == {"acoustics": 0.8, "optics": 0.2}
+    assert [label.label for label in result.labels] == ["acoustics"]
     assert len(model.predict_batch(["some text", "some text"])) == 2
     model.save(tmp_path)
     serialized = (tmp_path / "naltra.json").read_text()
@@ -61,9 +61,9 @@ def test_external_contract_mapping_and_secret_free_persistence(model_type, clien
 @pytest.mark.parametrize(
     "response",
     [
-        {"scores": {"sport": float("nan")}},
-        {"scores": {"sport": 1.1}},
-        {"scores": {"sport": True}},
+        {"scores": {"acoustics": float("nan")}},
+        {"scores": {"acoustics": 1.1}},
+        {"scores": {"acoustics": True}},
         {"scores": []},
         {"scores": {}},
         {"wrong": {}},
@@ -108,7 +108,7 @@ def test_disabled_unconfigured_and_missing_credentials(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "scores,match", [({"health": 0.5}, "Unknown"), ({"sport": 0.5}, "every supported")]
+    "scores,match", [({"optics": 0.5}, "Unknown"), ({"acoustics": 0.5}, "every supported")]
 )
 def test_external_label_space_validation(scores, match):
     client = JevClient(
@@ -117,7 +117,7 @@ def test_external_label_space_validation(scores, match):
         configured=True,
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"scores": scores})),
     )
-    labels = ["sport"] if match == "Unknown" else ["health", "sport"]
+    labels = ["acoustics"] if match == "Unknown" else ["optics", "acoustics"]
     model = JevModel(client, {"enabled": True, "supported_labels": labels})
     with pytest.raises(ValueError, match=match):
         model.predict("valid text")

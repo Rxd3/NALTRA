@@ -24,15 +24,11 @@ validate_taxonomy = taxonomy_validation.validate_taxonomy
 def test_repository_taxonomy_loads_and_is_valid() -> None:
     document = load_taxonomy(PROJECT_ROOT / "taxonomy" / "taxonomy.json")
 
-    assert document["version"] == "0.2.0"
+    assert document["version"] == "0.4.0"
     assert validate_taxonomy(document) == []
-    assert len(document["labels"]) == 151
-    assert {label["id"] for label in document["labels"]} >= {
-        "science_technology",
-        "politics",
-        "human_resource",
-        "financial_crime",
-    }
+    assert len(document["labels"]) == 586
+    assert sum(label.get("is_direct_supported", False) for label in document["labels"]) == 473
+    assert sum(label["parent"] is None for label in document["labels"]) == 6
 
 
 def test_repository_label_map_targets_are_canonical() -> None:

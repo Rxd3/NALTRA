@@ -57,6 +57,8 @@ def seed_everything(seed: int) -> None:
 
 
 def validate_neural_config(config: Mapping[str, Any]) -> None:
+    if config.get("target_field", "labels") not in {"labels", "labels_direct"}:
+        raise ValueError("target_field must be labels or labels_direct.")
     training = config["training"]
     for key in ("batch_size", "epochs", "gradient_accumulation_steps", "patience"):
         if type(training[key]) is not int or training[key] < 1:
@@ -180,11 +182,17 @@ class NeuralModel(BaseNALTRAModel):
             raise ValueError(f"Duplicate record IDs in {split} data.")
         return records
 
+    def _targets(self, record: dict[str, Any]) -> list[str]:
+        field = self.config.get("target_field", "labels")
+        if field not in record:
+            raise ValueError(f"Training record is missing configured target field {field!r}.")
+        return record[field]
+
     def _loader(self, records: list[dict[str, Any]], *, shuffle: bool = False) -> DataLoader:
         index = {label: i for i, label in enumerate(self.labels)}
         targets = torch.zeros(len(records), len(index), dtype=torch.float32)
         for row, record in enumerate(records):
-            for label in record["labels"]:
+            for label in self._targets(record):
                 if label not in index:
                     raise ValueError(
                         f"Validation label {label!r} is absent from training label space."
@@ -215,8 +223,8 @@ class NeuralModel(BaseNALTRAModel):
         self._fitted = False
         self.history = []
         self.ood_threshold = None
-        self.labels = sorted({label for record in train for label in record["labels"]})
-        unknown = {label for record in validation or [] for label in record["labels"]} - set(
+        self.labels = sorted({label for record in train for label in self._targets(record)})
+        unknown = {label for record in validation or [] for label in self._targets(record)} - set(
             self.labels
         )
         if unknown:

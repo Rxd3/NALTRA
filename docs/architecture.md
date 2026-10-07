@@ -61,3 +61,7 @@ match across components. The ensemble follows shared hierarchy and OOD stages.
 The neural models and shared pipeline are implemented. Jev/Laya remain disabled
 until real provider contracts are configured. See [core ML operation](core_ml.md)
 for artifacts, training commands, OOD semantics, extension hooks and integrations.
+
+## CORDIS training boundary
+
+The active dataset is CORDIS H2020. Stored records preserve `labels_direct` and ancestor-closed `labels`. All CORDIS neural training uses direct targets explicitly; direct probabilities and selections remain in `PredictionResult.label_scores` and `PredictionResult.labels`, while ancestors appear in `hierarchy_paths`. Full-label calibration and ordinary classification must use the same direct label universe. Dataset integrity checks are shared by the validator and the training CLI.

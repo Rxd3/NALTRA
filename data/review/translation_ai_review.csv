@@ -1,0 +1,101 @@
+project_id,pair_id,top_level_domain,meaning_preserved,terminology_quality,fluency,notes,reviewer_type
+671563,cordis:671563,4g,yes,5,4,Unspaced period fix ('5G.As' -> '5G. As') restored parenthetical mobile data traffic growth clause (1000 fold increase); full technical meaning preserved.,ai_assisted
+673403,cordis:673403,5g,yes,5,4,,ai_assisted
+694386,cordis:694386,absorption_spectroscopy,partial,4,3,"PDF dehyphenation resolved corrupted loanwords (teknoloji-niques, fonamen-tal -> teknikler, temel); minor physical chemistry phrasing stiffness remains.",ai_assisted
+790882,cordis:790882,access_control,yes,5,4,,ai_assisted
+805912,cordis:805912,acoustics,partial,2,3,cues (billiards) translated as ipuçları (hints); tropical woods translated as tropikal orman (forests); occupations translated as işgaller (invasions),ai_assisted
+645987,cordis:645987,additive_manufacturing,yes,5,4,,ai_assisted
+687132,cordis:687132,aeronautical_engineering,yes,4,4,Unspaced period fix ('phase.In' -> 'phase. In') and bullet spacing restored aircraft configuration and CFD drag reduction clause; full aeronautical specifications preserved.,ai_assisted
+790820,cordis:790820,agriculture,partial,3,3,Dash list segmentation improved clause boundaries; slight model literalism remains on fertilization terminology ('uzerine ve altina').,ai_assisted
+750795,cordis:750795,agronomy,yes,5,4,,ai_assisted
+831138,cordis:831138,air_pollution_engineering,yes,5,4,,ai_assisted
+734161,cordis:734161,air_traffic_management,yes,5,4,,ai_assisted
+855726,cordis:855726,aircraft,yes,5,4,Numbered list segmentation fix ('1) OEM... 2) Energy as a Service') restored both business model items and high-altitude turbine power capacity clauses.,ai_assisted
+876553,cordis:876553,alcohols,yes,5,4,,ai_assisted
+637844,cordis:637844,algebra,yes,5,4,,ai_assisted
+749793,cordis:749793,algebraic_geometry,partial,2,3,scattering amplitudes translated as titreşimli genlikler; quantization translated as niceliği (quantity); Theformer untranslated,ai_assisted
+781195,cordis:781195,aliphatic_compounds,yes,5,4,,ai_assisted
+765262,cordis:765262,alkali_metals,yes,5,4,,ai_assisted
+896245,cordis:896245,alkaline_earth_metals,yes,5,4,,ai_assisted
+698871,cordis:698871,allergology,partial,3,3,false friend: actual translated as gerçek (real) instead of mevcut/güncel; spanning (typo spamming in source) translated as spam; π symbol dropped,ai_assisted
+707730,cordis:707730,alzheimer,yes,5,4,,ai_assisted
+724040,cordis:724040,amines,partial,3,3,"List segmentation restored omitted objectives (ii), (iii), (iv); scientific meaning partially impacted by model polysemy on ribosomal arrest ('tutuklama') and nascent ('yenidogan').",ai_assisted
+827645,cordis:827645,amorphous_semiconductors,partial,2,3,energy harvesters mistranslated as biçerdöverler (agricultural combine harvesters); fabless semiconductor mistranslated as masal (fairy tale) yarı iletken,ai_assisted
+826429,cordis:826429,amorphous_solids,yes,5,4,,ai_assisted
+840964,cordis:840964,anatomy_and_morphology,yes,5,4,,ai_assisted
+656337,cordis:656337,ancient_history,partial,2,3,Roman Centuriation translated as Roma Yüzyılı (century); land surveyors translated as anketörler (pollsters),ai_assisted
+806162,cordis:806162,animal_feed,yes,5,4,,ai_assisted
+854943,cordis:854943,animal_husbandry,yes,5,4,,ai_assisted
+653748,cordis:653748,anthropology,yes,5,4,,ai_assisted
+673797,cordis:673797,antibiotic_resistance,partial,2,3,technology adoption translated as evlat edinme (child adoption); off-the-shelf translated as raf dışı,ai_assisted
+955626,cordis:955626,antibiotics,yes,4,4,micro-SD jack translated as kriko (car jack),ai_assisted
+724857,cordis:724857,archaeology,yes,5,4,,ai_assisted
+780215,cordis:780215,arithmetics,yes,4,4,Segmentation fix resolved severe bullet omission (bullet symbol '•' normalized); all 4 objectives now completely translated with good scientific clarity.,ai_assisted
+724649,cordis:724649,art_history,yes,5,4,,ai_assisted
+759248,cordis:759248,arteriosclerosis,yes,5,4,,ai_assisted
+862893,cordis:862893,artificial_intelligence,partial,3,4,novel scheme translated as roman şeması (literary novel) instead of yeni/özgün şema,ai_assisted
+647737,cordis:647737,arts,partial,3,3,List item c restored by segmentation fix; minor model polysemy remains on humanities/digital humanities and colonial terminology (model limitation).,ai_assisted
+665751,cordis:665751,asthma,yes,5,4,,ai_assisted
+101020459,cordis:101020459,astrophysics,yes,5,4,,ai_assisted
+773122,cordis:773122,atomic_physics,yes,5,4,,ai_assisted
+644956,cordis:644956,autoimmune_diseases,yes,5,4,,ai_assisted
+777561,cordis:777561,automation,partial,4,3,Unspaced period fix restored avionics and automotive sectors; minor model literalness remains on signal searching phrase.,ai_assisted
+710962,cordis:710962,automotive_engineering,yes,5,4,,ai_assisted
+644313,cordis:644313,autonomous_robots,yes,5,4,,ai_assisted
+779877,cordis:779877,autonomous_vehicles,partial,3,3,Unspaced period fix restored phase 2 deliverables; ISA translated as Insaat Seti Mimarisi due to model polysemy (model limitation).,ai_assisted
+790113,cordis:790113,bacteriology,yes,5,4,,ai_assisted
+840270,cordis:840270,bacteriomes,yes,5,4,,ai_assisted
+867502,cordis:867502,big_data,yes,5,4,,ai_assisted
+101022633,cordis:101022633,biocatalysis,yes,5,4,,ai_assisted
+659022,cordis:659022,biochemistry,yes,3,4,stemness mistranslated as saplık (plant stalk-ness) instead of kök hücre özelliği,ai_assisted
+891404,cordis:891404,biodiversity_conservation,yes,5,4,,ai_assisted
+726612,cordis:726612,bioeconomy,yes,5,4,,ai_assisted
+678012,cordis:678012,biofuels,yes,5,4,,ai_assisted
+750252,cordis:750252,biogeochemistry,yes,5,4,,ai_assisted
+641942,cordis:641942,biological_interactions,partial,3,3,unwearable blends translated as yorulmaz karışımları (tireless mixtures) instead of giyilemez karışımlar,ai_assisted
+845185,cordis:845185,biomass,yes,5,4,,ai_assisted
+820352,cordis:820352,biomass_energy,yes,4,4,minor literal translation: casing soil as muhafaza toprağı; sound problem as sağlam bir sorun,ai_assisted
+738661,cordis:738661,biomaterials,yes,5,4,"List segmentation fix restored 3 targeted skin conditions (akne, atopik cilt, yaslanan cilt), SME partner Bicosome, and final market impact sentence.",ai_assisted
+813152,cordis:813152,biomolecules,yes,5,4,,ai_assisted
+101027987,cordis:101027987,biophysics,yes,5,4,,ai_assisted
+101025683,cordis:101025683,bioreactors,yes,5,4,,ai_assisted
+805222,cordis:805222,biosensors,yes,4,4,Pipeline repetition-loop protection and unspaced period fix eliminated decoder cycling ('ve bu nedenle...'); entire second half and final biosensor conclusions now fully translated.,ai_assisted
+766975,cordis:766975,biosphera,yes,5,4,,ai_assisted
+833460,cordis:833460,black_holes,yes,5,4,,ai_assisted
+874466,cordis:874466,bluetooth,yes,5,4,,ai_assisted
+862127,cordis:862127,botany,partial,3,3,"Unspaced period fix ('WS2.The') restored work stream descriptions; botanical/genetics polysemy remains (plant -> tesis, knockout -> nakavt) (model limitation).",ai_assisted
+893597,cordis:893597,breast_cancer,yes,5,4,,ai_assisted
+732363,cordis:732363,bureaucracy,yes,5,4,,ai_assisted
+891477,cordis:891477,business_and_management,yes,5,4,,ai_assisted
+680431,cordis:680431,business_intelligence,yes,5,4,,ai_assisted
+876228,cordis:876228,business_models,yes,5,4,,ai_assisted
+836255,cordis:836255,carbohydrates,yes,5,4,,ai_assisted
+727503,cordis:727503,carbon_capture_engineering,yes,5,4,,ai_assisted
+766082,cordis:766082,cardiac_arrhythmia,yes,5,4,Unspaced period fix ('reactions.In' -> 'reactions. In') restored trailing Technology Solutions section and final enzymatic reaction targets.,ai_assisted
+679242,cordis:679242,cardiology,partial,4,3,Work package chunking restored work package clauses 4 and 5; minor syntactic stiffness in list numbering remains due to model phrasing.,ai_assisted
+673072,cordis:673072,cardiovascular_diseases,yes,5,4,,ai_assisted
+887412,cordis:887412,catalysis,yes,5,4,,ai_assisted
+661149,cordis:661149,cell_biology,yes,5,4,,ai_assisted
+634893,cordis:634893,cell_signaling,yes,5,4,,ai_assisted
+799408,cordis:799408,cells_technologies,yes,5,4,,ai_assisted
+728725,cordis:728725,ceramics,yes,3,4,ceramic firing translated as ateşlenmiş instead of fırınlanmış/pişirilmiş; abraded translated as non-word abrake,ai_assisted
+840491,cordis:840491,cereals,yes,5,4,,ai_assisted
+843136,cordis:843136,chemical_engineering,yes,5,4,,ai_assisted
+722337,cordis:722337,chemical_sciences,yes,5,4,,ai_assisted
+694612,cordis:694612,christianity,yes,5,4,,ai_assisted
+669771,cordis:669771,chromosomes,yes,5,4,,ai_assisted
+702296,cordis:702296,cinematography,yes,5,4,,ai_assisted
+704633,cordis:704633,civil_society,yes,5,4,,ai_assisted
+700342,cordis:700342,climate_change_adaptation,yes,5,4,"Unspaced semicolon list fix (';2.To', ';3.To') restored project challenges 2 and 3; all 3 scientific challenges now completely translated.",ai_assisted
+101037085,cordis:101037085,climatic_change_mitigation,yes,5,4,,ai_assisted
+873055,cordis:873055,climatic_changes,yes,5,4,,ai_assisted
+719806,cordis:719806,coal,yes,5,4,,ai_assisted
+747381,cordis:747381,coating_and_films,yes,5,4,,ai_assisted
+659719,cordis:659719,cognitive_neuroscience,yes,5,4,,ai_assisted
+877378,cordis:877378,cognitive_psychology,yes,4,4,Unspaced period fix ('sensor.The') restored concluding sensor impact clause and trailing specifications.,ai_assisted
+839398,cordis:839398,colorectal_cancer,yes,5,4,,ai_assisted
+849229,cordis:849229,colors,yes,4,4,period after abbreviation 'Rec. 2020' caused awkward sentence break,ai_assisted
+716083,cordis:716083,combinatorics,yes,4,4,"Numbered list chunking and segmentation fix restored previously omitted mathematical methodology items 1, 2, and 3; core project objective fully preserved.",ai_assisted
+866607,cordis:866607,combined_heat_and_power,yes,5,4,,ai_assisted
+679371,cordis:679371,commerce,yes,5,4,,ai_assisted
+829208,cordis:829208,comparative_morphology,partial,3,3,Unspaced period fix ('market.The') restored entire final paragraph on career and training impacts; crickets translated as kriketler due to model polysemy.,ai_assisted

@@ -1,122 +1,79 @@
 # Data Workspace
 
-This directory contains the datasets and generated benchmark data used by NALTRA.
+This directory manages the CORDIS Horizon 2020 source data and derived multilingual benchmark tracks used by NALTRA.
 
-Large dataset files are intentionally ignored by Git (`.gitignore`). Only documentation, code, and `.gitkeep` placeholders are versioned.
+Large raw files, processed corpora, and translation caches are ignored by Git through `.gitignore`. Only documentation, schema definitions, and `.gitkeep` directory anchors are tracked.
 
 ## Directory Layout
 
-- `raw/`: Original dataset downloads and source files.
-  - `raw/mn_ds/`: MN-DS source CSV (`MN-DS-news-classification.csv`).
-  - `raw/massive/`: English and Turkish MASSIVE source files used for Far-OOD.
-
-- `processed/`: Clean normalized records using the NALTRA unified schema.
-  - `processed/sib200/`: 2,008 records forming 1,004 aligned English/Turkish pairs.
-  - `processed/multifin/`: 4,974 English/Turkish MultiFin records (official track).
-  - `processed/mn_ds/`: 10,491 MN-DS English news articles across 109 fine-grained categories.
-  - `processed/code_switch/`: Synthetic English/Turkish code-switched benchmark records.
-
-- `splits/`: Alternative experiment partitions.
-  - `splits/multifin/leakage_free/`: Leakage-free MultiFin evaluation track (train: 3,183, validation: 651, test: 838).
-
-- `noisy/`: Deterministic noisy robustness benchmark data.
-  - Example: `noisy/combined/medium/{dataset}/`
-
-- `ood/`: Out-of-Distribution evaluation data.
-  - `ood/near/sib200/{heldout_topic}/`: SIB-200 leave-one-topic-out Near-OOD folds.
-  - `ood/far/massive/`: Paired English/Turkish Amazon MASSIVE Far-OOD records.
-
-## Prerequisites
-
-Before preparing the datasets, complete the project setup in the root `README.md`.
-
-Make sure the project virtual environment is activated and the dependencies are installed:
-
-```bash
-python -m pip install -e ".[dev]"
+```
+data/
+├── raw/
+│   ├── cordis_h2020/            # Official EU open data release
+│   │   ├── cordis-h2020projects-csv.zip
+│   │   ├── project.csv          # 35,389 project records
+│   │   └── euroSciVoc.csv       # EuroSciVoc category paths & project assignments
+│   └── euroscivoc/
+│       └── euroSciVoc.csv       # Snapshot copy of official EuroSciVoc paths
+├── processed/
+│   └── cordis_h2020/
+│       ├── en/                  # Canonical English scientific classification benchmark
+│       │   ├── train.jsonl      # 21,985 projects (70.0%)
+│       │   ├── validation.jsonl # 4,711 projects (15.0%)
+│       │   ├── test.jsonl       # 4,711 projects (15.0%)
+│       │   └── manifest.json    # SHA-256 provenance & parameter manifest
+│       ├── tr/                  # Derived Turkish machine-translated records
+│       └── code_switch/         # Derived sentence-aligned EN/TR code-switched records
+├── splits/
+│   └── cordis_h2020/
+│       └── project_splits.json  # Pre-translation project-level split assignment map
+├── cache/
+│   └── translations/
+│       └── cordis_h2020/        # Resumable SHA-256 translation cache
+└── noisy/
+    └── combined/medium/
+        └── cordis_h2020/en/     # Typographical/orthographic noise robustness evaluation splits
 ```
 
-## Data Setup Instructions
+## Source Dataset
 
-### 1. MN-DS Download and Verification
+NALTRA strictly uses **one source dataset**:
 
-MN-DS is distributed via Zenodo and must be downloaded to `data/raw/mn_ds/`:
+- **Title**: CORDIS - EU research projects under Horizon 2020 (2014-2020)
+- **Publisher**: European Commission / Publications Office of the European Union
+- **Canonical URL**: `https://cordis.europa.eu/data/cordis-h2020projects-csv.zip`
+- **License**: CC BY 4.0 (reuse under European Union open data principles)
+- **Primary Text Field**: `objective` (project summary text)
+- **Ontology**: European Science Vocabulary (EuroSciVoc), 6 OECD root fields, 586 active categories (v0.4.0)
 
-- **Zenodo Record**: 7394851
-- **File Name**: `MN-DS-news-classification.csv`
-- **Destination**: `data/raw/mn_ds/MN-DS-news-classification.csv`
-- **Official Zenodo MD5**: `cffbf48aeb7de4af2d4c615a0cdb4667`
+## Derived Multilingual Variants
 
-#### Local Verification Example
+1. **English (`en`)**: Original source text from CORDIS project objectives.
+2. **Turkish (`tr`)**: Reproducibly translated variant derived from the identical English project text.
+3. **Code-Switching (`en-tr`)**: Controlled sentence-aligned mixed variants derived from aligned English and Turkish sentence pairs of the identical projects.
 
-**Windows (PowerShell)**:
+All derived records preserve:
+- Source project ID (`project_id`) and pair ID (`pair_id = cordis:<project_id>`)
+- Split assignment (`train`, `validation`, `test`)
+- Direct EuroSciVoc labels (`labels_direct`) and hierarchy closure (`labels`)
+
+## Data Integrity Guarantees
+
+- **Zero Project Leakage**: Stratification is computed strictly on source project IDs *before* any language derivation occurs.
+- **Zero Content Leakage**: Projects with identical normalized English descriptions are grouped by SHA-256 content fingerprints so identical text never crosses train, validation, or test splits.
+- **Zero Label Mutation**: Machine translation affects only textual content; canonical target labels and hierarchical ontology structures remain identical across language variants.
+## Prepare, audit, and train
+
+From the repository root, run:
+
 ```powershell
-Get-FileHash -Algorithm MD5 data/raw/mn_ds/MN-DS-news-classification.csv
-# Hash should match: CFFBF48AEB7DE4AF2D4C615A0CDB4667
+python scripts/prepare_data.py --dataset cordis_h2020 --download
+python scripts/validate_datasets.py --languages en
+python scripts/prepare_data.py --dataset translation --device cuda
+python scripts/validate_datasets.py --languages en tr
+python scripts/train_all.py --datasets cordis_h2020 --languages en tr --device auto --output-dir models/cordis_v0.4.0
 ```
 
-**Python**:
-```python
-import hashlib
-from pathlib import Path
+The English-only training selection is `--languages en`. The installed `naltra-prepare-data` command has the same options. `--dataset all --download` additionally produces English noise and both code-switch tracks; `validate_datasets.py --derived` audits them.
 
-csv_path = Path("data/raw/mn_ds/MN-DS-news-classification.csv")
-with open(csv_path, "rb") as f:
-    digest = hashlib.md5(f.read()).hexdigest()
-
-assert digest == "cffbf48aeb7de4af2d4c615a0cdb4667", f"Checksum mismatch: {digest}"
-print("Checksum verified: OK")
-```
-
-### 2. SIB-200 & MultiFin
-
-SIB-200 (`Davlan/sib200`) and MultiFin (`awinml/MultiFin`) are automatically downloaded from the Hugging Face Hub during preparation.
-
-### 3. MASSIVE (Far-OOD)
-
-Amazon MASSIVE v1.1 is downloaded from the official Amazon archive and its English/Turkish exports are verified against the SHA-256 locks in `configs/data.yaml`. Existing verified files under `data/raw/massive/` are reused.
-
----
-
-## Dataset Preparation Commands
-
-To prepare all datasets and benchmark tracks deterministically:
-
-```bash
-# Run all preparation pipelines end-to-end
-python scripts/prepare_data.py --dataset all
-```
-
-Or prepare specific benchmark components individually:
-
-```bash
-# Clean SIB-200 English & Turkish
-python scripts/prepare_data.py --dataset sib200
-
-# Clean MultiFin (official track and train/evaluation leakage-free track)
-python scripts/prepare_data.py --dataset multifin
-
-# Clean MN-DS (content-grouped stratified splits)
-python scripts/prepare_data.py --dataset mn_ds
-
-# Noisy robustness benchmark (validation & test)
-python scripts/prepare_data.py --dataset noisy
-
-# Synthetic EN/TR code-switch benchmark (validation & test)
-python scripts/prepare_data.py --dataset code_switch
-
-# Out-of-Distribution benchmarks (Near-OOD 7-folds & Far-OOD MASSIVE)
-python scripts/prepare_data.py --dataset ood
-```
-
----
-
-## Benchmark Audit and Validation
-
-After preparation, run the comprehensive dataset audit script to verify schema compliance, partition counts, pair alignment, ID leakage, and content-fingerprint leakage across all 8 tracks:
-
-```bash
-python scripts/validate_datasets.py
-```
-
-The audit verifies manifest contents, source/code/output hashes, duplicate records, split membership and contamination. Old manifests must be regenerated. Use `data/splits/multifin/leakage_free/` for model selection and final evaluation; official MultiFin and its noisy variants retain documented upstream overlap. See [the dataset specification](../docs/dataset.md) for the overlap policy and release provenance.
+Manifests use schema 1.1.0 and verify source, output, generation-code/configuration, taxonomy, and split-map hashes. Relevant generation-code changes require genuine regeneration. Translation caches include checkpoint revision and implementation identity; legacy cache entries are not reused silently. Do not commit raw/processed data, translation caches, or model weights. Human translation review remains pending until reviewers complete the sample.

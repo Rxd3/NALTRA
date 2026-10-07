@@ -36,7 +36,15 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--config", default="configs/training.yaml")
     result.add_argument("--models", nargs="+", help="bilstm transformer (default: both)")
-    result.add_argument("--datasets", nargs="+", choices=("sib200", "multifin", "mn_ds"))
+    result.add_argument(
+        "--datasets", nargs="+", choices=("cordis_h2020", "sib200", "multifin", "mn_ds")
+    )
+    result.add_argument(
+        "--languages",
+        nargs="+",
+        choices=("en", "tr"),
+        help="CORDIS training languages (default: en tr)",
+    )
     result.add_argument("--device", choices=("auto", "cpu", "cuda"))
     result.add_argument("--epochs", type=int)
     result.add_argument("--batch-size", type=int)
@@ -57,6 +65,39 @@ def parser() -> argparse.ArgumentParser:
 
 def prepare_track(dataset: str, spec: dict[str, Any], heldout_topic: str | None) -> dict[str, Any]:
     directory = resolve_path(spec["path"])
+    if dataset == "cordis_h2020":
+        from naltra.data.validation import validate_cordis_release
+
+        if heldout_topic:
+            raise ValueError(
+                "CORDIS held-out-domain training requires a separately defined protocol."
+            )
+        languages = spec["languages"]
+        release = validate_cordis_release(directory, languages)
+        target_field = spec.get("target_field", "labels_direct")
+        if target_field != "labels_direct":
+            raise ValueError("The CORDIS baseline must train direct labels.")
+        track = "_".join(languages) + "_direct"
+        return {
+            "train": [r for language in languages for r in release["corpora"][language]["train"]],
+            "validation": [
+                r for language in languages for r in release["corpora"][language]["validation"]
+            ],
+            "track": track,
+            "target_field": target_field,
+            "provenance": {
+                "dataset": dataset,
+                "track": track,
+                "training_languages": languages,
+                "target_field": target_field,
+                "label_universe": release["label_universe"],
+                "dataset_manifests": release["manifests"],
+                "manifest_sha256_by_language": {
+                    language: compute_file_sha256(directory / language / "manifest.json")
+                    for language in languages
+                },
+            },
+        }
     expected = ["train.jsonl", "validation.jsonl", "test.jsonl"]
     benchmark = spec["benchmark_name"]
     track = spec["name"]
@@ -115,8 +156,9 @@ def smoke_records(
     track: dict[str, Any], limit: int
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     train = track["train"][:limit]
-    supported = {label for record in train for label in record["labels"]}
-    validation = [record for record in track["validation"] if set(record["labels"]) <= supported][
+    field = track.get("target_field", "labels")
+    supported = {label for record in train for label in record[field]}
+    validation = [record for record in track["validation"] if set(record[field]) <= supported][
         :limit
     ]
     if not validation:
@@ -151,7 +193,7 @@ def tiny_transformer(config: dict[str, Any], train: list[dict[str, Any]]) -> Tra
         bos_token="<s>",
         eos_token="</s>",
     )
-    labels = {label for record in train for label in record["labels"]}
+    labels = {label for record in train for label in record[config.get("target_field", "labels")]}
     network = XLMRobertaForSequenceClassification(
         XLMRobertaConfig(
             vocab_size=len(vocabulary),
@@ -182,6 +224,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     configuration = load_yaml(resolve_path(args.config))
     selected_models = args.models or configuration["models"]
     datasets = args.datasets or configuration["datasets"]
+    if args.languages:
+        if datasets != ["cordis_h2020"] or len(set(args.languages)) != len(args.languages):
+            parser().error("--languages requires unique languages and --datasets cordis_h2020.")
+        configuration["tracks"]["cordis_h2020"]["languages"] = args.languages
     if args.heldout_topic and datasets != ["sib200"]:
         parser().error("--heldout-topic requires --datasets sib200")
     for value in (args.epochs, args.batch_size, args.accumulation, args.smoke_records):
@@ -222,6 +268,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 overrides: dict[str, Any] = {
                     "device": args.device or configuration["device"],
                     "training": {},
+                    "target_field": track.get("target_field", "labels"),
                 }
                 for attribute, setting in (
                     ("epochs", "epochs"),

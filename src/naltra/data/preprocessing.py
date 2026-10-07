@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import html
 import json
+import os
+import re
+from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
 from naltra.data.loader import save_jsonl
-from naltra.data.manifest import (
-    REPO_ROOT,
-    compute_file_md5,
-    create_manifest,
-    get_source_config,
-)
+from naltra.data.manifest import REPO_ROOT, compute_file_sha256, create_manifest, get_source_config
+from naltra.data.splits import grouped_multilabel_stratified_split
 from naltra.pipeline.preprocessing import normalize_text
 
 REQUIRED_RECORD_FIELDS = (
@@ -29,20 +30,27 @@ VALID_SPLITS = {"train", "validation", "test"}
 
 
 def preprocess_record_text(text: str) -> str:
-    """Apply the shared, language-preserving text normalization."""
-    return normalize_text(text)
+    """Apply the shared, language-preserving scientific text normalization.
+
+    Removes HTML markup and unescapes HTML entities, normalizes consecutive whitespace
+    and line breaks, while strictly preserving scientific notations, mathematical formulas,
+    chemical formulas, punctuation, numbers, technical terminology, and casing.
+    """
+    if not text:
+        return ""
+    # Strip HTML tags
+    cleaned = re.sub(r"<[^>]+>", " ", text)
+    # Unescape HTML entities (e.g. &amp;, &quot;)
+    cleaned = html.unescape(cleaned)
+    # Apply standard whitespace normalization
+    return normalize_text(cleaned)
 
 
 def compute_content_fingerprint(text: str) -> str:
-    """Compute a deterministic SHA-256 fingerprint over normalized text representation.
-
-    Uses preprocess_record_text(text) to ensure the exact same normalization used by
-    processed benchmark records, providing a platform-independent hash for detecting
-    exact content duplicates without replacing unique record IDs.
-    """
+    """Compute a deterministic SHA-256 fingerprint over normalized text representation."""
     import hashlib
 
-    normalized = preprocess_record_text(text)
+    normalized = " ".join(preprocess_record_text(text).lower().split())
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
@@ -65,6 +73,21 @@ def load_canonical_label_ids(path: str | Path = "taxonomy/taxonomy.json") -> set
     labels = data.get("labels", [])
     return {
         label["id"]
+        for label in labels
+        if isinstance(label, dict) and isinstance(label.get("id"), str)
+    }
+
+
+def load_taxonomy_parents(
+    path: str | Path = "taxonomy/taxonomy.json",
+) -> dict[str, str | None]:
+    """Load mapping of canonical label ID to parent canonical label ID (or None)."""
+    tax_path = Path(path)
+    with tax_path.open(encoding="utf-8") as handle:
+        data = json.load(handle)
+    labels = data.get("labels", [])
+    return {
+        label["id"]: label.get("parent")
         for label in labels
         if isinstance(label, dict) and isinstance(label.get("id"), str)
     }
@@ -108,8 +131,8 @@ def validate_record(
                 f"Record '{record.get('id', '<unknown>')}' missing required field: '{field}'"
             )
 
-    if not isinstance(record["id"], str) or not record["id"].strip():
-        raise ValueError("Record 'id' must be a non-empty string.")
+    if not isinstance(record["id"], str) or not record["id"].strip() or "::" in record["id"]:
+        raise ValueError("Invalid or empty ID.")
 
     if not isinstance(record["text"], str) or not record["text"].strip():
         raise ValueError(f"Record '{record['id']}' has empty or non-string 'text'.")
@@ -117,6 +140,8 @@ def validate_record(
     labels = record["labels"]
     if not isinstance(labels, list) or len(labels) == 0:
         raise ValueError(f"Record '{record['id']}' must have a non-empty list of labels.")
+    if len(set(labels)) != len(labels):
+        raise ValueError(f"Record '{record['id']}' has duplicate labels.")
 
     for label in labels:
         if not isinstance(label, str) or not label.strip():
@@ -126,6 +151,25 @@ def validate_record(
                 f"Record '{record['id']}' contains label '{label}' not in canonical taxonomy."
             )
 
+    # If direct labels are present, ensure canonical subset of closed labels
+    labels_direct = record.get("labels_direct")
+    if labels_direct is not None:
+        if not isinstance(labels_direct, list) or len(labels_direct) == 0:
+            raise ValueError(
+                f"Record '{record['id']}' has invalid 'labels_direct': must be non-empty list."
+            )
+        for d_lbl in labels_direct:
+            if not isinstance(d_lbl, str) or not d_lbl.strip():
+                raise ValueError("Direct labels must be non-empty strings.")
+            if allowed_labels is not None and d_lbl not in allowed_labels:
+                raise ValueError(
+                    f"Record '{record['id']}' direct label '{d_lbl}' not in canonical taxonomy."
+                )
+        if not set(labels_direct).issubset(set(labels)):
+            raise ValueError(
+                f"Record '{record['id']}' hierarchy labels must be a superset of labels_direct."
+            )
+
     if record["language"] not in VALID_LANGUAGES:
         raise ValueError(
             f"Record '{record['id']}' has invalid language '{record['language']}'. "
@@ -133,7 +177,13 @@ def validate_record(
         )
 
     if not isinstance(record["source"], str) or not record["source"].strip():
-        raise ValueError(f"Record '{record['id']}' has invalid 'source'.")
+        raise ValueError("Source must be a non-empty string.")
+    if record["source"] == "cordis_h2020":
+        pid = record.get("project_id")
+        if not isinstance(pid, str) or not pid.strip() or record.get("pair_id") != f"cordis:{pid}":
+            raise ValueError("CORDIS project_id and pair_id must identify the same project.")
+        if labels_direct is None or len(set(labels_direct)) != len(labels_direct):
+            raise ValueError("CORDIS records require unique labels_direct.")
 
     if not isinstance(record["license"], str) or not record["license"].strip():
         raise ValueError(f"Record '{record['id']}' has invalid 'license'.")
@@ -145,402 +195,343 @@ def validate_record(
         )
 
 
-def process_sib200(
-    output_dir: str | Path = "data/processed/sib200",
+def hierarchy_closure(labels: Iterable[str], parent_by_label: Mapping[str, str | None]) -> set[str]:
+    """Compute the transitive ancestral closure of a set of labels."""
+    closed: set[str] = set()
+    for label in labels:
+        current: str | None = label
+        seen: set[str] = set()
+        while current is not None and current not in seen:
+            seen.add(current)
+            closed.add(current)
+            current = parent_by_label.get(current)
+    return closed
+
+
+def check_hierarchy_violations(
+    labels: Iterable[str], parent_by_label: Mapping[str, str | None]
+) -> list[tuple[str, str]]:
+    """Return list of (child, missing_parent) pairs where child is predicted
+    but parent is absent.
+    """
+    label_set = set(labels)
+    violations: list[tuple[str, str]] = []
+    for label in label_set:
+        parent = parent_by_label.get(label)
+        if parent is not None and parent not in label_set:
+            violations.append((label, parent))
+    return sorted(violations)
+
+
+def hierarchy_violation_rate(
+    predictions: Iterable[Iterable[str]],
+    parent_by_label: Mapping[str, str | None],
+) -> float:
+    """Calculate the fraction of prediction instances that violate hierarchy consistency."""
+    preds = list(predictions)
+    if not preds:
+        return 0.0
+    violating = sum(1 for p in preds if len(check_hierarchy_violations(p, parent_by_label)) > 0)
+    return violating / len(preds)
+
+
+def process_cordis_h2020(
+    raw_dir: str | Path = "data/raw/cordis_h2020",
+    output_dir: str | Path = "data/processed/cordis_h2020/en",
+    splits_dir: str | Path = "data/splits/cordis_h2020",
     taxonomy_path: str | Path = "taxonomy/taxonomy.json",
     label_map_path: str | Path = "taxonomy/label_map.json",
+    split_ratios: tuple[float, float, float] = (0.70, 0.15, 0.15),
+    seed: int = 42,
+    max_records: int | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Download, preprocess, validate, and persist SIB-200 English and Turkish subsets."""
-    from datasets import load_dataset
+    """Preprocess official CORDIS Horizon 2020 projects into canonical English splits.
 
-    label_map = load_label_map(label_map_path)
-    allowed_labels = load_canonical_label_ids(taxonomy_path)
+    Extracts project objectives and EuroSciVoc classifications, applies active-label
+    support filtering, closes labels along the EuroSciVoc hierarchy, detects duplicate
+    objective texts to prevent train/validation/test contamination, and assigns
+    leakage-free stratified project-level splits.
+    """
+    raw_path = Path(raw_dir)
+    out_path = Path(output_dir)
+    split_path = Path(splits_dir)
+    tax_path = Path(taxonomy_path)
+    map_path = Path(label_map_path)
 
-    configs = {
-        "en": "eng_Latn",
-        "tr": "tur_Latn",
+    project_csv = raw_path / "project.csv"
+    euroscivoc_csv = raw_path / "euroSciVoc.csv"
+
+    if not project_csv.exists():
+        raise FileNotFoundError(f"Missing raw project file: {project_csv}")
+    if not euroscivoc_csv.exists():
+        raise FileNotFoundError(f"Missing raw EuroSciVoc file: {euroscivoc_csv}")
+    source_lock = get_source_config("cordis_h2020")
+    for path, key in ((project_csv, "project_sha256"), (euroscivoc_csv, "euroscivoc_sha256")):
+        if compute_file_sha256(path) != source_lock[key]:
+            raise ValueError(f"CORDIS source checksum mismatch: {path}; use the locked release.")
+
+    print("Loading canonical taxonomy and label mapping...")
+    allowed_labels = load_canonical_label_ids(tax_path)
+    parent_by_label = load_taxonomy_parents(tax_path)
+    label_map = load_label_map(map_path)
+
+    with tax_path.open(encoding="utf-8") as f:
+        tax_doc = json.load(f)
+    tax_version = tax_doc.get("version", "0.4.0")
+    direct_supported_codes = {
+        lbl["euroscivoc_code"]
+        for lbl in tax_doc.get("labels", [])
+        if lbl.get("is_direct_supported", False)
     }
-    splits = ["train", "validation", "test"]
 
-    print("Loading SIB-200 English and Turkish subsets...")
-    source = get_source_config("sib200")
-    raw_datasets = {
-        lang: load_dataset(source["dataset_id"], cfg, revision=source["revision"])
-        for lang, cfg in configs.items()
-    }
+    # 1. Parse official EuroSciVoc classifications
+    print("Reading EuroSciVoc classifications...")
+    import csv
 
-    processed_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in splits}
+    proj_direct_codes: dict[str, set[str]] = defaultdict(set)
+    proj_direct_titles: dict[str, set[str]] = defaultdict(set)
+    with open(euroscivoc_csv, encoding="utf-8-sig", errors="strict") as f:
+        reader = csv.reader(f, delimiter=";")
+        next(reader, None)
+        for row in reader:
+            if not row or len(row) < 5:
+                continue
+            code, _path, title, _desc, pid = (
+                row[0].strip(),
+                row[1].strip(),
+                row[2].strip(),
+                row[3].strip(),
+                row[4].strip(),
+            )
+            if pid and code:
+                proj_direct_codes[pid].add(code)
+                proj_direct_titles[pid].add(title)
 
-    for split_name in splits:
-        records: list[dict[str, Any]] = []
-        for lang in ("en", "tr"):
-            split_data = raw_datasets[lang][split_name]
-            for row in split_data:
-                index_id = row["index_id"]
-                raw_category = row["category"]
-                canonical_labels = map_labels([raw_category], label_map)
+    # 2. Parse Projects with robust unescaped semicolon reconstruction
+    print("Reading and cleaning CORDIS H2020 projects...")
+    raw_projects: list[dict[str, str]] = []
+    normal_rows = 0
+    repaired_rows = 0
+    malformed_rows = 0
 
-                record: dict[str, Any] = {
-                    "id": f"sib200:{lang}:{index_id}",
-                    "text": preprocess_record_text(row["text"]),
-                    "labels": canonical_labels,
-                    "language": lang,
-                    "source": "sib200",
-                    "license": "CC BY-SA 4.0",
-                    "split": split_name,
-                    "pair_id": f"sib200:{index_id}",
-                    "source_id": index_id,
-                    "source_labels": [raw_category],
-                }
-                validate_record(record, allowed_labels=allowed_labels)
-                records.append(record)
+    with open(project_csv, encoding="utf-8-sig", errors="strict") as f:
+        reader = csv.reader(f, delimiter=";")
+        next(reader, None)  # Skip header
+        expected_cols = 22
 
-        # Check unique IDs within split
-        ids = [r["id"] for r in records]
-        if len(ids) != len(set(ids)):
-            raise ValueError(f"Duplicate IDs found in SIB-200 {split_name} split.")
-
-        out_path = Path(output_dir) / f"{split_name}.jsonl"
-        save_jsonl(records, out_path)
-        processed_by_split[split_name] = records
-        half = len(records) // 2
-        print(f"Saved {len(records)} records ({half} en, {half} tr) -> {out_path}")
-
-    create_manifest(
-        "clean_sib200",
-        output_dir,
-        generation_parameters={"configs": configs, "splits": splits},
-        source_metadata={**source, "license": "CC BY-SA 4.0"},
-        taxonomy_dir=Path(taxonomy_path).parent,
-        input_files=[label_map_path, REPO_ROOT / "configs/data.yaml"],
-    )
-    return processed_by_split
-
-
-def process_multifin(
-    output_dir: str | Path = "data/processed/multifin",
-    taxonomy_path: str | Path = "taxonomy/taxonomy.json",
-    label_map_path: str | Path = "taxonomy/label_map.json",
-) -> dict[str, list[dict[str, Any]]]:
-    """Download, preprocess, validate, and persist MultiFin English and Turkish subsets."""
-    from datasets import load_dataset
-
-    label_map = load_label_map(label_map_path)
-    allowed_labels = load_canonical_label_ids(taxonomy_path)
-
-    target_languages = {"English": "en", "Turkish": "tr"}
-    splits = ["train", "validation", "test"]
-
-    print("Loading MultiFin all_languages_lowlevel dataset...")
-    source = get_source_config("multifin")
-    raw_dataset = load_dataset(
-        source["dataset_id"], "all_languages_lowlevel", revision=source["revision"]
-    )
-
-    processed_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in splits}
-
-    for split_name in splits:
-        records: list[dict[str, Any]] = []
-        split_data = raw_dataset[split_name]
-        for row in split_data:
-            raw_lang = row.get("lang")
-            if raw_lang not in target_languages:
+        for row in reader:
+            if not row:
+                continue
+            if len(row) == expected_cols:
+                normal_rows += 1
+                row_fixed = row
+            elif len(row) > expected_cols:
+                # Field 15 is objective; unescaped semicolons inside text
+                obj = ";".join(row[15 : len(row) - 6])
+                row_fixed = row[:15] + [obj] + row[len(row) - 6 :]
+                if len(row_fixed) == expected_cols:
+                    repaired_rows += 1
+                else:
+                    malformed_rows += 1
+                    continue
+            else:
+                malformed_rows += 1
                 continue
 
-            lang = target_languages[raw_lang]
-            raw_id = row["id"]
-            raw_labels = row["labels"]
-            canonical_labels = map_labels(raw_labels, label_map)
+            raw_projects.append(
+                {
+                    "id": row_fixed[0].strip(),
+                    "title": row_fixed[3].strip(),
+                    "objective": row_fixed[15].strip(),
+                    "human_validated": row_fixed[20].strip() or "NA",
+                }
+            )
 
-            record: dict[str, Any] = {
-                "id": f"multifin:{raw_id}",
-                "text": preprocess_record_text(row["text"]),
-                "labels": canonical_labels,
-                "language": lang,
-                "source": "multifin",
-                "license": "CC BY-NC 4.0",
-                "split": split_name,
-                "source_id": raw_id,
-                "source_labels": list(raw_labels),
-            }
-            validate_record(record, allowed_labels=allowed_labels)
-            records.append(record)
-
-        # Check unique IDs within split
-        ids = [r["id"] for r in records]
-        if len(ids) != len(set(ids)):
-            raise ValueError(f"Duplicate IDs found in MultiFin {split_name} split.")
-
-        out_path = Path(output_dir) / f"{split_name}.jsonl"
-        save_jsonl(records, out_path)
-        processed_by_split[split_name] = records
-        en_count = sum(1 for r in records if r["language"] == "en")
-        tr_count = sum(1 for r in records if r["language"] == "tr")
-        print(f"Saved {len(records)} records ({en_count} en, {tr_count} tr) -> {out_path}")
-
-    create_manifest(
-        "clean_multifin_official",
-        output_dir,
-        generation_parameters={
-            "config": "all_languages_lowlevel",
-            "splits": splits,
-            "languages": target_languages,
-        },
-        source_metadata={**source, "license": "CC BY-NC 4.0"},
-        taxonomy_dir=Path(taxonomy_path).parent,
-        input_files=[label_map_path, REPO_ROOT / "configs/data.yaml"],
+    print(
+        f"Parsed {len(raw_projects)} projects from project.csv "
+        f"({normal_rows} normal, {repaired_rows} repaired, {malformed_rows} malformed dropped)."
     )
-    return processed_by_split
 
+    clean_records: list[dict[str, Any]] = []
+    skipped_no_objective = 0
+    skipped_no_active_labels = 0
 
-def generate_multifin_leakage_free_track(
-    official_multifin_dir: str | Path = "data/processed/multifin",
-    output_dir: str | Path = "data/splits/multifin/leakage_free",
-    taxonomy_path: str | Path = "taxonomy/taxonomy.json",
-) -> dict[str, Any]:
-    """Preserve official training and retained test records; remove train contamination
-    from evaluation and test-content overlap from validation before model selection.
-    """
-    import copy
+    for proj in raw_projects:
+        pid = proj["id"]
+        raw_obj = proj["objective"]
+        title = proj["title"]
+        human_val = proj["human_validated"]
 
-    from naltra.data.loader import load_jsonl, save_jsonl
+        if not raw_obj:
+            skipped_no_objective += 1
+            continue
 
-    allowed_labels = load_canonical_label_ids(taxonomy_path)
-    in_dir = Path(official_multifin_dir)
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+        clean_text = preprocess_record_text(raw_obj)
+        if not clean_text:
+            skipped_no_objective += 1
+            continue
 
-    train_file = in_dir / "train.jsonl"
-    val_file = in_dir / "validation.jsonl"
-    test_file = in_dir / "test.jsonl"
-
-    if not train_file.exists() or not val_file.exists() or not test_file.exists():
-        raise FileNotFoundError(
-            f"Official MultiFin files missing in {in_dir}. Run prepare_multifin first."
+        direct_codes = proj_direct_codes.get(pid, set())
+        # Filter direct codes to only those meeting direct support threshold
+        supported_codes_for_proj = {c for c in direct_codes if c in direct_supported_codes}
+        # Map direct supported codes to active canonical taxonomy labels
+        direct_canonical = sorted(
+            list({label_map[c] for c in supported_codes_for_proj if c in label_map})
         )
 
-    official_train = load_jsonl(train_file)
-    official_val = load_jsonl(val_file)
-    official_test = load_jsonl(test_file)
+        if not direct_canonical:
+            # All direct labels were below support threshold or project unclassified
+            skipped_no_active_labels += 1
+            continue
 
-    train_fps = {compute_content_fingerprint(r["text"]) for r in official_train}
+        # Compute hierarchy closure: direct + all active ancestors
+        closed_canonical = sorted(list(hierarchy_closure(direct_canonical, parent_by_label)))
+        fp = compute_content_fingerprint(clean_text)
 
-    clean_train = [copy.deepcopy(r) for r in official_train]
-    for r in clean_train:
-        r["original_split"] = "train"
-        r["split"] = "train"
-        validate_record(r, allowed_labels=allowed_labels)
-
-    clean_val = []
-    val_removed = []
-    for r in official_val:
-        if compute_content_fingerprint(r["text"]) in train_fps:
-            val_removed.append(r)
-        else:
-            rec = copy.deepcopy(r)
-            rec["original_split"] = "validation"
-            rec["split"] = "validation"
-            validate_record(rec, allowed_labels=allowed_labels)
-            clean_val.append(rec)
-
-    clean_test = []
-    test_removed = []
-    for r in official_test:
-        if compute_content_fingerprint(r["text"]) in train_fps:
-            test_removed.append(r)
-        else:
-            rec = copy.deepcopy(r)
-            rec["original_split"] = "test"
-            rec["split"] = "test"
-            validate_record(rec, allowed_labels=allowed_labels)
-            clean_test.append(rec)
-
-    test_fps = {compute_content_fingerprint(r["text"]) for r in clean_test}
-    val_test_removed = [r for r in clean_val if compute_content_fingerprint(r["text"]) in test_fps]
-    clean_val = [r for r in clean_val if compute_content_fingerprint(r["text"]) not in test_fps]
-    val_fps = {compute_content_fingerprint(r["text"]) for r in clean_val}
-    val_test_overlap = val_fps & test_fps
-
-    save_jsonl(clean_train, out_dir / "train.jsonl")
-    save_jsonl(clean_val, out_dir / "validation.jsonl")
-    save_jsonl(clean_test, out_dir / "test.jsonl")
-
-    stats = {
-        "train_count": len(clean_train),
-        "official_val_count": len(official_val),
-        "clean_val_count": len(clean_val),
-        "val_removed_count": len(val_removed) + len(val_test_removed),
-        "val_train_removed_count": len(val_removed),
-        "val_test_removed_count": len(val_test_removed),
-        "official_test_count": len(official_test),
-        "clean_test_count": len(clean_test),
-        "test_removed_count": len(test_removed),
-        "val_test_overlap_count": len(val_test_overlap),
-    }
-
-    create_manifest(
-        benchmark_name="multifin_leakage_free",
-        output_dir=out_dir,
-        generation_parameters={
-            "official_multifin_dir": str(in_dir),
-            "removed_val_leaks": len(val_removed),
-            "removed_test_leaks": len(test_removed),
-            "removed_val_test_overlap": len(val_test_removed),
-            "overlap_policy": "preserve_test_remove_from_validation",
-            "val_test_overlap_count": len(val_test_overlap),
-        },
-        source_metadata={
-            "official_train_count": len(official_train),
-            "official_val_count": len(official_val),
-            "official_test_count": len(official_test),
-        },
-        taxonomy_dir=Path(taxonomy_path).parent,
-        input_files=[train_file, val_file, test_file],
-    )
+        rec = {
+            "id": f"cordis:{pid}:en",
+            "project_id": pid,
+            "pair_id": f"cordis:{pid}",
+            "source_id": pid,
+            "title": title,
+            "text": clean_text,
+            "labels_direct": direct_canonical,
+            "labels": closed_canonical,
+            "language": "en",
+            "source": "cordis_h2020",
+            "license": "CC BY 4.0",
+            "taxonomy_version": tax_version,
+            "content_fingerprint": fp,
+            "human_validated": human_val,
+            "synthetic_language_variant": False,
+            "source_label_ids": sorted(list(supported_codes_for_proj)),
+            "source_labels": sorted(list(proj_direct_titles.get(pid, set()))),
+        }
+        clean_records.append(rec)
 
     print(
-        f"MultiFin Leakage-Free Track Generated -> {out_dir}:\n"
-        f"  Train: {stats['train_count']} (reference)\n"
-        f"  Validation: {stats['clean_val_count']} "
-        f"(removed {len(val_removed)} train leaks, {len(val_test_removed)} test overlaps)\n"
-        f"  Test: {stats['clean_test_count']} "
-        f"(removed {stats['test_removed_count']} leaking from train)\n"
-        f"  Val/Test Overlap Fingerprints: {stats['val_test_overlap_count']}"
+        f"Extracted {len(clean_records)} usable labeled English project records "
+        f"(skipped: {skipped_no_objective} empty objective, "
+        f"{skipped_no_active_labels} unsupported/unlabeled)."
     )
 
-    return stats
+    if max_records and max_records < len(clean_records):
+        clean_records = clean_records[:max_records]
+        print(f"Subsampled to {len(clean_records)} records as requested by max_records.")
 
-
-def process_mn_ds(
-    csv_path: str | Path = "data/raw/mn_ds/MN-DS-news-classification.csv",
-    output_dir: str | Path = "data/processed/mn_ds",
-    taxonomy_path: str | Path = "taxonomy/taxonomy.json",
-    label_map_path: str | Path = "taxonomy/label_map.json",
-    train_ratio: float = 0.70,
-    validation_ratio: float = 0.15,
-    test_ratio: float = 0.15,
-    seed: int = 42,
-) -> dict[str, list[dict[str, Any]]]:
-    """Load, group, preprocess, deterministically split, validate, and persist MN-DS."""
-    import pandas as pd
-
-    from naltra.data.splits import grouped_multilabel_stratified_split
-
-    label_map = load_label_map(label_map_path)
-    allowed_labels = load_canonical_label_ids(taxonomy_path)
-
-    csv_file = Path(csv_path)
-    if not csv_file.exists():
-        raise FileNotFoundError(f"MN-DS CSV not found at: {csv_file}")
-    source = get_source_config("mn_ds")
-    if compute_file_md5(csv_file) != source["md5"]:
-        raise ValueError("MN-DS source checksum mismatch; download the verified Zenodo file.")
-
-    print(f"Loading MN-DS raw data from {csv_file}...")
-    df = pd.read_csv(csv_file)
-    print(f"Loaded {len(df)} annotation rows.")
-
-    # Group by article 'id' to prevent train/test leakage
-    articles: dict[str, dict[str, Any]] = {}
-    for _, row in df.iterrows():
-        article_id = str(row["id"]).strip()
-        raw_l2 = str(row["category_level_2"]).strip()
-
-        if article_id not in articles:
-            title = str(row["title"]).strip() if pd.notna(row["title"]) else ""
-            content = str(row["content"]).strip() if pd.notna(row["content"]) else ""
-
-            # Combine title and content cleanly
-            if title and content:
-                if title.endswith((".", "!", "?")):
-                    raw_text = f"{title} {content}"
-                else:
-                    raw_text = f"{title}. {content}"
-            elif content:
-                raw_text = content
-            else:
-                raw_text = title
-
-            articles[article_id] = {
-                "id": f"mn_ds:{article_id}",
-                "text": preprocess_record_text(raw_text),
-                "source_labels": [],
-                "language": "en",
-                "source": "mn_ds",
-                "license": "CC BY 4.0",
-                "source_id": article_id,
-            }
-
-        if raw_l2 and raw_l2 not in articles[article_id]["source_labels"]:
-            articles[article_id]["source_labels"].append(raw_l2)
-
-    print(f"Merged into {len(articles)} unique articles.")
-
-    # Map labels to canonical IDs
-    article_records: list[dict[str, Any]] = []
-    for rec in articles.values():
-        rec["labels"] = map_labels(rec["source_labels"], label_map)
-        article_records.append(rec)
-
-    # Perform deterministic multi-label stratified split with content-fingerprint grouping
-    print(
-        f"Grouping and splitting {len(article_records)} articles using content-grouped "
-        f"iterative stratification (seed={seed})..."
-    )
-    train_records, val_records, test_records = grouped_multilabel_stratified_split(
-        article_records,
-        group_key=lambda r: compute_content_fingerprint(r["text"]),
-        train_ratio=train_ratio,
-        validation_ratio=validation_ratio,
-        test_ratio=test_ratio,
+    # 3. Stratified Partitioning Grouped by Content Fingerprint
+    # Grouping by content_fingerprint strictly prevents exact duplicate text leakage across splits.
+    print("Performing multi-label stratified split grouped by content fingerprint...")
+    train_recs, val_recs, test_recs = grouped_multilabel_stratified_split(
+        records=clean_records,
+        group_key="content_fingerprint",
+        train_ratio=split_ratios[0],
+        validation_ratio=split_ratios[1],
+        test_ratio=split_ratios[2],
         seed=seed,
     )
 
-    splits = {
-        "train": train_records,
-        "validation": val_records,
-        "test": test_records,
+    splits_dict: dict[str, list[dict[str, Any]]] = {
+        "train": train_recs,
+        "validation": val_recs,
+        "test": test_recs,
     }
 
-    # Verify zero ID leakage across splits
-    train_ids = {r["id"] for r in train_records}
-    val_ids = {r["id"] for r in val_records}
-    test_ids = {r["id"] for r in test_records}
+    # Assign split attribute and validate each record
+    project_split_map: dict[str, str] = {}
+    out_path.mkdir(parents=True, exist_ok=True)
+    split_path.mkdir(parents=True, exist_ok=True)
 
-    if train_ids & val_ids or train_ids & test_ids or val_ids & test_ids:
-        raise ValueError("Data leakage detected: article IDs overlap across splits!")
+    for split_name, recs in splits_dict.items():
+        for r in recs:
+            r["split"] = split_name
+            validate_record(r, allowed_labels=allowed_labels)
+            project_split_map[r["project_id"]] = split_name
 
-    # Verify zero content-fingerprint leakage across splits
-    train_fps = {compute_content_fingerprint(r["text"]) for r in train_records}
-    val_fps = {compute_content_fingerprint(r["text"]) for r in val_records}
-    test_fps = {compute_content_fingerprint(r["text"]) for r in test_records}
+        split_file = out_path / f"{split_name}.jsonl"
+        save_jsonl(recs, split_file)
+        print(f"Saved {len(recs)} records -> {split_file}")
 
-    if train_fps & val_fps or train_fps & test_fps or val_fps & test_fps:
-        raise ValueError("Content fingerprint leakage detected across MN-DS splits!")
+    # Save project split manifest
+    split_map_file = split_path / "project_splits.json"
+    with open(split_map_file, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "seed": seed,
+                "split_ratios": list(split_ratios),
+                "total_projects": len(project_split_map),
+                "project_to_split": project_split_map,
+            },
+            f,
+            indent=2,
+        )
+    print(f"Saved project split map -> {split_map_file}")
 
-    # Validate and save each split
-    out_dir = Path(output_dir)
-    for split_name, split_data in splits.items():
-        for record in split_data:
-            record["split"] = split_name
-            validate_record(record, allowed_labels=allowed_labels)
-
-        out_path = out_dir / f"{split_name}.jsonl"
-        save_jsonl(split_data, out_path)
-        print(f"Saved {len(split_data)} records -> {out_path}")
-
+    # Create reproducibility manifest for English benchmark
     create_manifest(
-        "clean_mn_ds",
-        out_dir,
+        benchmark_name="cordis_h2020_en",
+        output_dir=out_path,
         generation_parameters={
             "seed": seed,
-            "train_ratio": train_ratio,
-            "validation_ratio": validation_ratio,
-            "test_ratio": test_ratio,
-            "split_method": "content_grouped_multilabel_stratification",
+            "split_ratios": list(split_ratios),
+            "max_records": max_records,
+            "min_direct_support": tax_doc.get("min_direct_support_threshold", 50),
         },
-        source_metadata={**source, "license": "CC BY 4.0"},
-        taxonomy_dir=Path(taxonomy_path).parent,
-        input_files=[csv_file, label_map_path],
+        source_metadata={
+            "source": "official CORDIS / European Union open data release",
+            "source_title": "CORDIS - EU research projects under Horizon 2020 (2014-2020)",
+            "raw_dir": os.path.relpath(raw_path.resolve(), out_path.resolve()),
+            "raw_project_csv": "project.csv",
+            "raw_euroscivoc_csv": "euroSciVoc.csv",
+            "split_map": os.path.relpath(split_map_file.resolve(), out_path.resolve()),
+            **source_lock,
+        },
+        taxonomy_dir=tax_path.parent,
+        input_files=[project_csv, euroscivoc_csv, map_path, split_map_file],
     )
-    return splits
+
+    return splits_dict
+
+
+def download_cordis_h2020(raw_dir: str | Path = REPO_ROOT / "data/raw/cordis_h2020") -> Path:
+    """Download and extract only the checksum-locked official CORDIS source files."""
+    import shutil
+    import urllib.request
+    import zipfile
+
+    target = Path(raw_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    lock = get_source_config("cordis_h2020")
+    archive = target / "cordis-h2020projects-csv.zip"
+    if not archive.exists():
+        partial = archive.with_suffix(".zip.part")
+        try:
+            with (
+                urllib.request.urlopen(lock["url"], timeout=120) as response,
+                partial.open("wb") as out,
+            ):
+                shutil.copyfileobj(response, out)
+            if compute_file_sha256(partial) != lock["archive_sha256"]:
+                raise ValueError(
+                    "Downloaded CORDIS archive differs from the locked source release."
+                )
+            partial.replace(archive)
+        finally:
+            partial.unlink(missing_ok=True)
+    if compute_file_sha256(archive) != lock["archive_sha256"]:
+        raise ValueError("CORDIS archive checksum mismatch.")
+    with zipfile.ZipFile(archive) as bundle:
+        for filename, key in (
+            ("project.csv", "project_sha256"),
+            ("euroSciVoc.csv", "euroscivoc_sha256"),
+        ):
+            matches = [name for name in bundle.namelist() if Path(name).name == filename]
+            if len(matches) != 1:
+                raise ValueError(f"Expected one {filename} in the official archive.")
+            destination = target / filename
+            if not destination.exists():
+                with bundle.open(matches[0]) as source, destination.open("wb") as out:
+                    shutil.copyfileobj(source, out)
+            if compute_file_sha256(destination) != lock[key]:
+                raise ValueError(f"Extracted CORDIS checksum mismatch: {filename}.")
+    return target

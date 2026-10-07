@@ -69,7 +69,7 @@ def test_audit_failure_prevents_training_and_is_reported(tmp_path, monkeypatch):
     [
         ["--models", "svm"],
         ["--epochs", "0"],
-        ["--heldout-topic", "sport"],
+        ["--heldout-topic", "optics"],
         ["--models", "bilstm", "bilstm"],
     ],
 )
@@ -83,4 +83,4 @@ def test_smoke_records_do_not_introduce_validation_only_targets():
     track = {"train": records("train"), "validation": records("validation")}
     train, validation = train_all.smoke_records(track, 1)
     assert len(train) == len(validation) == 1
-    assert all(set(record["labels"]) <= {"science_technology"} for record in validation)
+    assert all(set(record["labels"]) <= {"acoustics"} for record in validation)

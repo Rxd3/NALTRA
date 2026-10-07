@@ -1,9 +1,15 @@
 models: [bilstm, transformer]
-datasets: [sib200, multifin, mn_ds]
+datasets: [cordis_h2020]
 device: auto
 output_dir: models
-smoke_records: 32
+smoke_records: 128
 tracks:
+  cordis_h2020:
+    path: data/processed/cordis_h2020
+    languages: [en, tr]
+    target_field: labels_direct
+    benchmark_name: cordis_h2020
+    name: bilingual_direct
   sib200:
     path: data/processed/sib200
     benchmark_name: clean_sib200

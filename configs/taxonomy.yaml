@@ -1,5 +1,6 @@
 taxonomy_path: taxonomy/taxonomy.json
 label_map_path: taxonomy/label_map.json
+# CORDIS direct predictions are resolved to paths in the EuroSciVoc tree.
 require_parent_predictions: true
 allow_multiple_paths: true
 unknown_label_policy: error
