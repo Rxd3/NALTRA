@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
+from math import isfinite
 
 from naltra.pipeline.thresholds import apply_thresholds
 from naltra.schemas.prediction import Explanation, LabelScore, PredictionResult
@@ -60,7 +61,11 @@ class EnsembleVoter:
         """Validate and combine predictions from all configured model families."""
         predictions_by_model = self._validate_predictions(predictions)
         score_maps = {
-            model: {label_score.label: label_score.score for label_score in prediction.labels}
+            model: (
+                prediction.label_scores
+                if self.config.method is not EnsembleMethod.HARD and prediction.label_scores
+                else {item.label: item.score for item in prediction.labels}
+            )
             for model, prediction in predictions_by_model.items()
         }
         labels = sorted(set().union(*(scores.keys() for scores in score_maps.values())))
@@ -90,6 +95,19 @@ class EnsembleVoter:
             model="ensemble",
             language=first_prediction.language,
             labels=selected,
+            label_scores=scores,
+            metadata={
+                "scores_complete": all(bool(prediction.label_scores) for prediction in predictions),
+                "ood_method": "disabled",
+                "score_semantics": (
+                    "vote_fraction" if self.config.method is EnsembleMethod.HARD else "probability"
+                ),
+                **{
+                    key: first_prediction.metadata[key]
+                    for key in ("dataset", "track", "supported_labels")
+                    if key in first_prediction.metadata
+                },
+            },
             latency_ms=sum(prediction.latency_ms for prediction in predictions),
             explanation=Explanation(
                 important_tokens=self._merge_important_tokens(predictions),
@@ -128,6 +146,12 @@ class EnsembleVoter:
             raise ValueError("All ensemble predictions must refer to the same text.")
         if any(prediction.language != reference.language for prediction in predictions[1:]):
             raise ValueError("All ensemble predictions must use the same language metadata.")
+        for key in ("dataset", "track", "supported_labels"):
+            declared = [
+                prediction.metadata[key] for prediction in predictions if key in prediction.metadata
+            ]
+            if declared and any(value != declared[0] for value in declared[1:]):
+                raise ValueError(f"Ensemble {key} mismatch; use models from the same experiment.")
         return predictions_by_model
 
     def _validated_weights(
@@ -146,8 +170,8 @@ class EnsembleVoter:
             raise ValueError("Ensemble weight set mismatch (" + "; ".join(parts) + ").")
 
         weights = dict(self.config.weights)
-        if any(weight < 0.0 for weight in weights.values()):
-            raise ValueError("Ensemble weights cannot be negative.")
+        if any(not isfinite(weight) or weight < 0.0 for weight in weights.values()):
+            raise ValueError("Ensemble weights must be finite and cannot be negative.")
         if sum(weights.values()) <= 0.0:
             raise ValueError("At least one ensemble weight must be positive.")
         return weights

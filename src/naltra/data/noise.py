@@ -373,7 +373,7 @@ def create_noisy_record(
 def generate_noisy_benchmarks(
     processed_base_dir: str | Path = "data/processed",
     output_base_dir: str | Path = "data/noisy",
-    datasets: Sequence[str] = ("sib200", "multifin", "mn_ds"),
+    datasets: Sequence[str] = ("sib200",),
     splits: Sequence[str] = ("validation", "test"),
     strategy: str = "combined",
     severity: str = "medium",

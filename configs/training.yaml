@@ -1,0 +1,24 @@
+models: [bilstm, transformer]
+datasets: [cordis_h2020]
+device: auto
+output_dir: models
+smoke_records: 128
+tracks:
+  cordis_h2020:
+    path: data/processed/cordis_h2020
+    languages: [en, tr]
+    target_field: labels_direct
+    benchmark_name: cordis_h2020
+    name: bilingual_direct
+  sib200:
+    path: data/processed/sib200
+    benchmark_name: clean_sib200
+    name: clean
+  multifin:
+    path: data/splits/multifin/leakage_free
+    benchmark_name: multifin_leakage_free
+    name: leakage_free
+  mn_ds:
+    path: data/processed/mn_ds
+    benchmark_name: clean_mn_ds
+    name: clean

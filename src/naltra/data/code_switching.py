@@ -1,10 +1,8 @@
-"""Deterministic synthetic EN/TR code-switch benchmark generation.
+"""Deterministic synthetic EN/TR code-switch benchmark generation for CORDIS H2020.
 
-IMPORTANT: This module implements a controlled synthetic chunk-mixing robustness
-benchmark. It preserves source-language token order within contiguous chunks, but
-does NOT simulate linguistically natural, word-aligned, or grammatical code-switching.
-English and Turkish spans are aligned at the document/record level from SIB-200,
-not at the individual token or phrase translation level.
+Derives controlled multilingual code-switched evaluation variants from aligned English
+and Turkish versions of the exact same CORDIS project ID. Code-switched records strictly
+preserve project ID, split assignment, direct labels, and hierarchy-closed target sets.
 """
 
 from __future__ import annotations
@@ -17,8 +15,10 @@ from pathlib import Path
 from typing import Any
 
 from naltra.data.loader import load_jsonl, save_jsonl
+from naltra.data.manifest import create_manifest
 
 VALID_CODE_SWITCH_STRATEGIES: set[str] = {
+    "sentence_mix",
     "chunk_mix",
     "interleave",
 }
@@ -42,32 +42,51 @@ def get_code_switch_seed(
 
 
 def pair_aligned_records(
-    records: Sequence[dict[str, Any]],
+    en_records: Sequence[dict[str, Any]],
+    tr_records: Sequence[dict[str, Any]] | None = None,
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """Pair English and Turkish SIB-200 records by pair_id with strict validation."""
-    by_pair: dict[str, dict[str, dict[str, Any]]] = {}
-    for r in records:
+    """Pair English and Turkish records by pair_id with strict verification."""
+    if tr_records is None:
+        all_recs = en_records
+        en_list = [r for r in all_recs if r.get("language") == "en"]
+        tr_list = [r for r in all_recs if r.get("language") == "tr"]
+        en_pairs = {r.get("pair_id") for r in en_list if r.get("pair_id")}
+        tr_pairs = {r.get("pair_id") for r in tr_list if r.get("pair_id")}
+        all_pair_ids = en_pairs.union(tr_pairs)
+        if len(en_list) != len(tr_list) or len(en_pairs.symmetric_difference(tr_pairs)) > 0:
+            raise ValueError(
+                f"Incomplete pair: found {len(en_list)} EN records and {len(tr_list)} TR records "
+                f"across {len(all_pair_ids)} pairs."
+            )
+        return pair_aligned_records(en_list, tr_list)
+
+    en_by_pair: dict[str, dict[str, Any]] = {}
+    for r in en_records:
         pid = r.get("pair_id")
         if not pid:
             raise ValueError(f"Record {r.get('id')} is missing 'pair_id'.")
-        lang = r.get("language")
-        if lang not in ("en", "tr"):
-            continue
-        if pid not in by_pair:
-            by_pair[pid] = {}
-        if lang in by_pair[pid]:
-            raise ValueError(f"Duplicate {lang} record for pair_id '{pid}': {r.get('id')}")
-        by_pair[pid][lang] = r
+        if pid in en_by_pair:
+            raise ValueError(f"Duplicate EN record for pair_id '{pid}': {r.get('id')}")
+        en_by_pair[pid] = r
 
+    tr_by_pair: dict[str, dict[str, Any]] = {}
+    for r in tr_records:
+        pid = r.get("pair_id")
+        if not pid:
+            raise ValueError(f"Record {r.get('id')} is missing 'pair_id'.")
+        if pid in tr_by_pair:
+            raise ValueError(f"Duplicate TR record for pair_id '{pid}': {r.get('id')}")
+        tr_by_pair[pid] = r
+
+    if set(en_by_pair) != set(tr_by_pair):
+        raise ValueError("Incomplete pair: English and Turkish pair inventories differ.")
+    common_pairs = sorted(en_by_pair)
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    for pid in sorted(by_pair.keys()):
-        group = by_pair[pid]
-        if "en" not in group or "tr" not in group:
-            raise ValueError(f"Incomplete pair for pair_id '{pid}': found {list(group.keys())}")
-        en_rec = group["en"]
-        tr_rec = group["tr"]
 
-        # Validate alignment
+    for pid in common_pairs:
+        en_rec = en_by_pair[pid]
+        tr_rec = tr_by_pair[pid]
+
         if en_rec.get("split") != tr_rec.get("split"):
             raise ValueError(
                 f"Split mismatch for pair_id '{pid}': "
@@ -78,9 +97,73 @@ def pair_aligned_records(
                 f"Label mismatch for pair_id '{pid}': "
                 f"en={en_rec.get('labels')}, tr={tr_rec.get('labels')}"
             )
+        if en_rec.get("labels_direct") != tr_rec.get("labels_direct"):
+            raise ValueError(f"Direct label mismatch for pair_id '{pid}'.")
         pairs.append((en_rec, tr_rec))
 
     return pairs
+
+
+def mix_aligned_sentences(
+    sentence_pairs: list[dict[str, Any]],
+    strategy: str = "sentence_mix",
+    strength: str = "balanced",
+    seed: int = 42,
+    pair_id: str = "sample",
+) -> tuple[str, str]:
+    """Mix aligned sentence pairs into a coherent code-switched document."""
+    if not sentence_pairs:
+        raise ValueError("Code-switching requires non-empty aligned sentences.")
+    if strategy not in VALID_CODE_SWITCH_STRATEGIES or strength not in VALID_CODE_SWITCH_STRENGTHS:
+        raise ValueError("Unknown code-switch strategy or strength.")
+    exact_seed = get_code_switch_seed(pair_id, strategy, strength, base_seed=seed)
+    rng = random.Random(exact_seed)
+
+    primary_lang = "en" if rng.random() < 0.5 else "tr"
+    n_sentences = len(sentence_pairs)
+
+    if n_sentences == 1:
+        # Single-sentence fallback: chunk-mix tokens within the single sentence
+        sp = sentence_pairs[0]
+        en_toks = sp["en"].split()
+        tr_toks = sp["tr"].split()
+        if primary_lang == "en":
+            cut_p = max(1, len(en_toks) // 2)
+            cut_s = max(1, len(tr_toks) // 2)
+            mixed_toks = en_toks[:cut_p] + tr_toks[cut_s:]
+        else:
+            cut_p = max(1, len(tr_toks) // 2)
+            cut_s = max(1, len(en_toks) // 2)
+            mixed_toks = tr_toks[:cut_p] + en_toks[cut_s:]
+        return " ".join(mixed_toks).strip(), primary_lang
+
+    mixed_sentences: list[str] = []
+    if strategy in ("sentence_mix", "interleave"):
+        # Interleave sentences based on strength
+        for i, sp in enumerate(sentence_pairs):
+            if strength == "balanced":
+                use_primary = i % 2 == 0
+            elif strength == "light":
+                use_primary = i % 3 != 1
+            else:
+                use_primary = True
+
+            chosen_lang = primary_lang if use_primary else ("tr" if primary_lang == "en" else "en")
+            mixed_sentences.append(sp[chosen_lang])
+
+    elif strategy == "chunk_mix":
+        # First chunk from primary language, second chunk from secondary
+        split_point = (
+            max(1, n_sentences // 2) if strength == "balanced" else max(1, (3 * n_sentences) // 4)
+        )
+        sec_lang = "tr" if primary_lang == "en" else "en"
+        for i, sp in enumerate(sentence_pairs):
+            lang = primary_lang if i < split_point else sec_lang
+            mixed_sentences.append(sp[lang])
+    else:
+        raise ValueError(f"Unknown code-switch strategy: '{strategy}'")
+
+    return " ".join(mixed_sentences).strip(), primary_lang
 
 
 def mix_code_switched_text(
@@ -91,97 +174,47 @@ def mix_code_switched_text(
     seed: int = 42,
     pair_id: str = "sample",
 ) -> tuple[str, str]:
-    """Generate synthetic mixed EN/TR text deterministically.
-
-    Returns:
-        tuple[str, str]: (mixed_text, primary_language)
-    """
+    """Mix two texts deterministically by sentences or chunks."""
     if strategy not in VALID_CODE_SWITCH_STRATEGIES:
-        raise ValueError(
-            f"Unknown code-switch strategy '{strategy}'. "
-            f"Allowed: {sorted(VALID_CODE_SWITCH_STRATEGIES)}"
-        )
+        raise ValueError(f"Unknown code-switch strategy: '{strategy}'")
     if strength not in VALID_CODE_SWITCH_STRENGTHS:
-        raise ValueError(
-            f"Unknown code-switch strength '{strength}'. "
-            f"Allowed: {sorted(VALID_CODE_SWITCH_STRENGTHS)}"
+        raise ValueError(f"Unknown code-switch strength: '{strength}'")
+    if not en_text or not en_text.strip():
+        raise ValueError("English text is empty or whitespace-only.")
+    if not tr_text or not tr_text.strip():
+        raise ValueError("Turkish text is empty or whitespace-only.")
+
+    from naltra.data.translation import segment_sentences
+
+    en_sents = segment_sentences(en_text)
+    tr_sents = segment_sentences(tr_text)
+    min_len = min(len(en_sents), len(tr_sents))
+    sentence_pairs = [{"index": i, "en": en_sents[i], "tr": tr_sents[i]} for i in range(min_len)]
+    if sentence_pairs:
+        return mix_aligned_sentences(
+            sentence_pairs=sentence_pairs,
+            strategy=strategy,
+            strength=strength,
+            seed=seed,
+            pair_id=pair_id,
         )
 
-    en_clean = en_text.strip()
-    tr_clean = tr_text.strip()
-    if not en_clean or not tr_clean:
-        raise ValueError("Cannot code-switch empty or whitespace-only text.")
-
-    en_tokens = en_clean.split()
-    tr_tokens = tr_clean.split()
-
-    exact_seed = get_code_switch_seed(pair_id, strategy, strength, base_seed=seed)
-    rng = random.Random(exact_seed)
-
-    # Deterministically choose primary language from stable per-pair seed
-    # to avoid systematic English dominance
-    primary_lang = "en" if rng.random() < 0.5 else "tr"
-    if primary_lang == "en":
-        primary_tokens, secondary_tokens = en_tokens, tr_tokens
-    else:
-        primary_tokens, secondary_tokens = tr_tokens, en_tokens
-
-    len_p = len(primary_tokens)
-    len_s = len(secondary_tokens)
-
-    if strategy == "chunk_mix":
-        if strength == "balanced":
-            # Roughly 50/50 mix: first half from primary, second half from secondary
-            cut_p = max(1, min(len_p - 1, int(round(len_p * 0.50)))) if len_p > 1 else 1
-            cut_s = max(1, min(len_s - 1, int(round(len_s * 0.50)))) if len_s > 1 else 0
-            mixed_tokens = primary_tokens[:cut_p] + secondary_tokens[cut_s:]
-        elif strength == "light":
-            # Roughly 75% primary, 25% secondary
-            cut_p = max(1, min(len_p - 1, int(round(len_p * 0.75)))) if len_p > 1 else 1
-            cut_s = max(1, min(len_s - 1, int(round(len_s * 0.75)))) if len_s > 1 else 0
-            mixed_tokens = primary_tokens[:cut_p] + secondary_tokens[cut_s:]
-        else:
-            raise ValueError(f"Unhandled strength: {strength}")
-
-    elif strategy == "interleave":
-        # 3-span sandwich: primary head + secondary mid + primary tail
-        if strength == "balanced":
-            cut_p1 = max(1, len_p // 4) if len_p >= 4 else 1
-            cut_p2 = max(cut_p1 + 1, (3 * len_p) // 4) if len_p >= 4 else len_p
-            cut_s1 = max(0, len_s // 4) if len_s >= 4 else 0
-            cut_s2 = max(cut_s1 + 1, (3 * len_s) // 4) if len_s >= 4 else len_s
-            sec_span = secondary_tokens[cut_s1:cut_s2] if cut_s2 > cut_s1 else secondary_tokens
-            mixed_tokens = primary_tokens[:cut_p1] + sec_span + primary_tokens[cut_p2:]
-        elif strength == "light":
-            cut_p1 = max(1, (3 * len_p) // 8) if len_p >= 4 else 1
-            cut_p2 = max(cut_p1 + 1, (5 * len_p) // 8) if len_p >= 4 else len_p
-            cut_s1 = max(0, (3 * len_s) // 8) if len_s >= 4 else 0
-            cut_s2 = max(cut_s1 + 1, (5 * len_s) // 8) if len_s >= 4 else len_s
-            sec_span = secondary_tokens[cut_s1:cut_s2] if cut_s2 > cut_s1 else secondary_tokens[:1]
-            mixed_tokens = primary_tokens[:cut_p1] + sec_span + primary_tokens[cut_p2:]
-        else:
-            raise ValueError(f"Unhandled strength: {strength}")
-    else:
-        raise ValueError(f"Unhandled strategy: {strategy}")
-
-    # Fallback to ensure both languages contribute if both texts had >= 2 tokens
-    if len_p >= 2 and len_s >= 2:
-        sec_set = set(secondary_tokens)
-        if not any(t in sec_set for t in mixed_tokens):
-            mixed_tokens.append(secondary_tokens[-1])
-
-    result = " ".join(mixed_tokens).strip()
-    return result, primary_lang
+    # Fallback to token mixing if sentences are empty
+    en_toks = en_text.split()
+    tr_toks = tr_text.split()
+    cut_en = max(1, len(en_toks) // 2)
+    cut_tr = max(1, len(tr_toks) // 2)
+    return " ".join(en_toks[:cut_en] + tr_toks[cut_tr:]).strip(), "en"
 
 
 def create_code_switched_record(
     en_record: dict[str, Any],
     tr_record: dict[str, Any],
-    strategy: str = "chunk_mix",
+    strategy: str = "sentence_mix",
     strength: str = "balanced",
     base_seed: int = 42,
 ) -> dict[str, Any]:
-    """Create a synthetic code-switched record from an aligned EN/TR pair."""
+    """Create a synthetic code-switched record from aligned EN and TR project variants."""
     pair_id = en_record.get("pair_id")
     if not pair_id or pair_id != tr_record.get("pair_id"):
         raise ValueError(f"Pair ID mismatch: en={pair_id}, tr={tr_record.get('pair_id')}")
@@ -191,80 +224,114 @@ def create_code_switched_record(
 
     if en_record.get("labels") != tr_record.get("labels"):
         raise ValueError(f"Labels mismatch for pair {pair_id}")
+    if en_record.get("labels_direct") != tr_record.get("labels_direct"):
+        raise ValueError(f"Direct label mismatch for pair {pair_id}")
 
-    if en_record.get("language") != "en":
-        raise ValueError(f"en_record must have language 'en', got '{en_record.get('language')}'")
-    if tr_record.get("language") != "tr":
-        raise ValueError(f"tr_record must have language 'tr', got '{tr_record.get('language')}'")
+    # Use aligned sentence pairs if available, otherwise synthesize alignment
+    sentence_pairs = tr_record.get("sentence_alignment")
+    if not sentence_pairs:
+        from naltra.data.translation import segment_sentences
 
-    mixed_text, primary_lang = mix_code_switched_text(
-        en_text=en_record["text"],
-        tr_text=tr_record["text"],
+        en_sents = segment_sentences(en_record["text"])
+        tr_sents = segment_sentences(tr_record["text"])
+        min_len = min(len(en_sents), len(tr_sents))
+        sentence_pairs = [
+            {"index": i, "en": en_sents[i], "tr": tr_sents[i]} for i in range(min_len)
+        ]
+
+    mixed_text, primary_lang = mix_aligned_sentences(
+        sentence_pairs=sentence_pairs,
         strategy=strategy,
         strength=strength,
         seed=base_seed,
         pair_id=pair_id,
     )
 
+    pid = en_record.get("project_id", pair_id.replace("cordis:", "").replace("sib200:", ""))
     new_id = f"{pair_id}:codeswitch:{strategy}:{strength}"
 
     return {
         "id": new_id,
+        "project_id": pid,
+        "pair_id": pair_id,
+        "original_pair_id": pair_id,
+        "source_id": en_record.get("source_id", pid),
+        "variant_of": en_record["id"],
+        "title": en_record.get("title", ""),
         "text": mixed_text,
+        "labels_direct": copy.deepcopy(en_record.get("labels_direct", en_record["labels"])),
         "labels": copy.deepcopy(en_record["labels"]),
         "language": "en-tr",
-        "source": "sib200",
-        "license": en_record.get("license", "CC BY-SA 4.0"),
+        "source": en_record.get("source", "cordis_h2020"),
+        "license": en_record.get("license", "CC BY 4.0"),
         "split": en_record["split"],
-        "pair_id": pair_id,
+        "taxonomy_version": en_record.get("taxonomy_version", "0.4.0"),
+        "synthetic_language_variant": True,
         "en_id": en_record["id"],
         "tr_id": tr_record["id"],
         "code_switch_strategy": strategy,
         "code_switch_strength": strength,
         "primary_language": primary_lang,
-        "original_pair_id": pair_id,
         "base_seed": base_seed,
     }
 
 
 def generate_code_switch_benchmarks(
-    processed_base_dir: str | Path = "data/processed/sib200",
-    output_base_dir: str | Path = "data/processed/code_switch",
+    en_dir: str | Path | None = None,
+    tr_dir: str | Path | None = None,
+    output_base_dir: str | Path = "data/processed/cordis_h2020/code_switch",
     splits: Sequence[str] = ("validation", "test"),
-    strategy: str = "chunk_mix",
+    strategy: str = "sentence_mix",
     strength: str = "balanced",
     seed: int = 42,
+    taxonomy_path: str | Path = "taxonomy/taxonomy.json",
+    processed_base_dir: str | Path | None = None,
 ) -> dict[str, int]:
-    """Generate synthetic EN/TR code-switched validation/test benchmark copies."""
-    from naltra.data.manifest import create_manifest
+    """Generate synthetic EN/TR code-switched evaluation benchmarks."""
+    if processed_base_dir is not None:
+        base_p = Path(processed_base_dir)
+        if not base_p.exists():
+            raise FileNotFoundError(
+                f"Cannot generate code-switch benchmarks: directory '{base_p}' does not exist."
+            )
+        if (base_p / "en").exists() and (base_p / "tr").exists():
+            en_path = base_p / "en"
+            tr_path = base_p / "tr"
+            is_single_dir = False
+        else:
+            en_path = base_p
+            tr_path = base_p
+            is_single_dir = True
+    else:
+        en_path = Path(en_dir or "data/processed/cordis_h2020/en")
+        tr_path = Path(tr_dir or "data/processed/cordis_h2020/tr")
+        is_single_dir = False
 
-    in_dir = Path(processed_base_dir)
     out_dir = Path(output_base_dir) / strategy / strength
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Preflight check: required SIB-200 files must exist
-    missing_files: list[str] = []
-    for split_name in splits:
-        input_file = in_dir / f"{split_name}.jsonl"
-        if not input_file.exists():
-            missing_files.append(str(input_file))
-
-    if missing_files:
-        files_str = "\n  - ".join(missing_files)
-        raise FileNotFoundError(
-            "Cannot generate code-switch benchmarks because required SIB-200 input "
-            f"files are missing:\n"
-            f"  - {files_str}\n"
-            f"Please prepare SIB-200 first:\n"
-            f"  python scripts/prepare_data.py --dataset sib200"
-        )
-
     results: dict[str, int] = {}
+    input_files = []
 
     for split_name in splits:
-        input_file = in_dir / f"{split_name}.jsonl"
-        raw_records = load_jsonl(input_file)
-        pairs = pair_aligned_records(raw_records)
+        if is_single_dir:
+            split_file = en_path / f"{split_name}.jsonl"
+            if not split_file.exists():
+                raise FileNotFoundError(split_file)
+            input_files.append(split_file)
+            all_recs = load_jsonl(split_file)
+            pairs = pair_aligned_records(all_recs)
+        else:
+            en_file = en_path / f"{split_name}.jsonl"
+            tr_file = tr_path / f"{split_name}.jsonl"
+
+            if not en_file.exists() or not tr_file.exists():
+                raise FileNotFoundError(f"Missing EN/TR code-switch input for {split_name}.")
+            input_files.extend([en_file, tr_file])
+
+            en_recs = load_jsonl(en_file)
+            tr_recs = load_jsonl(tr_file)
+            pairs = pair_aligned_records(en_recs, tr_recs)
 
         mixed_records = [
             create_code_switched_record(
@@ -277,21 +344,21 @@ def generate_code_switch_benchmarks(
             for en_rec, tr_rec in pairs
         ]
 
-        # Verify unique IDs
+        # Verify uniqueness
         ids = [r["id"] for r in mixed_records]
         if len(ids) != len(set(ids)):
             raise ValueError(
                 f"Duplicate IDs found in generated {split_name} code-switched benchmark."
             )
 
-        output_file = out_dir / f"{split_name}.jsonl"
-        save_jsonl(mixed_records, output_file)
+        out_file = out_dir / f"{split_name}.jsonl"
+        save_jsonl(mixed_records, out_file)
         results[split_name] = len(mixed_records)
-        print(f"Generated {len(mixed_records)} code-switched records -> {output_file}")
+        print(f"Generated {len(mixed_records)} code-switched records -> {out_file}")
 
     # Generate reproducibility manifest
     create_manifest(
-        benchmark_name="code_switch_sib200",
+        benchmark_name="cordis_h2020_code_switch",
         output_dir=out_dir,
         generation_parameters={
             "strategy": strategy,
@@ -300,10 +367,11 @@ def generate_code_switch_benchmarks(
             "splits": list(splits),
         },
         source_metadata={
-            "source_dataset": "sib200",
-            "processed_base_dir": str(in_dir),
+            "source_en_dir": str(en_path),
+            "source_tr_dir": str(tr_path),
         },
-        input_files=[in_dir / f"{split}.jsonl" for split in splits],
+        taxonomy_dir=Path(taxonomy_path).parent,
+        input_files=input_files,
     )
 
     return results

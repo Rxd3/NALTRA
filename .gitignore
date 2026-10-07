@@ -36,6 +36,7 @@ data/processed/*
 data/splits/*
 data/ood/*
 data/noisy/*
+data/cache/
 !data/**/.gitkeep
 !data/README.md
 

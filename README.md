@@ -1,21 +1,23 @@
 # NALTRA
 
-**Natural Language Analysis & Taxonomy Robust Architecture** is a student research project for multilingual, multi-label, hierarchical text classification. The repository is organized so five contributors can develop data, models, ensemble decisions, evaluation, and the user interface in parallel behind shared interfaces.
+**Natural Language Analysis & Taxonomy Robust Architecture** is a student research project for multilingual text classification. The repository is organized so five contributors can develop data, models, ensemble decisions, evaluation, and the user interface in parallel behind shared interfaces.
 
 ## Research goal
 
-NALTRA compares classical, neural, transformer, and external-service approaches under the same prediction contract. The project studies not only label quality, but also cross-language transfer, hierarchy consistency, out-of-distribution (OOD) behavior, confidence calibration, robustness, and inference latency.
+NALTRA compares model families under one prediction contract using CORDIS Horizon 2020 project objectives and the hierarchical EuroSciVoc taxonomy.
 
 Supported language settings:
 
-- English
-- Turkish
-- English-Turkish code-switching
+- English: original CORDIS objectives.
+- Turkish: machine-translated versions of the same projects.
+- English?Turkish code-switching: synthetic evaluation variants from aligned sentences.
 
 Classification setting:
 
-- Multi-label: one text may receive multiple labels.
-- Hierarchical: predictions are resolved into valid taxonomy paths.
+- Multi-label scientific topic classification.
+- 473 directly supported target labels within a 586-node taxonomy (v0.4.0).
+- Models train on `labels_direct`; stored `labels` contains the ancestor closure.
+- Project groups and duplicate objective texts remain in one split across languages.
 
 Planned model families:
 
@@ -27,9 +29,9 @@ Planned model families:
 - Laya integration
 - Configurable ensemble voting across all six model families
 
-The ensemble layer supports strict hard-majority voting, average-probability soft voting, and configurable weighted soft voting. All methods vote independently per label and return the same `PredictionResult` schema as an individual model, so hierarchy, OOD, evaluation, and dashboard stages remain unchanged.
+The ensemble layer supports strict hard-majority voting, average-probability soft voting, and configurable weighted soft voting. All methods vote independently per label and return the same `PredictionResult` schema as an individual model, so downstream OOD, evaluation, and dashboard stages remain unchanged.
 
-Evaluation covers standard classification metrics, cross-language evaluation, OOD detection, confidence calibration, robustness, and latency.
+Evaluation covers standard classification metrics, cross-language evaluation, Near-OOD detection, confidence calibration, noise robustness, and latency.
 
 ## Repository map
 
@@ -86,16 +88,35 @@ make format       # apply Ruff fixes and Black formatting
 make dashboard    # start the Streamlit dashboard
 ```
 
-The model packages currently contain interface-compatible placeholders only. No datasets or pretrained weights are downloaded by setup or by the tests.
+BiLSTM and Transformer support training, batch inference, and offline artifact reload.
+The shared pipeline supports language detection, thresholds, hierarchy, OOD, and ensemble decisions.
+Jev/Laya provide configurable adapters; their live services remain disabled until real provider
+contracts and credentials are supplied. Naive Bayes and SVM remain placeholders.
+No datasets or pretrained weights are downloaded by setup or by the tests.
 
-Prepare and audit the implemented benchmark datasets from the repository root:
+See [core ML operation and integration](docs/core_ml.md) for training, artifact loading,
+the prediction contract, and external setup. After preparing and auditing data:
 
 ```bash
-python scripts/prepare_data.py --dataset all
-python scripts/validate_datasets.py
+python scripts/train_all.py --smoke --device cpu --output-dir models/smoke
+python scripts/train_all.py --device auto
 ```
 
-MN-DS needs the verified local CSV first; see [data setup](data/README.md). Individual generators use `--dataset noisy` and `--dataset code_switch`. The installed `naltra-prepare-data` command accepts the same dataset choices. Source versions, manifests and evaluation policies are documented in [the dataset specification](docs/dataset.md).
+Prepare the checksum-locked CORDIS release from the repository root:
+
+```bash
+python scripts/prepare_data.py --dataset cordis_h2020 --download
+python scripts/validate_datasets.py --languages en
+python scripts/prepare_data.py --dataset translation --device cuda
+python scripts/validate_datasets.py --languages en tr
+python scripts/train_all.py --datasets cordis_h2020 --languages en tr --device auto --output-dir models/cordis_v0.4.0
+```
+
+Translation runs locally and can resume from its ignored cache. Use `--device cpu` for translation when CUDA is unavailable. To train on the audited English source before deriving Turkish, use `--languages en`. Each language selection produces a separate artifact track. Old dataset artifacts remain separate and cannot be loaded under the new taxonomy.
+
+Optional evaluation variants use `--dataset noisy` and `--dataset code_switch`; audit the complete clean and derived release with `python scripts/validate_datasets.py --derived`. `--dataset all --download` prepares English, Turkish, noise, and both code-switch tracks. The installed `naltra-prepare-data` command uses the same implementation. CORDIS held-out-domain OOD folds require a separate protocol; historical SIB-200 folds are not CORDIS benchmark inputs.
+
+Source locks, manifests, translation limitations, and data provenance are described in [the dataset specification](docs/dataset.md) and [data workspace](data/README.md).
 
 ## Collaboration
 

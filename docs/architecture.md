@@ -52,4 +52,16 @@ flowchart LR
 
 The initial scaffold deliberately avoids dependency injection frameworks, service layers, and deployment infrastructure. Add abstractions only when two or more implementations need them.
 
-For ensemble mode, Naive Bayes, SVM, BiLSTM, Multilingual Transformer, Jev, and Laya each return a `PredictionResult`. The ensemble combines their label scores, returns another `PredictionResult`, and then follows the same hierarchy and OOD path as a single-model prediction. Soft voting treats a label omitted by one model as probability zero; hard voting treats it as a negative vote.
+For ensemble mode, all configured model families return a `PredictionResult`.
+Soft voting uses complete `label_scores`; legacy results fall back to selected
+label scores and treat omissions as zero. Hard voting uses selected `labels` and
+treats omissions as negative votes. Declared dataset, track, and label spaces must
+match across components. The ensemble follows shared hierarchy and OOD stages.
+
+The neural models and shared pipeline are implemented. Jev/Laya remain disabled
+until real provider contracts are configured. See [core ML operation](core_ml.md)
+for artifacts, training commands, OOD semantics, extension hooks and integrations.
+
+## CORDIS training boundary
+
+The active dataset is CORDIS H2020. Stored records preserve `labels_direct` and ancestor-closed `labels`. All CORDIS neural training uses direct targets explicitly; direct probabilities and selections remain in `PredictionResult.label_scores` and `PredictionResult.labels`, while ancestors appear in `hierarchy_paths`. Full-label calibration and ordinary classification must use the same direct label universe. Dataset integrity checks are shared by the validator and the training CLI.

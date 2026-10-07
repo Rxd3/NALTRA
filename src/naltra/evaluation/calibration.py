@@ -2,6 +2,10 @@
 
 from collections.abc import Sequence
 
+import numpy as np
+
+from naltra.schemas import PredictionResult
+
 
 def brier_score(probabilities: Sequence[float], outcomes: Sequence[int]) -> float:
     """Calculate mean squared probability error for binary outcomes."""
@@ -45,20 +49,15 @@ def expected_calibration_error(
         error += len(members) / total * abs(accuracy - confidence)
     return error
 
-import numpy as np
-from typing import List, Dict
-from naltra.schemas import PredictionResult
 
 def compute_calibration_ece(
-    predictions: List[PredictionResult],
-    ground_truth: List[Dict[str, int]],
-    n_bins: int = 10
-) -> Dict[str, float]:
+    predictions: list[PredictionResult], ground_truth: list[dict[str, int]], n_bins: int = 10
+) -> dict[str, float]:
     """Computes Expected Calibration Error (ECE)."""
     confidences = []
     accuracies = []
 
-    for pred, gt in zip(predictions, ground_truth):
+    for pred, gt in zip(predictions, ground_truth, strict=True):
         for item in pred.labels:
             confidences.append(item.score)
             is_correct = 1.0 if gt.get(item.label, 0) == 1 else 0.0
@@ -84,4 +83,3 @@ def compute_calibration_ece(
             ece += np.abs(accuracy_in_bin - avg_confidence_in_bin) * prop_in_bin
 
     return {"ece": float(ece)}
-    
