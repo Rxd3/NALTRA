@@ -23,3 +23,11 @@ def test_multilabel_micro_and_macro_metrics() -> None:
 def test_reliability_helpers_are_lightweight() -> None:
     assert brier_score([0.0, 1.0], [0, 1]) == 0.0
     assert jaccard_stability({"a", "b"}, {"b", "c"}) == pytest.approx(1 / 3)
+
+
+def test_macro_uses_fixed_label_universe_including_absent_labels():
+    metrics = multilabel_metrics([{"a"}], [{"a"}], all_labels=["a", "b"])
+    assert metrics["micro_f1"] == 1.0
+    assert metrics["macro_f1"] == 0.5
+    with pytest.raises(ValueError, match="universe"):
+        multilabel_metrics([{"unknown"}], [set()], all_labels=["a", "b"])

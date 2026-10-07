@@ -118,6 +118,16 @@ Optional evaluation variants use `--dataset noisy` and `--dataset code_switch`; 
 
 Source locks, manifests, translation limitations, and data provenance are described in [the dataset specification](docs/dataset.md) and [data workspace](data/README.md).
 
+Evaluate the saved CORDIS BiLSTM and Transformer on the complete English/Turkish test set:
+
+```bash
+python scripts/evaluate_all.py --device cuda --batch-size 8
+```
+
+Scores and provenance are written to `results/metrics/cordis_v0.4.0/evaluation_summary.json`.
+The runner preserves trained thresholds and does not retrain. See [evaluation](docs/evaluation.md)
+for validation checks, subset runs, and the remaining benchmark integrations.
+
 ## Collaboration
 
 All work is reviewed through pull requests; direct commits to `main` are not allowed. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branching, testing, secret-handling, and review rules.
