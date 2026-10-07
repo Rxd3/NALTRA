@@ -141,6 +141,17 @@ Turkish records include additional provenance metadata:
 - `translation_source_hash`: SHA-256 of the source English text
 - `sentence_alignment`: List of aligned sentence pairs `[{"index": 0, "en": "...", "tr": "..."}]`
 
+Existing translations can be reused when their English source, taxonomy, labels, project
+splits, and model provenance match the current release. Older sentence boundaries are
+accepted only when the aligned English chunks reproduce the complete source in order;
+the Turkish chunks must reproduce the stored translation exactly. Empty chunks and
+missing or reordered source content are rejected.
+
+Imported archives with older manifests need an audited manifest migration, preserving
+the original manifest and archive checksum in provenance. Corrected translations with
+stale alignment metadata require targeted repair before import. A review CSV alone is
+not a complete translation release.
+
 ---
 
 ## 6. Text Preprocessing & Cleaning Policy

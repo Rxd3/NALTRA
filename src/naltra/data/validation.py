@@ -188,10 +188,25 @@ def validate_cordis_release(
                         "CORDIS production translation provenance mismatch or mock output."
                     )
                 alignment = r.get("sentence_alignment", [])
+                # Imported releases can use older sentence boundaries. Preserve them
+                # when they cover the exact source in order, rather than requiring
+                # the current segmenter's boundaries for already translated text.
                 if (
-                    not alignment
+                    not isinstance(alignment, list)
+                    or not alignment
+                    or any(
+                        not isinstance(p, dict)
+                        or type(p.get("index")) is not int
+                        or any(
+                            not isinstance(p.get(k), str) or not p[k].strip() for k in ("en", "tr")
+                        )
+                        for p in alignment
+                    )
                     or [p.get("index") for p in alignment] != list(range(len(alignment)))
-                    or [p.get("en") for p in alignment] != segment_sentences(source["text"])
+                    or (
+                        [p["en"] for p in alignment] != segment_sentences(source["text"])
+                        and " ".join(p["en"] for p in alignment) != source["text"]
+                    )
                     or " ".join(p.get("tr", "") for p in alignment) != r["text"]
                 ):
                     raise ValueError("CORDIS sentence alignment differs from source/output.")
