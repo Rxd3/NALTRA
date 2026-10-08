@@ -181,6 +181,30 @@ Completed code-switching implementation:
 - [x] Independent code-switch audit without optional noise/OOD requirements.
 - [x] Evaluation CLI support with frozen thresholds and separate strategy metrics.
 - [x] Regression coverage for stale text, incorrect lineage, and invalid selections.
+- [x] Full validation evaluation of both tracks with saved v0.5 BiLSTM/Transformer models.
+- [x] Corrected shareable dataset bundle verified after extraction into a fresh checkout layout.
+
+Measured validation results with the saved clean-validation cutoffs (BiLSTM 0.14;
+Transformer 0.13), without fitting on mixed-language records:
+
+| Model | Mixed track | Micro-F1 | Macro-F1 |
+| --- | --- | ---: | ---: |
+| BiLSTM | Sentence mix | 0.2822 | 0.1603 |
+| BiLSTM | Chunk mix | 0.2804 | 0.1635 |
+| Transformer | Sentence mix | 0.2420 | 0.1209 |
+| Transformer | Chunk mix | 0.2431 | 0.1224 |
+
+The full measured report is the ignored local output
+`results/metrics/cordis_v0.5.0_code_switch_validation/evaluation_summary.json`.
+These synthetic validation scores are not final test estimates.
+
+For team handoff, distribute the corrected `NALTRA_CORDIS_H2020_ready.zip` bundle
+outside Git. It contains the clean EN/TR release, both mixed tracks, manifests,
+locked raw CSV files, and project split map. Pull the latest `main`, then extract
+the ZIP into the repository root so its `data/` tree lands in the right location.
+The repository already supplies the matching taxonomy and code. Run the code-switch
+audit above after extraction. Share trained model folders separately; no retraining
+or translation is needed. The original imported archive is preserved.
 
 Naive Bayes, SVM, and Jev/Laya can use the same mixed-language files when their
 model implementations are integrated into the evaluation runner.
