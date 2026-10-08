@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from naltra.data.manifest import REPO_ROOT, compute_file_sha256, get_environment_metadata
 from naltra.data.preprocessing import compute_content_fingerprint, validate_record
@@ -60,6 +60,19 @@ def validate_neural_config(config: Mapping[str, Any]) -> None:
     if config.get("target_field", "labels") not in {"labels", "labels_direct"}:
         raise ValueError("target_field must be labels or labels_direct.")
     training = config["training"]
+    if "inference" in config and (
+        type(config["inference"]["batch_size"]) is not int or config["inference"]["batch_size"] < 1
+    ):
+        raise ValueError("inference.batch_size must be a positive integer.")
+    if training.get("loss_weighting", "none") not in {"none", "sqrt_inverse_frequency"}:
+        raise ValueError("training.loss_weighting must be none or sqrt_inverse_frequency.")
+    maximum = training.get("max_positive_weight", 20.0)
+    if not math.isfinite(maximum) or maximum < 1:
+        raise ValueError("training.max_positive_weight must be finite and at least 1.")
+    if "feature_batch_size" in training and (
+        type(training["feature_batch_size"]) is not int or training["feature_batch_size"] < 1
+    ):
+        raise ValueError("training.feature_batch_size must be a positive integer.")
     for key in ("batch_size", "epochs", "gradient_accumulation_steps", "patience"):
         if type(training[key]) is not int or training[key] < 1:
             raise ValueError(f"training.{key} must be a positive integer.")
@@ -141,6 +154,7 @@ class NeuralModel(BaseNALTRAModel):
         self.metadata: dict[str, Any] = {}
         self.ood_threshold: float | None = None
         self._fitted = False
+        self._loss_function = nn.BCEWithLogitsLoss()
 
     def _taxonomy_checksums(self) -> dict[str, str]:
         taxonomy = json.loads(self.taxonomy_path.read_text(encoding="utf-8"))
@@ -161,6 +175,43 @@ class NeuralModel(BaseNALTRAModel):
 
     def _logits(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
         raise NotImplementedError
+
+    def _features(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        raise NotImplementedError
+
+    def _classifier(self) -> nn.Module:
+        raise NotImplementedError
+
+    def _feature_logits(self, features: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+    def _configure_loss(self, records: list[dict[str, Any]]) -> None:
+        """Derive positive weights from training targets only, in artifact label order."""
+        index = {label: i for i, label in enumerate(self.labels)}
+        counts = torch.zeros(len(self.labels), dtype=torch.float32)
+        for record in records:
+            for label in set(self._targets(record)):
+                counts[index[label]] += 1
+        if (counts == 0).any():
+            raise ValueError("Every modeled label must have positive training support.")
+        weighting = self.config["training"].get("loss_weighting", "none")
+        weights = torch.ones_like(counts)
+        if weighting == "sqrt_inverse_frequency":
+            weights = torch.sqrt((len(records) - counts) / counts).clamp(
+                min=1.0, max=self.config["training"].get("max_positive_weight", 20.0)
+            )
+        self._loss_function = nn.BCEWithLogitsLoss(
+            pos_weight=weights.to(self.device) if weighting != "none" else None
+        )
+        self.metadata["loss"] = {
+            "name": "BCEWithLogitsLoss",
+            "weighting": weighting,
+            "weight_source": "training targets only",
+            "training_records": len(records),
+            "positive_counts": dict(zip(self.labels, map(int, counts.tolist()), strict=True)),
+            "positive_weights": dict(zip(self.labels, weights.tolist(), strict=True)),
+            "probabilities_calibrated": False,
+        }
 
     def _save_network(self, target: Path) -> None:
         raise NotImplementedError
@@ -243,7 +294,8 @@ class NeuralModel(BaseNALTRAModel):
             weight_decay=cfg["weight_decay"],
             foreach=False,
         )
-        criterion = nn.BCEWithLogitsLoss()
+        self._configure_loss(train)
+        criterion = self._loss_function
         use_amp = self.device.type == "cuda" and cfg["mixed_precision"]
         scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
         best_loss, stale = float("inf"), 0
@@ -311,11 +363,168 @@ class NeuralModel(BaseNALTRAModel):
             for batch in loader:
                 targets = batch.pop("targets").to(self.device)
                 logits = self._logits({key: value.to(self.device) for key, value in batch.items()})
-                loss = nn.functional.binary_cross_entropy_with_logits(logits.float(), targets)
+                loss = self._loss_function(logits.float(), targets)
                 if not torch.isfinite(loss):
                     raise RuntimeError("Validation produced non-finite loss.")
                 total += loss.item() * len(targets)
         return total / len(loader.dataset)
+
+    def refit_head(self, train_data: Any, validation_data: Any) -> None:
+        """Train a saved classifier on cached, frozen encoder features, without reinitializing."""
+        if not self._fitted or self.network is None:
+            raise RuntimeError("Head refitting requires a loaded trained model.")
+        validate_neural_config(self.config)
+        if self.config["training"]["gradient_accumulation_steps"] != 1:
+            raise ValueError("Cached head training requires gradient_accumulation_steps=1.")
+        if self._taxonomy_checksums() != self.taxonomy_identity:
+            raise ValueError("Taxonomy changed before head refitting.")
+        train, validation = self._records(train_data, "train"), self._records(
+            validation_data, "validation"
+        )
+        if {r["id"] for r in train} & {r["id"] for r in validation}:
+            raise ValueError("Training and validation record IDs overlap.")
+        if {compute_content_fingerprint(r["text"]) for r in train} & {
+            compute_content_fingerprint(r["text"]) for r in validation
+        }:
+            raise ValueError("Training and validation content overlaps.")
+        supported = {label for record in train for label in self._targets(record)}
+        if supported != set(self.labels) or any(
+            not set(self._targets(record)) <= supported for record in validation
+        ):
+            raise ValueError("Head refitting requires the exact saved training label universe.")
+        seed_everything(self.config["seed"])
+        self.metadata["initial_training_history"] = self.history
+        self.history = []
+        self._configure_loss(train)
+        head = self._classifier()
+        original_grad = {
+            name: value.requires_grad for name, value in self.network.named_parameters()
+        }
+        try:
+            for parameter in self.network.parameters():
+                parameter.requires_grad_(False)
+            for parameter in head.parameters():
+                parameter.requires_grad_(True)
+            self.network.eval()
+            self._fitted = False
+            feature_size = self.config["training"].get("feature_batch_size", 8)
+
+            def feature_loader(records: list[dict[str, Any]], name: str) -> DataLoader:
+                chunks = []
+                with torch.inference_mode():
+                    for offset in range(0, len(records), feature_size):
+                        inputs = {
+                            key: tensor.to(self.device)
+                            for key, tensor in self._encode(
+                                [
+                                    normalize_text(r["text"])
+                                    for r in records[offset : offset + feature_size]
+                                ]
+                            ).items()
+                        }
+                        chunks.append(self._features(inputs).float().cpu())
+                        completed = min(offset + feature_size, len(records))
+                        if completed == len(records) or completed % (feature_size * 100) == 0:
+                            print(
+                                f"{self.model_name}/{name} features: {completed}/{len(records)}",
+                                flush=True,
+                            )
+                # Leave inference_mode before materializing tensors used in autograd.
+                features = torch.cat(chunks)
+                targets = torch.tensor(
+                    [
+                        [label in self._targets(record) for label in self.labels]
+                        for record in records
+                    ],
+                    dtype=torch.float32,
+                )
+                return DataLoader(
+                    TensorDataset(features, targets),
+                    batch_size=self.config["training"]["batch_size"],
+                    shuffle=name == "train",
+                    generator=torch.Generator().manual_seed(self.config["seed"]),
+                    num_workers=0,
+                )
+
+            train_loader = feature_loader(train, "train")
+            validation_loader = feature_loader(validation, "validation")
+            cfg = self.config["training"]
+            optimizer = torch.optim.AdamW(
+                head.parameters(), lr=cfg["learning_rate"], weight_decay=cfg["weight_decay"]
+            )
+            best_loss, best_state, stale = float("inf"), None, 0
+            for epoch in range(cfg["epochs"]):
+                head.train()
+                total = 0.0
+                for features, targets in train_loader:
+                    optimizer.zero_grad(set_to_none=True)
+                    loss = self._loss_function(
+                        self._feature_logits(features.to(self.device)), targets.to(self.device)
+                    )
+                    if not torch.isfinite(loss):
+                        raise RuntimeError("Head training produced non-finite loss.")
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(head.parameters(), cfg["gradient_clip"])
+                    optimizer.step()
+                    total += loss.item() * len(targets)
+                head.eval()
+                validation_total = 0.0
+                with torch.inference_mode():
+                    for features, targets in validation_loader:
+                        loss = self._loss_function(
+                            self._feature_logits(features.to(self.device)), targets.to(self.device)
+                        )
+                        if not torch.isfinite(loss):
+                            raise RuntimeError("Head validation produced non-finite loss.")
+                        validation_total += loss.item() * len(targets)
+                validation_loss = validation_total / len(validation)
+                self.history.append(
+                    {
+                        "epoch": epoch + 1,
+                        "train_loss": total / len(train),
+                        "validation_loss": validation_loss,
+                    }
+                )
+                print(
+                    f"{self.model_name} head epoch {epoch + 1}: "
+                    f"train={total / len(train):.6f}, validation={validation_loss:.6f}",
+                    flush=True,
+                )
+                if validation_loss < best_loss:
+                    best_loss, stale = validation_loss, 0
+                    best_state = {
+                        key: value.detach().cpu().clone()
+                        for key, value in head.state_dict().items()
+                    }
+                else:
+                    stale += 1
+                if stale >= cfg["patience"]:
+                    break
+            assert best_state is not None
+            head.load_state_dict(best_state)
+            self.network.eval()
+            self._fitted = True
+            # A changed head invalidates the previous validation-derived OOD threshold.
+            self.ood_threshold = None
+            self.metadata.update(
+                {
+                    "training_mode": "frozen_encoder_head_refit",
+                    "train_count": len(train),
+                    "validation_count": len(validation),
+                    "environment": get_environment_metadata(),
+                    "device": str(self.device),
+                    "hardware": (
+                        torch.cuda.get_device_name(self.device)
+                        if self.device.type == "cuda"
+                        else "CPU"
+                    ),
+                    "feature_cache": "in memory only",
+                }
+            )
+        finally:
+            for name, parameter in self.network.named_parameters():
+                parameter.requires_grad_(original_grad[name])
+            self.network.eval()
 
     def _probabilities(self, texts: Sequence[str]) -> np.ndarray:
         if not self._fitted or self.network is None:
@@ -323,7 +532,9 @@ class NeuralModel(BaseNALTRAModel):
         self.network.eval()
         chunks = []
         with torch.inference_mode():
-            size = self.config["training"]["batch_size"]
+            size = self.config.get("inference", {}).get(
+                "batch_size", self.config["training"]["batch_size"]
+            )
             for start in range(0, len(texts), size):
                 inputs = {
                     key: value.to(self.device)

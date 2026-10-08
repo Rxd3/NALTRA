@@ -323,6 +323,7 @@ def main(argv: list[str] | None = None) -> int:
             seed_everything(model.config["seed"])
             if args.batch_size:
                 model.config["training"]["batch_size"] = args.batch_size
+                model.config.setdefault("inference", {})["batch_size"] = args.batch_size
             result: dict[str, Any] = {
                 "status": "success",
                 "artifact": str(model_dir / family),
@@ -338,7 +339,9 @@ def main(argv: list[str] | None = None) -> int:
                     if model.device.type == "cuda"
                     else "CPU"
                 ),
-                "batch_size": model.config["training"]["batch_size"],
+                "batch_size": model.config.get("inference", {}).get(
+                    "batch_size", model.config["training"]["batch_size"]
+                ),
                 "thresholds": model.config["multilabel"],
                 "threshold_source": "saved_artifact",
                 "slices": {},
@@ -359,7 +362,7 @@ def main(argv: list[str] | None = None) -> int:
                 if args.max_records:
                     records = records[: args.max_records]
                 predictions = []
-                batch_size = model.config["training"]["batch_size"]
+                batch_size = result["batch_size"]
                 start = perf_counter()
                 for offset in range(0, len(records), batch_size):
                     batch = records[offset : offset + batch_size]

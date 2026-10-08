@@ -130,6 +130,11 @@ The runner defaults to trained thresholds and does not retrain. Use `--split val
 summary on test. See [evaluation](docs/evaluation.md) for the full commands, validation
 checks, subset runs, and remaining benchmark integrations.
 
+For training experiments on sparse CORDIS labels, `train_all.py` supports training-only
+positive loss weights and classifier refitting from saved encoders. See the
+[classifier refitting workflow](docs/evaluation.md#refit-classifiers-with-training-only-positive-weights)
+for weighted/unweighted comparisons that preserve the baseline models and test partition.
+
 ## Collaboration
 
 All work is reviewed through pull requests; direct commits to `main` are not allowed. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branching, testing, secret-handling, and review rules.

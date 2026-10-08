@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
+import math
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -49,6 +51,15 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--epochs", type=int)
     result.add_argument("--batch-size", type=int)
     result.add_argument("--accumulation", type=int)
+    result.add_argument("--learning-rate", type=float)
+    result.add_argument("--max-length", type=int)
+    result.add_argument("--loss-weighting", choices=("none", "sqrt_inverse_frequency"))
+    result.add_argument("--max-positive-weight", type=float)
+    result.add_argument(
+        "--refit-head-from",
+        help="Refit classifiers from the model family folders in this directory.",
+    )
+    result.add_argument("--feature-batch-size", type=int, default=8)
     result.add_argument("--output-dir")
     result.add_argument(
         "--smoke",
@@ -224,13 +235,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     configuration = load_yaml(resolve_path(args.config))
     selected_models = args.models or configuration["models"]
     datasets = args.datasets or configuration["datasets"]
+    if args.refit_head_from and (args.smoke or datasets != ["cordis_h2020"] or not args.output_dir):
+        parser().error(
+            "Head refitting requires CORDIS, no --smoke, and an explicit new --output-dir."
+        )
+    if args.learning_rate is not None and (
+        not math.isfinite(args.learning_rate) or args.learning_rate <= 0
+    ):
+        parser().error("--learning-rate must be finite and positive.")
+    if args.max_positive_weight is not None and (
+        not math.isfinite(args.max_positive_weight) or args.max_positive_weight < 1
+    ):
+        parser().error("--max-positive-weight must be finite and at least 1.")
+    if args.refit_head_from and args.accumulation not in (None, 1):
+        parser().error("Cached head refitting requires --accumulation 1.")
     if args.languages:
         if datasets != ["cordis_h2020"] or len(set(args.languages)) != len(args.languages):
             parser().error("--languages requires unique languages and --datasets cordis_h2020.")
         configuration["tracks"]["cordis_h2020"]["languages"] = args.languages
     if args.heldout_topic and datasets != ["sib200"]:
         parser().error("--heldout-topic requires --datasets sib200")
-    for value in (args.epochs, args.batch_size, args.accumulation, args.smoke_records):
+    for value in (
+        args.epochs,
+        args.batch_size,
+        args.accumulation,
+        args.smoke_records,
+        args.max_length,
+        args.feature_batch_size,
+    ):
         if value is not None and value < 1:
             parser().error("Training counts must be positive integers.")
     unknown = set(selected_models) - set(MODEL_TYPES)
@@ -255,6 +287,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     summaries = []
     for dataset in datasets:
         for family in selected_models:
+            model = reloaded = None
             key = f"{dataset}/{family}"
             try:
                 if dataset in failures:
@@ -274,9 +307,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ("epochs", "epochs"),
                     ("batch_size", "batch_size"),
                     ("accumulation", "gradient_accumulation_steps"),
+                    ("learning_rate", "learning_rate"),
+                    ("loss_weighting", "loss_weighting"),
+                    ("max_positive_weight", "max_positive_weight"),
                 ):
                     if getattr(args, attribute) is not None:
                         overrides["training"][setting] = getattr(args, attribute)
+                if args.max_length:
+                    overrides["architecture"] = {"max_length": args.max_length}
                 if args.smoke:
                     overrides["training"].setdefault("epochs", 1)
                     overrides = merge_config(overrides, {"architecture": {"max_length": 32}})
@@ -308,6 +346,54 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if args.smoke and family == "transformer"
                     else MODEL_TYPES[family](config)
                 )
+                if args.refit_head_from:
+                    initial = resolve_path(args.refit_head_from) / family
+                    if destination.resolve() == initial.resolve():
+                        raise ValueError(
+                            "Head refitting must preserve the initial artifact directory."
+                        )
+                    model.load(initial)
+                    if model.metadata.get("smoke") is not False:
+                        raise ValueError("Head refitting requires a full trained artifact.")
+                    if model.config.get("target_field") != track["target_field"]:
+                        raise ValueError("Initial artifact uses different targets.")
+                    for language in track["provenance"]["training_languages"]:
+                        old = model.metadata["dataset_manifests"][language]
+                        current = track["provenance"]["dataset_manifests"][language]
+                        if any(
+                            old[field] != current[field] for field in ("output_files", "taxonomy")
+                        ):
+                            raise ValueError("Initial artifact uses a different data release.")
+                    head_settings = {
+                        "epochs": args.epochs or 20,
+                        "batch_size": args.batch_size or 256,
+                        "learning_rate": args.learning_rate or 0.001,
+                        "gradient_accumulation_steps": args.accumulation or 1,
+                        "patience": 3,
+                        "mixed_precision": False,
+                        "feature_batch_size": args.feature_batch_size,
+                        "loss_weighting": args.loss_weighting or "none",
+                        "max_positive_weight": (
+                            args.max_positive_weight
+                            if args.max_positive_weight is not None
+                            else 20.0
+                        ),
+                    }
+                    head_overrides = {
+                        "training": head_settings,
+                        "inference": {"batch_size": args.feature_batch_size},
+                    }
+                    if args.max_length:
+                        head_overrides["architecture"] = {"max_length": args.max_length}
+                    model.config = merge_config(model.config, head_overrides)
+                    model.metadata["initial_artifact"] = {
+                        "path": str(initial),
+                        "sha256": {
+                            p.name: compute_file_sha256(p)
+                            for p in sorted(initial.iterdir())
+                            if p.is_file()
+                        },
+                    }
                 provenance_paths = [
                     Path(__file__),
                     REPO_ROOT / "src/naltra/models/neural.py",
@@ -327,16 +413,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "training_config": configuration,
                     }
                 )
-                model.train(train, validation)
+                if args.refit_head_from:
+                    model.refit_head(train, validation)
+                else:
+                    model.train(train, validation)
                 # Verify artifact reload and a real inference before declaring success.
                 model.save(destination)
                 reloaded = MODEL_TYPES[family]({"device": config["device"]})
                 reloaded.load(destination)
                 reloaded.predict(validation[0]["text"])
                 summaries.append({"run": key, "status": "success", "artifact": str(destination)})
-                del model, reloaded
             except Exception as exc:
                 summaries.append({"run": key, "status": "failed", "error": str(exc)})
+            finally:
+                del model, reloaded
+                gc.collect()
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             print(json.dumps(summaries[-1]), flush=True)
     output.mkdir(parents=True, exist_ok=True)
     (output / "training_summary.json").write_text(

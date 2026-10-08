@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import torch
 from scripts.train_all import tiny_transformer
+from torch import nn
 
 from naltra.models.bilstm import BiLSTMModel
 from naltra.models.neural import select_device
@@ -143,6 +144,94 @@ def test_predictions_are_independent_of_padding_and_batch_composition(family):
     ].label_scores
     assert alone == pytest.approx(batched, abs=1e-6)
     assert model.ood_threshold is None
+
+
+@pytest.mark.parametrize("family", ["bilstm", "transformer"])
+def test_cached_head_refit_preserves_encoder_and_roundtrips(family, tmp_path):
+    train, validation = records("train"), records("validation")
+    model = (
+        BiLSTMModel(small_config())
+        if family == "bilstm"
+        else tiny_transformer(TransformerModel(small_config()).config, train)
+    )
+    model.train(train, validation)
+    inputs = model._encode([record["text"] for record in validation])
+    with torch.inference_mode():
+        features = model._features(inputs)
+        assert torch.allclose(model._feature_logits(features), model._logits(inputs), atol=1e-6)
+    before = {key: value.clone() for key, value in model.network.state_dict().items()}
+    head_parameters = {id(parameter) for parameter in model._classifier().parameters()}
+    head_names = {
+        name
+        for name, parameter in model.network.named_parameters()
+        if id(parameter) in head_parameters
+    }
+    model.config["training"].update(
+        {
+            "epochs": 3,
+            "batch_size": 2,
+            "gradient_accumulation_steps": 1,
+            "loss_weighting": "sqrt_inverse_frequency",
+            "feature_batch_size": 2,
+        }
+    )
+    model.refit_head(train, validation)
+    assert all(
+        torch.equal(value, before[name])
+        for name, value in model.network.state_dict().items()
+        if name not in head_names
+    )
+    assert any(
+        not torch.equal(value, before[name])
+        for name, value in model.network.state_dict().items()
+        if name in head_names
+    )
+    with torch.inference_mode():
+        assert torch.equal(features, model._features(inputs))
+        assert torch.allclose(model._feature_logits(features), model._logits(inputs), atol=1e-6)
+    assert model.ood_threshold is None
+    assert model.metadata["training_mode"] == "frozen_encoder_head_refit"
+    assert model.metadata["loss"]["training_records"] == len(train)
+    prediction = model.predict("Science helps optics")
+    model.save(tmp_path)
+    loaded = type(model)({"device": "cpu"})
+    loaded.load(tmp_path)
+    assert loaded.predict(prediction.text).label_scores == pytest.approx(
+        prediction.label_scores, abs=1e-6
+    )
+    assert loaded.metadata["loss"] == model.metadata["loss"]
+
+
+def test_positive_weights_use_only_train_targets_and_weight_validation_consistently():
+    train, validation = records("train"), records("validation")
+    for record in train:
+        record["labels"] = ["acoustics"]
+    train[0]["labels"] = ["optics"]
+    for record in validation:
+        record["labels"] = ["optics"]
+    model = BiLSTMModel(
+        {
+            **small_config(),
+            "training": {
+                "epochs": 1,
+                "batch_size": 2,
+                "loss_weighting": "sqrt_inverse_frequency",
+                "max_positive_weight": 1.5,
+            },
+        }
+    )
+    model.train(train, validation)
+    assert model.metadata["loss"]["positive_counts"] == {"acoustics": 3, "optics": 1}
+    assert model.metadata["loss"]["positive_weights"] == {"acoustics": 1.0, "optics": 1.5}
+    loader = model._loader(validation)
+    with torch.inference_mode():
+        total = 0.0
+        for batch in loader:
+            targets = batch.pop("targets")
+            total += nn.functional.binary_cross_entropy_with_logits(
+                model._logits(batch), targets, pos_weight=torch.tensor([1.0, 1.5])
+            ).item() * len(targets)
+    assert model._validation_loss(loader) == pytest.approx(total / len(validation))
 
 
 def test_early_stopping_restores_best_checkpoint(monkeypatch):
