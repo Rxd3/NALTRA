@@ -7,6 +7,7 @@ import gc
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -18,6 +19,7 @@ if str(REPO_ROOT / "src") not in sys.path:
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
+from sklearn.metrics import average_precision_score  # noqa: E402
 
 from naltra.data.manifest import compute_file_sha256, get_environment_metadata  # noqa: E402
 from naltra.data.validation import validate_cordis_release  # noqa: E402
@@ -27,6 +29,7 @@ from naltra.models.bilstm import BiLSTMModel  # noqa: E402
 from naltra.models.neural import seed_everything  # noqa: E402
 from naltra.models.transformer import TransformerModel  # noqa: E402
 from naltra.pipeline.preprocessing import normalize_text  # noqa: E402
+from naltra.pipeline.thresholds import apply_thresholds  # noqa: E402
 from naltra.schemas.prediction import PredictionResult  # noqa: E402
 from naltra.utils.config import load_yaml  # noqa: E402
 
@@ -36,6 +39,81 @@ MODEL_TYPES = {"bilstm": BiLSTMModel, "transformer": TransformerModel}
 def resolve_path(value: str) -> Path:
     path = Path(value)
     return path.resolve() if path.is_absolute() else (REPO_ROOT / path).resolve()
+
+
+def select_global_threshold(
+    records: list[dict[str, Any]],
+    predictions: list[PredictionResult],
+    labels: list[str],
+) -> dict[str, Any]:
+    """Search a fixed grid on validation only; share one cutoff across both languages."""
+    if not records or len(records) != len(predictions):
+        raise ValueError("Threshold selection requires aligned, nonempty validation records.")
+    if any(record.get("split") != "validation" for record in records):
+        raise ValueError("Threshold selection is restricted to validation records.")
+    probabilities = np.array([[p.label_scores[label] for label in labels] for p in predictions])
+    outcomes = np.array([[label in r["labels_direct"] for label in labels] for r in records])
+    if not np.isfinite(probabilities).all() or ((probabilities < 0) | (probabilities > 1)).any():
+        raise ValueError("Invalid threshold selection probabilities.")
+    positives = int(outcomes.sum())
+    if not positives:
+        raise ValueError("Threshold selection requires positive validation targets.")
+    candidates = []
+    for index in range(101):
+        threshold = index / 100
+        selected = probabilities >= threshold
+        tp = int(np.count_nonzero(selected & outcomes))
+        count = int(selected.sum())
+        candidates.append(
+            {
+                "threshold": threshold,
+                "micro_precision": tp / count if count else 0.0,
+                "micro_recall": tp / positives,
+                "micro_f1": 2 * tp / (count + positives),
+            }
+        )
+    best = max(candidates, key=lambda candidate: (candidate["micro_f1"], candidate["threshold"]))
+    return {
+        "split": "validation",
+        "objective": "pooled bilingual micro_f1",
+        "method": "global grid 0.00 through 1.00 in steps of 0.01",
+        "tie_break": "highest threshold",
+        "records": len(records),
+        "selected_threshold": best["threshold"],
+        "candidates": candidates,
+        "scores_selected_on_this_split": True,
+    }
+
+
+def frozen_thresholds(
+    report: dict[str, Any], family: str, result: dict[str, Any], release: dict[str, Any]
+) -> dict[str, Any]:
+    """Reuse a full validation choice only with the same artifact and data release."""
+    if (report.get("status"), report.get("split"), report.get("scope")) != (
+        "success",
+        "validation",
+        "full",
+    ):
+        raise ValueError("Threshold source must be a successful full validation report.")
+    previous = report["models"][family]
+    if previous.get("threshold_selection", {}).get("split") != "validation":
+        raise ValueError("Threshold source does not contain a validation-selected threshold.")
+    if previous["artifact_sha256"] != result["artifact_sha256"]:
+        raise ValueError("Threshold source model artifact hashes differ.")
+    if report["label_count"] != len(release["label_universe"]):
+        raise ValueError("Threshold source label universe differs.")
+    for language in report["languages"]:
+        for field in ("output_files", "taxonomy"):
+            if (
+                report["dataset_manifests"][language][field]
+                != release["manifests"][language][field]
+            ):
+                raise ValueError("Threshold source data release differs.")
+    thresholds = previous["thresholds"]
+    apply_thresholds({}, thresholds["threshold"], thresholds["per_label"])
+    if set(thresholds["per_label"]) - set(release["label_universe"]):
+        raise ValueError("Threshold source contains unsupported labels.")
+    return thresholds
 
 
 def score_predictions(
@@ -111,6 +189,14 @@ def score_predictions(
         "classification": direct,
         "hierarchical": hierarchical,
         "calibration": calibration,
+        "ranking": {
+            "micro_average_precision": float(
+                average_precision_score(outcomes, probabilities, average="micro")
+            ),
+            "samples_average_precision": float(
+                average_precision_score(outcomes, probabilities, average="samples")
+            ),
+        },
     }
 
 
@@ -150,6 +236,15 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--output-dir", default="results/metrics/cordis_v0.4.0")
     result.add_argument("--overwrite", action="store_true")
+    thresholds = result.add_mutually_exclusive_group()
+    thresholds.add_argument(
+        "--tune-threshold",
+        action="store_true",
+        help="Select each model's global threshold on full bilingual validation only.",
+    )
+    thresholds.add_argument(
+        "--thresholds-file", help="Reuse thresholds from a full validation tuning summary."
+    )
     return result
 
 
@@ -159,6 +254,10 @@ def main(argv: list[str] | None = None) -> int:
         parser().error("--batch-size and --max-records must be positive.")
     if len(set(args.models)) != len(args.models) or len(set(args.languages)) != len(args.languages):
         parser().error("Models and languages must be unique.")
+    if args.tune_threshold and (
+        args.split != "validation" or args.max_records or set(args.languages) != {"en", "tr"}
+    ):
+        parser().error("--tune-threshold requires full bilingual validation without --max-records.")
     output = resolve_path(args.output_dir) / "evaluation_summary.json"
     if output.exists() and not args.overwrite:
         parser().error("Evaluation output exists; use a new --output-dir or --overwrite.")
@@ -167,6 +266,11 @@ def main(argv: list[str] | None = None) -> int:
         print("Auditing CORDIS data before loading models...", flush=True)
         release = validate_cordis_release(base, args.languages)
         bins = load_yaml(REPO_ROOT / "configs/evaluation.yaml")["calibration"]["bins"]
+        threshold_report = (
+            json.loads(resolve_path(args.thresholds_file).read_text(encoding="utf-8"))
+            if args.thresholds_file
+            else None
+        )
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"Evaluation blocked: {exc}", flush=True)
         return 1
@@ -236,8 +340,19 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 "batch_size": model.config["training"]["batch_size"],
                 "thresholds": model.config["multilabel"],
+                "threshold_source": "saved_artifact",
                 "slices": {},
             }
+            if threshold_report is not None:
+                result["artifact_thresholds"] = model.config["multilabel"]
+                model.config["multilabel"] = frozen_thresholds(
+                    threshold_report, family, result, release
+                )
+                result["thresholds"] = model.config["multilabel"]
+                result["threshold_source"] = {
+                    "validation_report": str(resolve_path(args.thresholds_file)),
+                    "sha256": compute_file_sha256(resolve_path(args.thresholds_file)),
+                }
             all_records, all_predictions = [], []
             for language in args.languages:
                 records = release["corpora"][language][args.split]
@@ -267,6 +382,45 @@ def main(argv: list[str] | None = None) -> int:
             result["slices"]["combined"] = score_predictions(
                 all_records, all_predictions, model.labels, model.parents, bins
             )
+            if args.tune_threshold:
+                selection = select_global_threshold(all_records, all_predictions, model.labels)
+                result["threshold_selection"] = selection
+                result["artifact_thresholds"] = result["thresholds"]
+                result["thresholds"] = {
+                    "threshold": selection["selected_threshold"],
+                    "per_label": {},
+                }
+                result["threshold_source"] = "validation_search"
+                result["baseline_slices"] = result["slices"]
+                result["slices"] = {}
+                adjusted = [
+                    replace(
+                        p, labels=apply_thresholds(p.label_scores, selection["selected_threshold"])
+                    )
+                    for p in all_predictions
+                ]
+                offset = 0
+                for language in args.languages:
+                    count = result["baseline_slices"][language]["records"]
+                    result["slices"][language] = score_predictions(
+                        all_records[offset : offset + count],
+                        adjusted[offset : offset + count],
+                        model.labels,
+                        model.parents,
+                        bins,
+                    )
+                    result["slices"][language]["prediction_seconds"] = result["baseline_slices"][
+                        language
+                    ]["prediction_seconds"]
+                    offset += count
+                result["slices"]["combined"] = score_predictions(
+                    all_records, adjusted, model.labels, model.parents, bins
+                )
+                print(
+                    f"{family}: validation-selected threshold="
+                    f"{selection['selected_threshold']:.2f}",
+                    flush=True,
+                )
             summary["models"][family] = result
             print(
                 f"{family}: combined micro-F1="

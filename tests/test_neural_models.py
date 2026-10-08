@@ -127,9 +127,15 @@ def test_training_updates_weights_and_roundtrips_offline(family, tmp_path, monke
         assert "unseen" not in loaded.vocabulary
 
 
-def test_packing_makes_padding_irrelevant():
-    model = BiLSTMModel(small_config())
-    model.train(records("train"))
+@pytest.mark.parametrize("family", ["bilstm", "transformer"])
+def test_predictions_are_independent_of_padding_and_batch_composition(family):
+    train = records("train")
+    model = (
+        BiLSTMModel(small_config())
+        if family == "bilstm"
+        else tiny_transformer(TransformerModel(small_config()).config, train)
+    )
+    model.train(train)
     text = "Football"
     alone = model.predict(text).label_scores
     batched = model.predict_batch([text, "New science research with a much longer sentence"])[

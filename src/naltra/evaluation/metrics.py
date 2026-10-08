@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from naltra.pipeline.thresholds import apply_thresholds
 from naltra.schemas.prediction import PredictionResult
 
 
@@ -89,10 +90,12 @@ def compute_classification_metrics(
     all_labels: list[str] | None = None,
     threshold: float = 0.5,
 ) -> dict[str, float]:
-    """Calculate multi-label classification metrics for prediction results."""
+    """Apply the requested cutoff to complete scores when provided by the model."""
+    apply_thresholds({}, threshold)
     y_pred_sets = []
     for pred in predictions:
-        pred_set = {item.label for item in pred.labels if item.score >= threshold}
+        scores = pred.label_scores or {item.label: item.score for item in pred.labels}
+        pred_set = {item.label for item in apply_thresholds(scores, threshold)}
         y_pred_sets.append(pred_set)
 
     return multilabel_metrics(ground_truth, y_pred_sets, all_labels)
