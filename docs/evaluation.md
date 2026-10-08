@@ -81,6 +81,56 @@ The runner verifies that the threshold source is a successful full validation tu
 report with matching artifact and dataset output hashes. Test evaluation applies the
 frozen thresholds without selecting or calibrating on test data.
 
+## Refit classifiers with training-only positive weights
+
+For a faster training experiment, keep each saved encoder fixed and refit its classifier
+on all audited training records. Features are held in memory; no feature cache files are
+created. The initial vocabulary, label ordering, encoder weights, and baseline artifacts
+are preserved. This mode supports BiLSTM and XLM-RoBERTa. It is classifier refitting,
+not a full encoder retraining run.
+
+```powershell
+.venv\Scripts\python.exe scripts\train_all.py --datasets cordis_h2020 --languages en tr --device cuda --refit-head-from models/cordis_v0.4.0/cordis_h2020/en_tr_direct --epochs 20 --batch-size 256 --feature-batch-size 8 --learning-rate 0.001 --max-length 512 --loss-weighting sqrt_inverse_frequency --max-positive-weight 20 --output-dir models/cordis_v0.5.0_head_weighted
+```
+
+Positive weights are `sqrt((N - positives) / positives)`, clamped to `[1, 20]` here, and
+computed from training targets only. Weighted validation loss uses those same weights
+for early stopping; losses from different weighting schemes are not directly comparable.
+The artifact records the initial file hashes, counts, weights, training mode, and history.
+Changed classifiers clear the old OOD threshold. Weighted sigmoid scores require fresh
+validation threshold selection and should not be treated as calibrated probabilities.
+
+To isolate weighting from extra input context and classifier optimization, run the same
+command with `--loss-weighting none` and a separate output directory such as
+`models/cordis_v0.5.0_head_unweighted`. Both experiments start from the same v0.4.0 model.
+Compare each using `evaluate_all.py --split validation --tune-threshold`, supplying its
+`--model-dir` and a separate results directory. The ordinary 256-token baseline remains
+the reference; do not infer a weighting improvement from a longer-context result alone.
+
+In this mode `--batch-size` controls cached classifier training, while
+`--feature-batch-size` controls encoder inference and the saved prediction batch size.
+`--max-length 512` increases retained input context; it does not change the tokenizer or
+vocabulary. The model must support the requested length. `--loss-weighting` and
+`--max-positive-weight` also work for ordinary full neural training without
+`--refit-head-from`; the default loss remains unweighted for compatibility.
+
+The selected local bundle is under `models/cordis_v0.5.0/cordis_h2020/en_tr_direct`.
+Its classifiers keep the v0.4.0 encoders, use 512-token inputs, and store their frozen
+validation-selected thresholds in `naltra.json`. Each manifest also records the source
+artifact hashes, candidate report hashes, and model selection criterion. The weighted
+and unweighted candidate directories are retained separately for comparison.
+
+Evaluate the selected artifacts with their saved thresholds:
+
+```powershell
+.venv\Scripts\python.exe scripts\evaluate_all.py --split validation --device cuda --batch-size 8 --model-dir models/cordis_v0.5.0/cordis_h2020/en_tr_direct --output-dir results/metrics/cordis_v0.5.0_validation
+```
+
+The v0.4.0 default path remains available. Use `--model-dir` explicitly to select v0.5.0.
+Artifacts and generated metrics are local, ignored outputs; teammates need the model
+bundle as well as the same audited dataset release. Validation was used for checkpoint,
+candidate, and threshold selection. It is not the final test estimate.
+
 This command covers clean CORDIS neural classification. Code-switch, noise, ensemble,
 external-provider, and OOD experiments remain separate integration work. CORDIS OOD
 domain folds need a separately specified protocol. `scripts/run_benchmark.py` still

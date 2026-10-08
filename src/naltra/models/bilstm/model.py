@@ -36,12 +36,15 @@ class BiLSTMNetwork(nn.Module):
         self.dropout = nn.Dropout(architecture["dropout"])
         self.head = nn.Linear(2 * architecture["hidden_dim"], label_count)
 
-    def forward(self, input_ids: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+    def features(self, input_ids: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
         packed = pack_padded_sequence(
             self.embedding(input_ids), lengths.cpu(), batch_first=True, enforce_sorted=False
         )
         _, (hidden, _) = self.lstm(packed)
-        return self.head(self.dropout(torch.cat((hidden[-2], hidden[-1]), dim=1)))
+        return torch.cat((hidden[-2], hidden[-1]), dim=1)
+
+    def forward(self, input_ids: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+        return self.head(self.dropout(self.features(input_ids, lengths)))
 
 
 class BiLSTMModel(NeuralModel):
@@ -91,6 +94,22 @@ class BiLSTMModel(NeuralModel):
     def _logits(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
         assert self.network is not None
         return self.network(**inputs)
+
+    def _features(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        assert self.network is not None
+        return self.network.features(**inputs)
+
+    def _classifier(self) -> nn.Module:
+        assert self.network is not None
+        return self.network.head
+
+    def _feature_logits(self, features: torch.Tensor) -> torch.Tensor:
+        assert self.network is not None
+        return self.network.head(
+            nn.functional.dropout(
+                features, p=self.network.dropout.p, training=self.network.head.training
+            )
+        )
 
     def _save_network(self, target: Path) -> None:
         assert self.network is not None

@@ -81,6 +81,19 @@ class TransformerModel(NeuralModel):
         assert self.network is not None
         return self.network(**inputs).logits
 
+    def _features(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        assert self.network is not None
+        if self.network.config.model_type != "xlm-roberta":
+            raise ValueError("Cached head refitting currently supports XLM-RoBERTa only.")
+        return self.network.base_model(**inputs).last_hidden_state[:, 0, :]
+
+    def _classifier(self) -> nn.Module:
+        assert self.network is not None
+        return self.network.classifier
+
+    def _feature_logits(self, features: torch.Tensor) -> torch.Tensor:
+        return self._classifier()(features.unsqueeze(1))
+
     def _save_network(self, target: Path) -> None:
         assert self.network is not None
         self.network.save_pretrained(target, safe_serialization=True)
