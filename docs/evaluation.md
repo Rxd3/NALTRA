@@ -114,6 +114,23 @@ vocabulary. The model must support the requested length. `--loss-weighting` and
 `--max-positive-weight` also work for ordinary full neural training without
 `--refit-head-from`; the default loss remains unweighted for compatibility.
 
+The selected local bundle is under `models/cordis_v0.5.0/cordis_h2020/en_tr_direct`.
+Its classifiers keep the v0.4.0 encoders, use 512-token inputs, and store their frozen
+validation-selected thresholds in `naltra.json`. Each manifest also records the source
+artifact hashes, candidate report hashes, and model selection criterion. The weighted
+and unweighted candidate directories are retained separately for comparison.
+
+Evaluate the selected artifacts with their saved thresholds:
+
+```powershell
+.venv\Scripts\python.exe scripts\evaluate_all.py --split validation --device cuda --batch-size 8 --model-dir models/cordis_v0.5.0/cordis_h2020/en_tr_direct --output-dir results/metrics/cordis_v0.5.0_validation
+```
+
+The v0.4.0 default path remains available. Use `--model-dir` explicitly to select v0.5.0.
+Artifacts and generated metrics are local, ignored outputs; teammates need the model
+bundle as well as the same audited dataset release. Validation was used for checkpoint,
+candidate, and threshold selection. It is not the final test estimate.
+
 This command covers clean CORDIS neural classification. Code-switch, noise, ensemble,
 external-provider, and OOD experiments remain separate integration work. CORDIS OOD
 domain folds need a separately specified protocol. `scripts/run_benchmark.py` still
