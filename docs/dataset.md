@@ -295,6 +295,13 @@ Controlled code-switched records are generated strictly from aligned English and
 - **Cardinality**: Exactly matching the source splits (4,711 validation, 4,711 test records per track; 18,844 total code-switched records generated across `sentence_mix` and `chunk_mix` balanced configurations).
 - **Output Files**: `data/processed/cordis_h2020/code_switch/{sentence_mix,chunk_mix}/balanced/{validation,test}.jsonl`.
 
+Audit just these tracks with `python scripts/validate_datasets.py --languages en tr
+--code-switch`; optional noise files are not required. The audit reconstructs every
+record from its exact current aligned source pair and rejects stale translations,
+changed labels/lineage, incomplete inventories, and split contamination. The
+evaluation runner's `--code-switch sentence_mix chunk_mix` option uses the existing
+trained models; no mixed-language training split is generated.
+
 ---
 
 ## 10. Limitations & Ethical Considerations

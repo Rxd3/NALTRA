@@ -243,6 +243,123 @@ def test_threshold_search_recovers_unemitted_labels_and_matches_scoring():
         evaluate.select_global_threshold(records, predictions, ["a", "b"])
 
 
+@pytest.mark.parametrize("only", [False, True])
+@pytest.mark.parametrize("threshold_file", [False, True])
+def test_code_switch_slices_use_saved_thresholds_and_keep_clean_pool_separate(
+    release, tmp_path, monkeypatch, only, threshold_file
+):
+    base, models, data, _ = release
+    mixed = {
+        "corpora": {
+            strategy: {
+                split: [{"text": "English Turkce", "labels_direct": ["b"], "split": split}]
+                for split in ("validation", "test")
+            }
+            for strategy in ("sentence_mix", "chunk_mix")
+        },
+        "manifests": {
+            strategy: {"fixture": strategy} for strategy in ("sentence_mix", "chunk_mix")
+        },
+    }
+    monkeypatch.setattr(evaluate, "validate_code_switch_release", lambda *args: mixed)
+    output = tmp_path / "mixed"
+    args = [
+        "--data-dir",
+        str(base),
+        "--model-dir",
+        str(models),
+        "--output-dir",
+        str(output),
+        "--split",
+        "validation",
+        "--code-switch",
+        "sentence_mix",
+        "chunk_mix",
+    ]
+    if only:
+        args.append("--code-switch-only")
+    if threshold_file:
+        assert (
+            evaluate.main(
+                [
+                    "--data-dir",
+                    str(base),
+                    "--model-dir",
+                    str(models),
+                    "--split",
+                    "validation",
+                    "--tune-threshold",
+                    "--output-dir",
+                    str(tmp_path / "clean_tuning"),
+                ]
+            )
+            == 0
+        )
+        args.extend(["--thresholds-file", str(tmp_path / "clean_tuning/evaluation_summary.json")])
+    before = {p: p.read_bytes() for p in models.rglob("*") if p.is_file()}
+    assert evaluate.main(args) == 0
+    report = json.loads((output / "evaluation_summary.json").read_text())
+    assert report["code_switch_manifests"] == mixed["manifests"]
+    assert report["dataset_manifests"] == data["manifests"]
+    for result in report["models"].values():
+        assert result["thresholds"]["threshold"] == (0.4 if threshold_file else 0.5)
+        assert "threshold_selection" not in result
+        for strategy in ("sentence_mix", "chunk_mix"):
+            metrics = result["slices"][f"code_switch_{strategy}"]
+            assert metrics["records"] == 1
+            assert metrics["classification"]["micro_f1"] == pytest.approx(
+                2 / 3 if threshold_file else 0.0
+            )
+        if only:
+            assert len(result["slices"]) == 2
+        else:
+            assert result["slices"]["combined"]["records"] == 2
+    assert {p: p.read_bytes() for p in before} == before
+
+
+def test_code_switch_audit_blocks_loading_models(release, tmp_path, monkeypatch):
+    base, models, _, _ = release
+
+    def fail(*args):
+        raise ValueError("stale mixed source")
+
+    monkeypatch.setattr(evaluate, "validate_code_switch_release", fail)
+    monkeypatch.setitem(
+        evaluate.MODEL_TYPES, "bilstm", lambda *args: pytest.fail("loaded too early")
+    )
+    assert (
+        evaluate.main(
+            [
+                "--data-dir",
+                str(base),
+                "--model-dir",
+                str(models),
+                "--code-switch",
+                "sentence_mix",
+                "--output-dir",
+                str(tmp_path / "results"),
+            ]
+        )
+        == 1
+    )
+    assert not (tmp_path / "results/evaluation_summary.json").exists()
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--code-switch-only"],
+        ["--code-switch", "sentence_mix", "sentence_mix"],
+        ["--code-switch", "sentence_mix", "--languages", "en"],
+        ["--code-switch", "sentence_mix", "--split", "validation", "--tune-threshold"],
+    ],
+)
+def test_cli_rejects_invalid_mixed_track_selections(args, tmp_path):
+    with pytest.raises(SystemExit):
+        evaluate.main([*args, "--output-dir", str(tmp_path)])
+    assert not (tmp_path / "evaluation_summary.json").exists()
+
+
 @pytest.mark.parametrize(
     "arguments",
     [

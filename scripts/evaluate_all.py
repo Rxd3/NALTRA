@@ -22,7 +22,11 @@ import torch  # noqa: E402
 from sklearn.metrics import average_precision_score  # noqa: E402
 
 from naltra.data.manifest import compute_file_sha256, get_environment_metadata  # noqa: E402
-from naltra.data.validation import validate_cordis_release  # noqa: E402
+from naltra.data.validation import (  # noqa: E402
+    CODE_SWITCH_STRATEGIES,
+    validate_code_switch_release,
+    validate_cordis_release,
+)
 from naltra.evaluation.hierarchical import expand_with_ancestors  # noqa: E402
 from naltra.evaluation.metrics import multilabel_metrics  # noqa: E402
 from naltra.models.bilstm import BiLSTMModel  # noqa: E402
@@ -226,6 +230,18 @@ def parser() -> argparse.ArgumentParser:
         "--models", nargs="+", choices=tuple(MODEL_TYPES), default=list(MODEL_TYPES)
     )
     result.add_argument("--languages", nargs="+", choices=("en", "tr"), default=["en", "tr"])
+    result.add_argument(
+        "--code-switch",
+        nargs="+",
+        choices=CODE_SWITCH_STRATEGIES,
+        default=[],
+        help="Also evaluate the selected audited mixed-language tracks with frozen thresholds.",
+    )
+    result.add_argument(
+        "--code-switch-only",
+        action="store_true",
+        help="Evaluate only --code-switch tracks; still audit their full clean EN/TR sources.",
+    )
     result.add_argument("--split", choices=("validation", "test"), default="test")
     result.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     result.add_argument(
@@ -254,10 +270,19 @@ def main(argv: list[str] | None = None) -> int:
         parser().error("--batch-size and --max-records must be positive.")
     if len(set(args.models)) != len(args.models) or len(set(args.languages)) != len(args.languages):
         parser().error("Models and languages must be unique.")
-    if args.tune_threshold and (
-        args.split != "validation" or args.max_records or set(args.languages) != {"en", "tr"}
+    if args.code_switch_only and not args.code_switch:
+        parser().error("--code-switch-only requires --code-switch.")
+    if args.code_switch and (
+        set(args.languages) != {"en", "tr"} or len(set(args.code_switch)) != len(args.code_switch)
     ):
-        parser().error("--tune-threshold requires full bilingual validation without --max-records.")
+        parser().error("Code-switch evaluation requires both source languages and unique tracks.")
+    if args.tune_threshold and (
+        args.split != "validation"
+        or args.max_records
+        or set(args.languages) != {"en", "tr"}
+        or args.code_switch
+    ):
+        parser().error("--tune-threshold requires full clean bilingual validation without subsets.")
     output = resolve_path(args.output_dir) / "evaluation_summary.json"
     if output.exists() and not args.overwrite:
         parser().error("Evaluation output exists; use a new --output-dir or --overwrite.")
@@ -265,6 +290,22 @@ def main(argv: list[str] | None = None) -> int:
     try:
         print("Auditing CORDIS data before loading models...", flush=True)
         release = validate_cordis_release(base, args.languages)
+        mixed = (
+            validate_code_switch_release(base, release, args.code_switch)
+            if args.code_switch
+            else {"corpora": {}, "manifests": {}}
+        )
+        evaluation_tracks = (
+            {}
+            if args.code_switch_only
+            else {language: release["corpora"][language][args.split] for language in args.languages}
+        )
+        evaluation_tracks.update(
+            {
+                f"code_switch_{strategy}": mixed["corpora"][strategy][args.split]
+                for strategy in args.code_switch
+            }
+        )
         bins = load_yaml(REPO_ROOT / "configs/evaluation.yaml")["calibration"]["bins"]
         threshold_report = (
             json.loads(resolve_path(args.thresholds_file).read_text(encoding="utf-8"))
@@ -280,7 +321,15 @@ def main(argv: list[str] | None = None) -> int:
         "split": args.split,
         "scope": "subset" if args.max_records else "full",
         "records_per_language_limit": args.max_records,
-        "languages": args.languages,
+        "languages": (
+            ["en-tr"]
+            if args.code_switch_only
+            else args.languages + (["en-tr"] if args.code_switch else [])
+        ),
+        "source_languages": args.languages,
+        "evaluation_tracks": list(evaluation_tracks),
+        "code_switch_manifests": mixed["manifests"],
+        "code_switch_aggregation": "separate strategies; combined contains clean EN/TR only",
         "target_field": "labels_direct",
         "label_count": len(release["label_universe"]),
         "environment": get_environment_metadata(),
@@ -308,6 +357,9 @@ def main(argv: list[str] | None = None) -> int:
                     REPO_ROOT / "src/naltra/models/transformer/model.py",
                     REPO_ROOT / "src/naltra/pipeline/preprocessing.py",
                     REPO_ROOT / "src/naltra/pipeline/thresholds.py",
+                    REPO_ROOT / "src/naltra/data/validation.py",
+                    REPO_ROOT / "src/naltra/data/code_switching.py",
+                    REPO_ROOT / "src/naltra/data/manifest.py",
                     REPO_ROOT / "configs/evaluation.yaml",
                 ]
             },
@@ -357,8 +409,8 @@ def main(argv: list[str] | None = None) -> int:
                     "sha256": compute_file_sha256(resolve_path(args.thresholds_file)),
                 }
             all_records, all_predictions = [], []
-            for language in args.languages:
-                records = release["corpora"][language][args.split]
+            for language, source_records in evaluation_tracks.items():
+                records = source_records
                 if args.max_records:
                     records = records[: args.max_records]
                 predictions = []
@@ -380,11 +432,13 @@ def main(argv: list[str] | None = None) -> int:
                     f"macro-F1={metrics['classification']['macro_f1']:.4f}",
                     flush=True,
                 )
-                all_records.extend(records)
-                all_predictions.extend(predictions)
-            result["slices"]["combined"] = score_predictions(
-                all_records, all_predictions, model.labels, model.parents, bins
-            )
+                if language in args.languages:
+                    all_records.extend(records)
+                    all_predictions.extend(predictions)
+            if all_records:
+                result["slices"]["combined"] = score_predictions(
+                    all_records, all_predictions, model.labels, model.parents, bins
+                )
             if args.tune_threshold:
                 selection = select_global_threshold(all_records, all_predictions, model.labels)
                 result["threshold_selection"] = selection
@@ -425,12 +479,13 @@ def main(argv: list[str] | None = None) -> int:
                     flush=True,
                 )
             summary["models"][family] = result
-            print(
-                f"{family}: combined micro-F1="
-                f"{result['slices']['combined']['classification']['micro_f1']:.4f}, "
-                f"macro-F1={result['slices']['combined']['classification']['macro_f1']:.4f}",
-                flush=True,
-            )
+            if "combined" in result["slices"]:
+                print(
+                    f"{family}: combined micro-F1="
+                    f"{result['slices']['combined']['classification']['micro_f1']:.4f}, "
+                    f"macro-F1={result['slices']['combined']['classification']['macro_f1']:.4f}",
+                    flush=True,
+                )
         except Exception as exc:
             summary["status"] = "failed"
             summary["models"][family] = {"status": "failed", "error": str(exc)}

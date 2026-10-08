@@ -10,7 +10,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from naltra.data.code_switching import create_code_switched_record  # noqa: E402
 from naltra.data.manifest import validate_manifest  # noqa: E402
 from naltra.data.noise import create_noisy_record  # noqa: E402
 from naltra.data.validation import (  # noqa: E402, F401
@@ -18,6 +17,7 @@ from naltra.data.validation import (  # noqa: E402, F401
     check_disjoint_partitions,
     check_input_inventory,
     load_audit_records,
+    validate_code_switch_release,
     validate_cordis_release,
 )
 
@@ -52,53 +52,25 @@ def validate_derived(release: dict) -> None:
         ]
         if load_audit_records(noisy / "en" / f"{split}.jsonl", taxonomy) != expected:
             raise ValueError(f"Noisy {split} changed clean-source fidelity.")
-    for strategy in ("sentence_mix", "chunk_mix"):
-        directory = base / "code_switch" / strategy / "balanced"
-        manifest = validate_manifest(
-            directory,
-            "cordis_h2020_code_switch",
-            ["validation.jsonl", "test.jsonl"],
-            taxonomy.parent,
-        )
-        check_input_inventory(
-            directory,
-            manifest,
-            [
-                base / language / f"{s}.jsonl"
-                for language in ("en", "tr")
-                for s in ("validation", "test")
-            ],
-        )
-        parameters = manifest["generation_parameters"]
-        if parameters != {
-            "strategy": strategy,
-            "strength": "balanced",
-            "base_seed": 42,
-            "splits": ["validation", "test"],
-        }:
-            raise ValueError("Code-switch parameters differ from the benchmark specification.")
-        for split in ("validation", "test"):
-            english = {r["pair_id"]: r for r in release["corpora"]["en"][split]}
-            turkish = {r["pair_id"]: r for r in release["corpora"]["tr"][split]}
-            expected = [
-                create_code_switched_record(english[p], turkish[p], strategy=strategy)
-                for p in sorted(english)
-            ]
-            if load_audit_records(directory / f"{split}.jsonl", taxonomy) != expected:
-                raise ValueError(f"Code-switch {strategy}/{split} changed source fidelity.")
+    validate_code_switch_release(base, release, taxonomy_path=taxonomy)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--languages", nargs="+", choices=("en", "tr"), default=["en", "tr"])
     parser.add_argument(
+        "--code-switch",
+        action="store_true",
+        help="Audit both code-switch tracks without requiring the optional noise dataset.",
+    )
+    parser.add_argument(
         "--derived",
         action="store_true",
         help="Also require/audit noise and both code-switch tracks.",
     )
     args = parser.parse_args(argv)
-    if args.derived and set(args.languages) != {"en", "tr"}:
-        parser.error("--derived requires both en and tr.")
+    if (args.derived or args.code_switch) and set(args.languages) != {"en", "tr"}:
+        parser.error("Derived/code-switch audits require both en and tr.")
     try:
         release = validate_cordis_release(
             REPO_ROOT / "data/processed/cordis_h2020",
@@ -111,6 +83,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.derived:
             validate_derived(release)
             print("[PASS] CORDIS noise and code-switch source fidelity.")
+        elif args.code_switch:
+            mixed = validate_code_switch_release(REPO_ROOT / "data/processed/cordis_h2020", release)
+            for strategy, partitions in mixed["corpora"].items():
+                counts = {split: len(records) for split, records in partitions.items()}
+                print(f"[PASS] Code-switch {strategy}: {counts}; source fidelity verified.")
         print("AUDIT SUMMARY: PASSED")
         return 0
     except (OSError, ValueError, KeyError, TypeError) as exc:
