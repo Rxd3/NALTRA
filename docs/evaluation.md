@@ -131,7 +131,56 @@ Artifacts and generated metrics are local, ignored outputs; teammates need the m
 bundle as well as the same audited dataset release. Validation was used for checkpoint,
 candidate, and threshold selection. It is not the final test estimate.
 
-This command covers clean CORDIS neural classification. Code-switch, noise, ensemble,
+This command covers clean CORDIS neural classification. Noise, ensemble,
 external-provider, and OOD experiments remain separate integration work. CORDIS OOD
 domain folds need a separately specified protocol. `scripts/run_benchmark.py` still
 contains placeholder values and is not a source of measured latency results.
+
+## Code-switching evaluation
+
+Code-switching is an evaluation-only track derived from the audited English/Turkish
+versions of the same projects. It never trains another model or translates again.
+The implemented balanced tracks are `sentence_mix` and `chunk_mix`, with 4,711
+validation and 4,711 test records each. These are synthetic mixed-language variants,
+not independently collected bilingual documents.
+
+Prepare and audit both tracks without requiring the optional noise datasets:
+
+```powershell
+.venv\Scripts\python.exe scripts\prepare_data.py --dataset code_switch
+.venv\Scripts\python.exe scripts\validate_datasets.py --languages en tr --code-switch
+```
+
+Use the same audited clean data bundle used by training. Older imported ZIP files
+contain stale mixed texts and version 1.0 manifests; do not use them directly.
+The audit verifies input/output checksums, taxonomy, source inventory, strategy,
+seed, complete record equality to deterministic generation, and split separation.
+Dataset content remains locked; refreshing generation-code provenance does not
+change the clean training texts or trained model weights.
+
+Evaluate only the mixed-language validation tracks with the frozen v0.5 thresholds:
+
+```powershell
+.venv\Scripts\python.exe scripts\evaluate_all.py --split validation --code-switch sentence_mix chunk_mix --code-switch-only --device cuda --batch-size 8 --model-dir models/cordis_v0.5.0/cordis_h2020/en_tr_direct --output-dir results/metrics/cordis_v0.5.0_code_switch_validation
+```
+
+Omit `--code-switch-only` to include clean English/Turkish slices in the same run.
+Each strategy has its own scores; `combined` pools only clean English/Turkish and
+never double-counts code-switch variants as independent projects. The report records
+the source and derived manifests, artifact hashes, saved cutoffs, code, and environment.
+`--max-records` marks a subset run. `--tune-threshold` is rejected for code-switch runs:
+the baseline experiment tests transfer of clean-validation-selected settings.
+
+When all required models and settings are frozen, repeat with `--split test` and a
+new output directory. Preparing/auditing test variants does not score them. Current
+model choices must not be revised using their eventual test results.
+
+Completed code-switching implementation:
+
+- [x] Deterministic sentence/chunk mixing from corrected aligned sources.
+- [x] Independent code-switch audit without optional noise/OOD requirements.
+- [x] Evaluation CLI support with frozen thresholds and separate strategy metrics.
+- [x] Regression coverage for stale text, incorrect lineage, and invalid selections.
+
+Naive Bayes, SVM, and Jev/Laya can use the same mixed-language files when their
+model implementations are integrated into the evaluation runner.

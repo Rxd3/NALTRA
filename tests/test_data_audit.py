@@ -11,12 +11,14 @@ import pytest
 from scripts import validate_datasets as audit
 
 from naltra.data import preprocessing
+from naltra.data.code_switching import generate_code_switch_benchmarks
 from naltra.data.loader import load_jsonl, save_jsonl
 from naltra.data.manifest import compute_file_sha256, create_manifest
 from naltra.data.translation import MockTranslator, TranslationCache, translate_cordis_dataset
 from naltra.data.validation import (
     check_disjoint_partitions,
     load_audit_records,
+    validate_code_switch_release,
     validate_cordis_release,
 )
 
@@ -111,6 +113,79 @@ def republish(base, taxonomy, language="en"):
         taxonomy_dir=taxonomy.parent,
         input_files=[directory / path for path in old["input_files"]],
     )
+
+
+@pytest.fixture
+def mixed_release(cordis_release):
+    base, taxonomy = cordis_release
+    translate_cordis_dataset(
+        en_processed_dir=base / "en",
+        output_dir=base / "tr",
+        cache_dir=base.parent / "cache",
+        taxonomy_path=taxonomy,
+        translator=MockTranslator(),
+        review_sample_path=base.parent / "review.csv",
+        allow_mock=True,
+    )
+    release = validate_cordis_release(base, ["en", "tr"], taxonomy_path=taxonomy, allow_mock=True)
+    for strategy in ("sentence_mix", "chunk_mix"):
+        generate_code_switch_benchmarks(
+            en_dir=base / "en",
+            tr_dir=base / "tr",
+            output_base_dir=base / "code_switch",
+            strategy=strategy,
+            taxonomy_path=taxonomy,
+        )
+    return base, taxonomy, release
+
+
+def test_code_switch_audit_accepts_exact_sources_without_noise(mixed_release):
+    base, taxonomy, release = mixed_release
+    result = validate_code_switch_release(base, release, taxonomy_path=taxonomy)
+    for strategy, partitions in result["corpora"].items():
+        assert set(partitions) == {"validation", "test"}
+        for split, records in partitions.items():
+            assert len(records) == len(release["corpora"]["en"][split])
+            assert all(r["code_switch_strategy"] == strategy for r in records)
+    assert not (base / "code_switch/sentence_mix/balanced/train.jsonl").exists()
+
+
+def test_code_switch_cli_audit_does_not_require_noise(mixed_release, monkeypatch):
+    base, taxonomy, release = mixed_release
+    original = validate_code_switch_release
+    monkeypatch.setattr(audit, "validate_cordis_release", lambda *args, **kwargs: release)
+    monkeypatch.setattr(
+        audit,
+        "validate_code_switch_release",
+        lambda *args: original(base, release, taxonomy_path=taxonomy),
+    )
+    monkeypatch.setattr(audit, "validate_derived", lambda *args: pytest.fail("noise requested"))
+    assert audit.main(["--code-switch"]) == 0
+
+
+@pytest.mark.parametrize("mutation", ["text", "pair", "duplicate", "params", "input"])
+def test_code_switch_audit_rejects_corruption_with_fresh_hashes(mixed_release, mutation):
+    base, taxonomy, release = mixed_release
+    directory = base / "code_switch/sentence_mix/balanced"
+    path = directory / "validation.jsonl"
+    rows = load_jsonl(path)
+    if mutation == "text":
+        rows[0]["text"] += " A stale translation."
+    elif mutation == "pair":
+        rows[0]["pair_id"] = rows[1]["pair_id"]
+    elif mutation == "duplicate":
+        rows.append(copy.deepcopy(rows[0]))
+    save_jsonl(rows, path)
+    republish(base, taxonomy, "code_switch/sentence_mix/balanced")
+    manifest_path = directory / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    if mutation == "params":
+        manifest["generation_parameters"]["base_seed"] = 99
+    elif mutation == "input":
+        del manifest["input_files"][next(iter(manifest["input_files"]))]
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError):
+        validate_code_switch_release(base, release, taxonomy_path=taxonomy)
 
 
 def test_cordis_release_checks_sources_and_hierarchy(cordis_release):

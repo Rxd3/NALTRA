@@ -135,6 +135,10 @@ positive loss weights and classifier refitting from saved encoders. See the
 [classifier refitting workflow](docs/evaluation.md#refit-classifiers-with-training-only-positive-weights)
 for weighted/unweighted comparisons that preserve the baseline models and test partition.
 
+Code-switching preparation, source-fidelity auditing, and evaluation of saved neural
+models are implemented. See the [code-switching workflow](docs/evaluation.md#code-switching-evaluation)
+for frozen-threshold sentence/chunk comparisons without optional noise or OOD work.
+
 ## Collaboration
 
 All work is reviewed through pull requests; direct commits to `main` are not allowed. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branching, testing, secret-handling, and review rules.

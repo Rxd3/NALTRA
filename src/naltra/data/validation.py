@@ -24,6 +24,7 @@ from naltra.data.preprocessing import (
 from naltra.data.translation import check_translation_qa, segment_sentences
 
 SPLITS = ("train", "validation", "test")
+CODE_SWITCH_STRATEGIES = ("sentence_mix", "chunk_mix")
 
 
 def check_disjoint_partitions(partitions: dict[str, list[dict[str, Any]]]) -> None:
@@ -219,3 +220,62 @@ def validate_cordis_release(
         {s: [r for language in languages for r in corpora[language][s]] for s in SPLITS}
     )
     return {"corpora": corpora, "manifests": manifests, "label_universe": sorted(direct_labels)}
+
+
+def validate_code_switch_release(
+    base: str | Path,
+    release: dict[str, Any],
+    strategies: Sequence[str] = CODE_SWITCH_STRATEGIES,
+    *,
+    taxonomy_path: str | Path = REPO_ROOT / "taxonomy/taxonomy.json",
+) -> dict[str, Any]:
+    """Verify mixed evaluation records against their exact audited EN/TR source pairs."""
+    from naltra.data.code_switching import create_code_switched_record, pair_aligned_records
+
+    base, taxonomy_path = Path(base), Path(taxonomy_path)
+    if (
+        not strategies
+        or len(set(strategies)) != len(strategies)
+        or set(strategies) - set(CODE_SWITCH_STRATEGIES)
+    ):
+        raise ValueError("Select unique sentence_mix or chunk_mix code-switch tracks.")
+    if not {"en", "tr"} <= set(release["corpora"]):
+        raise ValueError("Code-switch auditing requires both audited English and Turkish sources.")
+    manifests, corpora = {}, {}
+    for strategy in strategies:
+        directory = base / "code_switch" / strategy / "balanced"
+        manifest = validate_manifest(
+            directory,
+            "cordis_h2020_code_switch",
+            ["validation.jsonl", "test.jsonl"],
+            taxonomy_path.parent,
+        )
+        check_input_inventory(
+            directory,
+            manifest,
+            [
+                base / language / f"{split}.jsonl"
+                for language in ("en", "tr")
+                for split in ("validation", "test")
+            ],
+        )
+        if manifest["generation_parameters"] != {
+            "strategy": strategy,
+            "strength": "balanced",
+            "base_seed": 42,
+            "splits": ["validation", "test"],
+        }:
+            raise ValueError("Code-switch parameters differ from the benchmark specification.")
+        partitions = {}
+        for split in ("validation", "test"):
+            pairs = pair_aligned_records(
+                release["corpora"]["en"][split], release["corpora"]["tr"][split]
+            )
+            expected = [create_code_switched_record(en, tr, strategy=strategy) for en, tr in pairs]
+            actual = load_audit_records(directory / f"{split}.jsonl", taxonomy_path)
+            if actual != expected:
+                raise ValueError(f"Code-switch {strategy}/{split} changed source fidelity.")
+            partitions[split] = actual
+        check_disjoint_partitions({"train": release["corpora"]["en"]["train"], **partitions})
+        corpora[strategy], manifests[strategy] = partitions, manifest
+    return {"corpora": corpora, "manifests": manifests}
