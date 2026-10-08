@@ -2,6 +2,7 @@
 
 import copy
 import json
+from dataclasses import replace
 
 import pytest
 import torch
@@ -72,7 +73,14 @@ def release(tmp_path, monkeypatch):
         (directory / "manifest.json").write_text(json.dumps(manifest))
         manifests[language] = manifest
         corpora[language] = {
-            split: [{"id": f"{language}:{split}", "text": language, "labels_direct": [target]}]
+            split: [
+                {
+                    "id": f"{language}:{split}",
+                    "text": language,
+                    "labels_direct": [target],
+                    "split": split,
+                }
+            ]
             for split in ("validation", "test")
         }
     result = {"label_universe": ["a", "b"], "manifests": manifests, "corpora": corpora}
@@ -100,7 +108,17 @@ def release(tmp_path, monkeypatch):
             self.family = path.name
 
         def predict_batch(self, texts):
-            return [prediction(text) for text in texts]
+            return [
+                replace(
+                    prediction(text),
+                    labels=apply_thresholds(
+                        prediction(text).label_scores,
+                        self.config["multilabel"]["threshold"],
+                        self.config["multilabel"]["per_label"],
+                    ),
+                )
+                for text in texts
+            ]
 
     for family in ("bilstm", "transformer"):
         (model_dir / family).mkdir(parents=True)
@@ -207,3 +225,74 @@ def test_artifact_contract_is_verified(release, problem):
         model.metadata["dataset_manifests"]["en"]["output_files"] = {"train.jsonl": "changed"}
     with pytest.raises(ValueError):
         evaluate.check_artifact(model, data, base)
+
+
+def test_threshold_search_recovers_unemitted_labels_and_matches_scoring():
+    records = [{"text": "one", "labels_direct": ["b"], "split": "validation"}]
+    predictions = [prediction("one", {"a": 0.1, "b": 0.4})]
+    selection = evaluate.select_global_threshold(records, predictions, ["a", "b"])
+    assert selection["selected_threshold"] == 0.4
+    assert max(candidate["micro_f1"] for candidate in selection["candidates"]) == 1.0
+    assert all(
+        candidate["micro_f1"] == 0
+        for candidate in selection["candidates"]
+        if candidate["threshold"] > 0.4
+    )
+    records[0]["split"] = "test"
+    with pytest.raises(ValueError, match="validation"):
+        evaluate.select_global_threshold(records, predictions, ["a", "b"])
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        [],
+        ["--split", "validation", "--max-records", "1"],
+        ["--split", "validation", "--languages", "en"],
+    ],
+)
+def test_cli_rejects_tuning_on_test_or_subsets(arguments, tmp_path):
+    with pytest.raises(SystemExit):
+        evaluate.main(["--tune-threshold", "--output-dir", str(tmp_path), *arguments])
+    assert not (tmp_path / "evaluation_summary.json").exists()
+
+
+def test_cli_tunes_validation_and_reuses_frozen_thresholds_on_test(release, tmp_path):
+    base, models, _, _ = release
+    common = ["--data-dir", str(base), "--model-dir", str(models)]
+    output = tmp_path / "validation"
+    artifact_before = {p: p.read_bytes() for p in models.rglob("*") if p.is_file()}
+    assert (
+        evaluate.main(
+            [*common, "--split", "validation", "--tune-threshold", "--output-dir", str(output)]
+        )
+        == 0
+    )
+    source = output / "evaluation_summary.json"
+    summary = json.loads(source.read_text())
+    for result in summary["models"].values():
+        assert result["thresholds"] == {"threshold": 0.4, "per_label": {}}
+        assert result["baseline_slices"]["combined"]["classification"]["micro_f1"] == 0.5
+        assert result["slices"]["combined"]["classification"]["micro_f1"] == pytest.approx(2 / 3)
+    assert (
+        evaluate.main(
+            [*common, "--thresholds-file", str(source), "--output-dir", str(tmp_path / "test")]
+        )
+        == 0
+    )
+    test = json.loads((tmp_path / "test/evaluation_summary.json").read_text())
+    for result in test["models"].values():
+        assert result["thresholds"]["threshold"] == 0.4
+        assert "threshold_selection" not in result
+        assert result["slices"]["tr"]["classification"]["micro_f1"] == pytest.approx(2 / 3)
+    assert {p: p.read_bytes() for p in artifact_before} == artifact_before
+    # A threshold must not silently transfer to changed weights or another release.
+    (models / "bilstm/naltra.json").write_text('{"changed": true}')
+    assert (
+        evaluate.main(
+            [*common, "--thresholds-file", str(source), "--output-dir", str(tmp_path / "changed")]
+        )
+        == 1
+    )
+    changed = json.loads((tmp_path / "changed/evaluation_summary.json").read_text())
+    assert "hashes differ" in changed["models"]["bilstm"]["error"]

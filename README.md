@@ -125,8 +125,10 @@ python scripts/evaluate_all.py --device cuda --batch-size 8
 ```
 
 Scores and provenance are written to `results/metrics/cordis_v0.4.0/evaluation_summary.json`.
-The runner preserves trained thresholds and does not retrain. See [evaluation](docs/evaluation.md)
-for validation checks, subset runs, and the remaining benchmark integrations.
+The runner defaults to trained thresholds and does not retrain. Use `--split validation
+--tune-threshold` to select cutoffs, then `--thresholds-file` to reuse that validation
+summary on test. See [evaluation](docs/evaluation.md) for the full commands, validation
+checks, subset runs, and remaining benchmark integrations.
 
 ## Collaboration
 

@@ -54,9 +54,32 @@ use `--overwrite`. `--models bilstm` or `--models transformer` selects one model
 `--languages en` or `--languages tr` selects one language. Custom artifact roots use
 `--model-dir` pointing to the directory containing the model family folders.
 
-Thresholds remain those stored in the trained artifact. Any future threshold tuning or
-calibration fitting must use validation data, then freeze the selected settings before
-test evaluation. Test evaluation itself does not select thresholds or calibrate the model.
+By default, thresholds remain those stored in the trained artifact. To select a global
+cutoff for each model on full bilingual validation, run:
+
+```powershell
+.venv\Scripts\python.exe scripts\evaluate_all.py --split validation --tune-threshold --device cuda --batch-size 8 --output-dir results/metrics/cordis_validation_tuned
+```
+
+The search maximizes pooled micro-F1 over cutoffs 0.00 to 1.00 in steps of 0.01, with
+ties resolved in favor of the higher cutoff. Each model has one cutoff shared across
+English and Turkish. The summary stores every candidate, the chosen thresholds,
+`baseline_slices` at the artifact thresholds, and `slices` at the selected thresholds.
+These validation scores were used for selection and are not an unbiased final estimate.
+Subset, single-language, and test tuning are rejected. No model files are changed.
+Ranking metrics (micro and sample average precision) use complete probabilities and
+do not depend on a prediction threshold. Low binary labelwise ECE or Brier scores alone
+do not establish useful classification in this sparse label space.
+
+Once validation performance is acceptable, freeze the settings and evaluate test:
+
+```powershell
+.venv\Scripts\python.exe scripts\evaluate_all.py --split test --thresholds-file results/metrics/cordis_validation_tuned/evaluation_summary.json --device cuda --batch-size 8 --output-dir results/metrics/cordis_test_tuned
+```
+
+The runner verifies that the threshold source is a successful full validation tuning
+report with matching artifact and dataset output hashes. Test evaluation applies the
+frozen thresholds without selecting or calibrating on test data.
 
 This command covers clean CORDIS neural classification. Code-switch, noise, ensemble,
 external-provider, and OOD experiments remain separate integration work. CORDIS OOD
