@@ -413,3 +413,91 @@ def test_cli_tunes_validation_and_reuses_frozen_thresholds_on_test(release, tmp_
     )
     changed = json.loads((tmp_path / "changed/evaluation_summary.json").read_text())
     assert "hashes differ" in changed["models"]["bilstm"]["error"]
+
+
+def test_local_laya_uses_saved_artifact_without_neural_training(release, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from naltra.models.laya import LayaModel
+
+    base, models, data, saved_type = release
+
+    class SavedLaya(LayaModel):
+        def __init__(self, config):
+            saved_type.__init__(self, config)
+            self.config.pop("training")
+            self.config["inference"] = {"batch_size": 1}
+            self.config["checkpoint"] = {"revision": "fixture"}
+            self.config["sdk_version"] = "fixture"
+            self.metadata = {
+                "dataset": "cordis_h2020",
+                "source_languages": ["en", "tr"],
+                "dataset_manifests": copy.deepcopy(data["manifests"]),
+                "model_kind": "pretrained_zero_shot",
+                "training_performed": False,
+            }
+            self.client = SimpleNamespace(initialize=lambda: None)
+
+        load = saved_type.load
+        predict_batch = saved_type.predict_batch
+
+    monkeypatch.setitem(evaluate.MODEL_TYPES, "laya", SavedLaya)
+    directory = models / "laya"
+    (directory / "encoder").mkdir(parents=True)
+    (directory / "naltra.json").write_text("{}")
+    (directory / "encoder/config.json").write_text("{}")
+    output = tmp_path / "laya_results"
+    args = [
+        "--models",
+        "laya",
+        "--data-dir",
+        str(base),
+        "--model-dir",
+        str(models),
+        "--split",
+        "validation",
+        "--tune-threshold",
+        "--output-dir",
+        str(output),
+    ]
+    assert evaluate.main(args) == 0
+    report = json.loads((output / "evaluation_summary.json").read_text())
+    result = report["models"]["laya"]
+    assert result["model_kind"] == "pretrained_zero_shot"
+    assert "encoder/config.json" in result["artifact_sha256"]
+    assert result["thresholds"]["threshold"] == 0.4
+    # The nested encoder is part of threshold provenance, not just the root weights.
+    (directory / "encoder/config.json").write_text('{"changed": true}')
+    assert (
+        evaluate.main(
+            [
+                "--models",
+                "laya",
+                "--data-dir",
+                str(base),
+                "--model-dir",
+                str(models),
+                "--split",
+                "validation",
+                "--thresholds-file",
+                str(output / "evaluation_summary.json"),
+                "--output-dir",
+                str(tmp_path / "laya_changed"),
+            ]
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["--models", "laya"],
+        ["--models", "laya", "--split", "validation", "--languages", "en"],
+        ["--models", "bilstm", "--split", "validation"],
+    ],
+)
+def test_prepare_laya_cannot_prepare_on_test_or_other_models(args):
+    with pytest.raises(SystemExit):
+        evaluate.main(["--prepare-laya", *args])

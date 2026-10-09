@@ -1,4 +1,4 @@
-"""Evaluate saved neural artifacts on audited CORDIS partitions without training."""
+"""Evaluate saved neural and local Laya artifacts on audited CORDIS partitions."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ from naltra.data.validation import (  # noqa: E402
 from naltra.evaluation.hierarchical import expand_with_ancestors  # noqa: E402
 from naltra.evaluation.metrics import multilabel_metrics  # noqa: E402
 from naltra.models.bilstm import BiLSTMModel  # noqa: E402
+from naltra.models.laya import LayaModel  # noqa: E402
 from naltra.models.neural import seed_everything  # noqa: E402
 from naltra.models.transformer import TransformerModel  # noqa: E402
 from naltra.pipeline.preprocessing import normalize_text  # noqa: E402
@@ -37,7 +38,7 @@ from naltra.pipeline.thresholds import apply_thresholds  # noqa: E402
 from naltra.schemas.prediction import PredictionResult  # noqa: E402
 from naltra.utils.config import load_yaml  # noqa: E402
 
-MODEL_TYPES = {"bilstm": BiLSTMModel, "transformer": TransformerModel}
+MODEL_TYPES = {"bilstm": BiLSTMModel, "transformer": TransformerModel, "laya": LayaModel}
 
 
 def resolve_path(value: str) -> Path:
@@ -207,14 +208,18 @@ def score_predictions(
 def check_artifact(model: Any, release: dict[str, Any], base: Path) -> None:
     if model.config.get("target_field") != "labels_direct":
         raise ValueError("CORDIS evaluation requires a model trained on labels_direct.")
-    if model.metadata.get("smoke") is not False:
+    local_laya = isinstance(model, LayaModel)
+    if not local_laya and model.metadata.get("smoke") is not False:
         raise ValueError("Evaluation requires a full trained artifact, not a smoke model.")
     if model.metadata.get("dataset") != "cordis_h2020":
         raise ValueError("Artifact was not trained on CORDIS H2020.")
     if model.labels != release["label_universe"]:
         raise ValueError("Artifact does not cover the exact supported direct-label universe.")
     # Preserve the held-out contract: evaluate the same data release used in training.
-    for language in model.metadata["training_languages"]:
+    languages = model.metadata["source_languages" if local_laya else "training_languages"]
+    if not set(release["manifests"]) <= set(languages):
+        raise ValueError("Artifact does not bind every evaluation source language.")
+    for language in languages:
         old = model.metadata["dataset_manifests"][language]
         current = json.loads((base / language / "manifest.json").read_text(encoding="utf-8"))
         for field in ("output_files", "taxonomy"):
@@ -227,7 +232,12 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--model-dir", default="models/cordis_v0.4.0/cordis_h2020/en_tr_direct")
     result.add_argument("--data-dir", default="data/processed/cordis_h2020")
     result.add_argument(
-        "--models", nargs="+", choices=tuple(MODEL_TYPES), default=list(MODEL_TYPES)
+        "--models", nargs="+", choices=tuple(MODEL_TYPES), default=["bilstm", "transformer"]
+    )
+    result.add_argument(
+        "--prepare-laya",
+        action="store_true",
+        help="Create a new pinned local Laya artifact before validation evaluation (no training).",
     )
     result.add_argument("--languages", nargs="+", choices=("en", "tr"), default=["en", "tr"])
     result.add_argument(
@@ -283,6 +293,15 @@ def main(argv: list[str] | None = None) -> int:
         or args.code_switch
     ):
         parser().error("--tune-threshold requires full clean bilingual validation without subsets.")
+    if args.prepare_laya and (
+        args.models != ["laya"]
+        or args.split != "validation"
+        or set(args.languages) != {"en", "tr"}
+        or args.thresholds_file
+    ):
+        parser().error(
+            "--prepare-laya requires only Laya, bilingual validation and no thresholds file."
+        )
     output = resolve_path(args.output_dir) / "evaluation_summary.json"
     if output.exists() and not args.overwrite:
         parser().error("Evaluation output exists; use a new --output-dir or --overwrite.")
@@ -306,6 +325,15 @@ def main(argv: list[str] | None = None) -> int:
                 for strategy in args.code_switch
             }
         )
+        if args.max_records:
+            evaluation_tracks = {
+                name: records[: args.max_records] for name, records in evaluation_tracks.items()
+            }
+        # The full audit is complete. Retain only the records needed for inference,
+        # not the training/test corpora or unused derived partitions.
+        release = {key: value for key, value in release.items() if key != "corpora"}
+        mixed = {key: value for key, value in mixed.items() if key != "corpora"}
+        gc.collect()
         bins = load_yaml(REPO_ROOT / "configs/evaluation.yaml")["calibration"]["bins"]
         threshold_report = (
             json.loads(resolve_path(args.thresholds_file).read_text(encoding="utf-8"))
@@ -355,6 +383,10 @@ def main(argv: list[str] | None = None) -> int:
                     REPO_ROOT / "src/naltra/models/neural.py",
                     REPO_ROOT / "src/naltra/models/bilstm/model.py",
                     REPO_ROOT / "src/naltra/models/transformer/model.py",
+                    REPO_ROOT / "src/naltra/models/laya/model.py",
+                    REPO_ROOT / "src/naltra/models/laya/client.py",
+                    REPO_ROOT / "configs/models/laya.yaml",
+                    REPO_ROOT / "requirements-laya.txt",
                     REPO_ROOT / "src/naltra/pipeline/preprocessing.py",
                     REPO_ROOT / "src/naltra/pipeline/thresholds.py",
                     REPO_ROOT / "src/naltra/data/validation.py",
@@ -370,18 +402,32 @@ def main(argv: list[str] | None = None) -> int:
         try:
             print(f"Loading saved {family}...", flush=True)
             model = MODEL_TYPES[family]({"device": args.device})
+            if family == "laya" and args.prepare_laya:
+                model.bind_release(release)
+                model.save(model_dir / family)
+                # Reload from the exported artifact without retaining a second live encoder.
+                model.client.agent = None
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             model.load(model_dir / family)
             check_artifact(model, release, base)
             seed_everything(model.config["seed"])
             if args.batch_size:
-                model.config["training"]["batch_size"] = args.batch_size
+                if "training" in model.config:
+                    model.config["training"]["batch_size"] = args.batch_size
                 model.config.setdefault("inference", {})["batch_size"] = args.batch_size
+            inference_batch = model.config.get("inference", {}).get(
+                "batch_size", model.config.get("training", {}).get("batch_size", 1)
+            )
+            if isinstance(model, LayaModel):
+                model.client.initialize()
             result: dict[str, Any] = {
                 "status": "success",
                 "artifact": str(model_dir / family),
                 "artifact_sha256": {
-                    p.name: compute_file_sha256(p)
-                    for p in sorted((model_dir / family).iterdir())
+                    p.relative_to(model_dir / family).as_posix(): compute_file_sha256(p)
+                    for p in sorted((model_dir / family).rglob("*"))
                     if p.is_file()
                 },
                 "device": str(model.device),
@@ -391,9 +437,12 @@ def main(argv: list[str] | None = None) -> int:
                     if model.device.type == "cuda"
                     else "CPU"
                 ),
-                "batch_size": model.config.get("inference", {}).get(
-                    "batch_size", model.config["training"]["batch_size"]
-                ),
+                "batch_size": inference_batch,
+                "model_kind": model.metadata.get("model_kind", "trained_neural"),
+                "inference_config": model.config.get("inference", {}),
+                "checkpoint": model.config.get("checkpoint"),
+                "sdk_version": model.config.get("sdk_version"),
+                "probability_calibration": model.metadata.get("calibration", "see saved artifact"),
                 "thresholds": model.config["multilabel"],
                 "threshold_source": "saved_artifact",
                 "slices": {},

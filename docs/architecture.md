@@ -58,8 +58,9 @@ label scores and treat omissions as zero. Hard voting uses selected `labels` and
 treats omissions as negative votes. Declared dataset, track, and label spaces must
 match across components. The ensemble follows shared hierarchy and OOD stages.
 
-The neural models and shared pipeline are implemented. Jev/Laya remain disabled
-until real provider contracts are configured. See [core ML operation](core_ml.md)
+The neural models, local multilingual Laya adapter, and shared pipeline are implemented.
+Laya scores every supported direct topic independently; Jev remains disabled.
+See [core ML operation](core_ml.md)
 for artifacts, training commands, OOD semantics, extension hooks and integrations.
 
 ## CORDIS training boundary
