@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import json
 import subprocess
 import sys
@@ -29,6 +30,7 @@ from naltra.data.validation import (  # noqa: E402
 )
 from naltra.evaluation.hierarchical import expand_with_ancestors  # noqa: E402
 from naltra.evaluation.metrics import multilabel_metrics  # noqa: E402
+from naltra.evaluation.prediction_cache import PredictionCache  # noqa: E402
 from naltra.models.bilstm import BiLSTMModel  # noqa: E402
 from naltra.models.laya import LayaModel  # noqa: E402
 from naltra.models.neural import seed_everything  # noqa: E402
@@ -262,6 +264,11 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--output-dir", default="results/metrics/cordis_v0.4.0")
     result.add_argument("--overwrite", action="store_true")
+    result.add_argument(
+        "--resume",
+        action="store_true",
+        help="Save batch predictions and resume identical runs in this output directory.",
+    )
     thresholds = result.add_mutually_exclusive_group()
     thresholds.add_argument(
         "--tune-threshold",
@@ -380,6 +387,7 @@ def main(argv: list[str] | None = None) -> int:
                     Path(__file__),
                     REPO_ROOT / "src/naltra/evaluation/metrics.py",
                     REPO_ROOT / "src/naltra/evaluation/hierarchical.py",
+                    REPO_ROOT / "src/naltra/evaluation/prediction_cache.py",
                     REPO_ROOT / "src/naltra/models/neural.py",
                     REPO_ROOT / "src/naltra/models/bilstm/model.py",
                     REPO_ROOT / "src/naltra/models/transformer/model.py",
@@ -462,18 +470,55 @@ def main(argv: list[str] | None = None) -> int:
                 records = source_records
                 if args.max_records:
                     records = records[: args.max_records]
-                predictions = []
                 batch_size = result["batch_size"]
-                start = perf_counter()
-                for offset in range(0, len(records), batch_size):
-                    batch = records[offset : offset + batch_size]
-                    predictions.extend(model.predict_batch([r["text"] for r in batch]))
-                    completed = min(offset + batch_size, len(records))
-                    if completed == len(records) or completed % (batch_size * 100) == 0:
-                        print(f"{family}/{language}: {completed}/{len(records)}", flush=True)
-                elapsed = perf_counter() - start
+                cache = None
+                try:
+                    if args.resume:
+                        cache = PredictionCache(
+                            output.parent / "prediction_cache.sqlite3",
+                            f"{family}/{language}",
+                            {
+                                "artifact_sha256": result["artifact_sha256"],
+                                "config": model.config,
+                                "device": result["device"],
+                                "hardware": result["hardware"],
+                                "environment": summary["environment"],
+                                "code": summary["evaluation_code"]["files"],
+                                "split": args.split,
+                                "records_sha256": hashlib.sha256(
+                                    json.dumps(records, sort_keys=True).encode()
+                                ).hexdigest(),
+                            },
+                        )
+                    predictions = cache.load(records, model) if cache else []
+                    resumed = len(predictions)
+                    cached_seconds = sum(p.latency_ms for p in predictions) / 1000
+                    if resumed:
+                        print(f"{family}/{language}: resumed {resumed}/{len(records)}", flush=True)
+                    start = perf_counter()
+                    last_progress = start
+                    for offset in range(resumed, len(records), batch_size):
+                        batch = records[offset : offset + batch_size]
+                        batch_predictions = model.predict_batch([r["text"] for r in batch])
+                        if len(batch_predictions) != len(batch):
+                            raise ValueError("Model returned an incorrect prediction batch length.")
+                        if cache:
+                            cache.append(offset, batch_predictions)
+                        predictions.extend(batch_predictions)
+                        completed = min(offset + batch_size, len(records))
+                        now = perf_counter()
+                        if completed == len(records) or now - last_progress >= 30:
+                            print(f"{family}/{language}: {completed}/{len(records)}", flush=True)
+                            last_progress = now
+                    elapsed = perf_counter() - start
+                finally:
+                    if cache:
+                        cache.close()
                 metrics = score_predictions(records, predictions, model.labels, model.parents, bins)
-                metrics["prediction_seconds"] = elapsed
+                metrics["prediction_seconds"] = elapsed + cached_seconds
+                metrics["new_prediction_seconds"] = elapsed
+                metrics["cached_prediction_seconds"] = cached_seconds
+                metrics["resumed_records"] = resumed
                 result["slices"][language] = metrics
                 print(
                     f"{family}/{language}: "
@@ -515,9 +560,15 @@ def main(argv: list[str] | None = None) -> int:
                         model.parents,
                         bins,
                     )
-                    result["slices"][language]["prediction_seconds"] = result["baseline_slices"][
-                        language
-                    ]["prediction_seconds"]
+                    for field in (
+                        "prediction_seconds",
+                        "new_prediction_seconds",
+                        "cached_prediction_seconds",
+                        "resumed_records",
+                    ):
+                        result["slices"][language][field] = result["baseline_slices"][language][
+                            field
+                        ]
                     offset += count
                 result["slices"]["combined"] = score_predictions(
                     all_records, adjusted, model.labels, model.parents, bins

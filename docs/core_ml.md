@@ -216,7 +216,7 @@ second download. Old external-service Laya artifacts are incompatible.
 Once the subset check is satisfactory, tune on full clean validation:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/evaluate_all.py --models laya --split validation --tune-threshold --device cuda --batch-size 1 --model-dir models/cordis_laya_v0.1.1/cordis_h2020/en_tr_direct --output-dir results/metrics/cordis_laya_v0.1.1_validation_tuned
+.\.venv\Scripts\python.exe scripts/evaluate_all.py --models laya --split validation --tune-threshold --resume --device cuda --batch-size 1 --model-dir models/cordis_laya_v0.1.1/cordis_h2020/en_tr_direct --output-dir results/metrics/cordis_laya_v0.1.1_validation_tuned
 ```
 
 Then reuse that report with `--thresholds-file` and `--code-switch sentence_mix
@@ -225,6 +225,22 @@ Subset reports cannot supply a tuned threshold. Keep final test evaluation until
 all required models and settings are fixed. Classify all labels even when only a
 few are selected; partial top-k results cannot be compared fairly with the neural
 models. `train()` deliberately reports unsupported: fine-tuning is a later task.
+
+This run scores 9,422 documents against 473 independent topic questions. On the
+RTX 4050 laptop, the measured two-document speed check took 14.5 seconds;
+budget roughly 18–24 hours for full validation, depending on document lengths.
+Larger question batches did not improve measured throughput. Keep the laptop
+plugged in and awake during the run. `--resume` commits each completed batch to
+the ignored `prediction_cache.sqlite3` beside the metrics report. Repeat the same
+command after an interruption; add `--overwrite` if a failed summary already
+exists. Changed artifacts, inputs, settings, dependencies or evaluation code are
+rejected instead of silently reusing incompatible predictions.
+
+The cutoff is selected only after both validation languages finish. Until a
+successful full report exists, Laya quality and fine-tuning needs remain open;
+the small integration check cannot establish a final cutoff. A low full-validation
+F1 or average precision would justify domain fine-tuning, which this adapter does
+not yet implement.
 
 Upstream: [model card](https://huggingface.co/convaiinnovations/laya) and
 [SDK](https://github.com/NandhaKishorM/laya).
