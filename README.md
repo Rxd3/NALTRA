@@ -90,8 +90,9 @@ make dashboard    # start the Streamlit dashboard
 
 BiLSTM and Transformer support training, batch inference, and offline artifact reload.
 The shared pipeline supports language detection, thresholds, hierarchy, OOD, and ensemble decisions.
-Jev/Laya provide configurable adapters; their live services remain disabled until real provider
-contracts and credentials are supplied. Naive Bayes and SVM remain placeholders.
+Laya runs the pinned multilingual checkpoint locally, without API credentials; install its
+optional dependency with `python -m pip install -r requirements-laya.txt`.
+Jev remains a disabled service adapter. Naive Bayes and SVM remain placeholders.
 No datasets or pretrained weights are downloaded by setup or by the tests.
 
 See [core ML operation and integration](docs/core_ml.md) for training, artifact loading,

@@ -1,0 +1,2 @@
+# Optional local Laya integration. Install after the main project dependencies.
+laya==0.4.1

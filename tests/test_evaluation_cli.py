@@ -87,6 +87,8 @@ def release(tmp_path, monkeypatch):
     monkeypatch.setattr(evaluate, "validate_cordis_release", lambda *args: result)
 
     class SavedModel:
+        model_name = "fixture"
+
         def __init__(self, config):
             self.config = {
                 "seed": 42,
@@ -413,3 +415,165 @@ def test_cli_tunes_validation_and_reuses_frozen_thresholds_on_test(release, tmp_
     )
     changed = json.loads((tmp_path / "changed/evaluation_summary.json").read_text())
     assert "hashes differ" in changed["models"]["bilstm"]["error"]
+
+
+def test_local_laya_uses_saved_artifact_without_neural_training(release, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from naltra.models.laya import LayaModel
+
+    base, models, data, saved_type = release
+
+    class SavedLaya(LayaModel):
+        def __init__(self, config):
+            saved_type.__init__(self, config)
+            self.config.pop("training")
+            self.config["inference"] = {"batch_size": 1}
+            self.config["checkpoint"] = {"revision": "fixture"}
+            self.config["sdk_version"] = "fixture"
+            self.metadata = {
+                "dataset": "cordis_h2020",
+                "source_languages": ["en", "tr"],
+                "dataset_manifests": copy.deepcopy(data["manifests"]),
+                "model_kind": "pretrained_zero_shot",
+                "training_performed": False,
+            }
+            self.client = SimpleNamespace(initialize=lambda: None)
+
+        load = saved_type.load
+        predict_batch = saved_type.predict_batch
+
+    monkeypatch.setitem(evaluate.MODEL_TYPES, "laya", SavedLaya)
+    directory = models / "laya"
+    (directory / "encoder").mkdir(parents=True)
+    (directory / "naltra.json").write_text("{}")
+    (directory / "encoder/config.json").write_text("{}")
+    output = tmp_path / "laya_results"
+    args = [
+        "--models",
+        "laya",
+        "--data-dir",
+        str(base),
+        "--model-dir",
+        str(models),
+        "--split",
+        "validation",
+        "--tune-threshold",
+        "--output-dir",
+        str(output),
+    ]
+    assert evaluate.main(args) == 0
+    report = json.loads((output / "evaluation_summary.json").read_text())
+    result = report["models"]["laya"]
+    assert result["model_kind"] == "pretrained_zero_shot"
+    assert "encoder/config.json" in result["artifact_sha256"]
+    assert result["thresholds"]["threshold"] == 0.4
+    # The nested encoder is part of threshold provenance, not just the root weights.
+    (directory / "encoder/config.json").write_text('{"changed": true}')
+    assert (
+        evaluate.main(
+            [
+                "--models",
+                "laya",
+                "--data-dir",
+                str(base),
+                "--model-dir",
+                str(models),
+                "--split",
+                "validation",
+                "--thresholds-file",
+                str(output / "evaluation_summary.json"),
+                "--output-dir",
+                str(tmp_path / "laya_changed"),
+            ]
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["--models", "laya"],
+        ["--models", "laya", "--split", "validation", "--languages", "en"],
+        ["--models", "bilstm", "--split", "validation"],
+    ],
+)
+def test_prepare_laya_cannot_prepare_on_test_or_other_models(args):
+    with pytest.raises(SystemExit):
+        evaluate.main(["--prepare-laya", *args])
+
+
+def test_resume_keeps_completed_batches_and_rejects_changed_artifacts(
+    release, tmp_path, monkeypatch
+):
+    base, models, _, saved_type = release
+    output = tmp_path / "resumable"
+    common = [
+        "--models",
+        "bilstm",
+        "--data-dir",
+        str(base),
+        "--model-dir",
+        str(models),
+        "--split",
+        "validation",
+        "--tune-threshold",
+        "--resume",
+        "--output-dir",
+        str(output),
+    ]
+    original = saved_type.predict_batch
+    seen = []
+
+    def interrupted(self, texts):
+        seen.extend(texts)
+        if texts == ["tr"]:
+            raise RuntimeError("interrupted")
+        return original(self, texts)
+
+    monkeypatch.setattr(saved_type, "predict_batch", interrupted)
+    assert evaluate.main(common) == 1
+    assert seen == ["en", "tr"]
+    seen.clear()
+
+    def resumed(self, texts):
+        seen.extend(texts)
+        return original(self, texts)
+
+    monkeypatch.setattr(saved_type, "predict_batch", resumed)
+    assert evaluate.main([*common, "--overwrite"]) == 0
+    assert seen == ["tr"]  # Cached English predictions were not recomputed.
+    report = json.loads((output / "evaluation_summary.json").read_text())
+    result = report["models"]["bilstm"]
+    assert result["slices"]["en"]["resumed_records"] == 1
+    assert result["slices"]["tr"]["resumed_records"] == 0
+    assert result["thresholds"]["threshold"] == 0.4
+    (models / "bilstm/naltra.json").write_text('{"changed": true}')
+    assert evaluate.main([*common, "--overwrite"]) == 1
+    report = json.loads((output / "evaluation_summary.json").read_text())
+    assert "provenance differs" in report["models"]["bilstm"]["error"]
+
+
+def test_prediction_cache_rejects_corruption_and_misalignment(tmp_path):
+    from types import SimpleNamespace
+
+    from naltra.evaluation.prediction_cache import PredictionCache
+
+    model = SimpleNamespace(
+        model_name="fixture",
+        labels=["a", "b"],
+        config={"multilabel": {"threshold": 0.5, "per_label": {}}},
+    )
+    cache = PredictionCache(tmp_path / "cache.sqlite3", "fixture/en", {"split": "validation"})
+    try:
+        cache.append(0, [prediction("one")])
+        with pytest.raises(ValueError, match="text, model or labels differ"):
+            cache.load([{"text": "different"}], model)
+        cache.connection.execute("UPDATE predictions SET payload = '{}' WHERE position = 0")
+        cache.connection.commit()
+        with pytest.raises(ValueError, match="checksum"):
+            cache.load([{"text": "one"}], model)
+    finally:
+        cache.close()

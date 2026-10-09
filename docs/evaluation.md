@@ -206,5 +206,19 @@ The repository already supplies the matching taxonomy and code. Run the code-swi
 audit above after extraction. Share trained model folders separately; no retraining
 or translation is needed. The original imported archive is preserved.
 
-Naive Bayes, SVM, and Jev/Laya can use the same mixed-language files when their
+Local Laya also uses this evaluator with `--models laya`; its portable artifact,
+independent topic questions, subset integration check, and clean validation tuning
+commands are documented in [core ML operation](core_ml.md#local-multilingual-laya).
+The initial check is an integration check, not a final quality evaluation.
+
+Long runs can use `--resume` to retain predictions in an ignored SQLite cache in
+the output directory. Batch commits are atomic. Reusing a cache requires matching
+artifact hashes, records, configuration, device, dependencies and evaluation code.
+Progress is printed at least once per 30 seconds of completed inference. After an
+interruption, repeat the command; add `--overwrite` if a failure report exists.
+Reports separate newly measured inference time from the sum of cached per-record
+latencies; `prediction_seconds` includes both. Cached time excludes the original
+evaluator loop and cache-write overhead, so resumed totals are approximate.
+
+Naive Bayes, SVM, and Jev can use the same mixed-language files when their
 model implementations are integrated into the evaluation runner.

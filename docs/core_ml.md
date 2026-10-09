@@ -1,9 +1,10 @@
 # Core ML operation and integration
 
 BiLSTM and Transformer train independently on prepared records and save locally
-reloadable artifacts. Jev/Laya are configurable inference adapters; their live
-services require actual provider contracts. Classical models, dashboard wiring,
-expanded evaluation, calibration, and attribution remain separate work.
+reloadable artifacts. Laya supports local multilingual inference. Jev is a service
+adapter and remains on hold. The common evaluator supports the neural models and
+Laya. Classical models and dashboard wiring remain separate work; advanced
+calibration and attribution are deferred.
 
 ## Setup and training
 
@@ -163,17 +164,99 @@ threshold. Hard-vote fractions are not class probabilities, so confidence OOD
 is disabled for hard voting; use a custom detector. The original six-family
 configuration becomes usable when all components are available.
 
-## Completing live Jev/Laya integration
+## Local multilingual Laya
 
-Neither name identifies a documented provider in this repository. Obtain actual
-service documentation and sample responses before enabling them:
+Install the optional pinned SDK from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-laya.txt
+```
+
+`LayaModel()` loads the multilingual checkpoint lazily on first inference. The
+checkpoint commit and SDK version are pinned in `configs/models/laya.yaml`; the
+default covers all 473 supported direct taxonomy labels. English, Turkish and
+mixed-language inputs use the same checkpoint. No API key or payment is required.
+
+```python
+from naltra.models.laya import LayaModel
+from naltra.pipeline.prediction import PredictionPipeline
+
+model = LayaModel({"device": "cuda"})
+pipeline = PredictionPipeline(model=model)
+result = pipeline.predict("This project develops solar panels and battery storage.")
+print([(label.label, label.score) for label in result.labels])
+```
+
+Each label is a separate two-option `choice` question. Option `A` names the
+canonical scientific topic; option `B` is "other unrelated research topics".
+`P(A)` becomes the direct-label score. Labels are independent and their probabilities
+do not sum to one. Two-option choice follows the upstream workaround for the
+documented `noul` label bias.
+Eight questions and one document per inference batch bound GPU memory. The
+1,024-token total budget includes a 256-token question budget; longer input is
+truncated. These are pretrained, uncalibrated scores, not a model fine-tuned on
+CORDIS. Default cutoff 0.5 is provisional until full clean validation tuning.
+The eight-record integration sample at this cutoff had combined clean micro-F1
+0.0310 and macro-F1 0.0154; the model selected too many labels. That small result
+verifies execution, not accuracy. Laya remains an experimental pretrained baseline.
+
+Create a portable Laya artifact and check two records from each validation track:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/evaluate_all.py --models laya --prepare-laya --split validation --code-switch sentence_mix chunk_mix --max-records 2 --device cuda --batch-size 1 --model-dir models/cordis_laya_v0.1.1/cordis_h2020/en_tr_direct --output-dir results/metrics/cordis_laya_v0.1.1_integration_validation
+```
+
+Use a new output directory if that check already exists. `--prepare-laya` refuses
+an existing artifact and is limited to bilingual validation. It binds the audited
+release without training and copies weights, encoder/tokenizer configs, exact
+questions and checksums into the ignored model folder. Share the entire folder.
+Reload uses local files and verifies their hashes; it does not need an API or a
+second download. Old external-service Laya artifacts are incompatible.
+
+Once the subset check is satisfactory, tune on full clean validation:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/evaluate_all.py --models laya --split validation --tune-threshold --resume --device cuda --batch-size 1 --model-dir models/cordis_laya_v0.1.1/cordis_h2020/en_tr_direct --output-dir results/metrics/cordis_laya_v0.1.1_validation_tuned
+```
+
+Then reuse that report with `--thresholds-file` and `--code-switch sentence_mix
+chunk_mix --code-switch-only --split validation` for the mixed-language check.
+Subset reports cannot supply a tuned threshold. Keep final test evaluation until
+all required models and settings are fixed. Classify all labels even when only a
+few are selected; partial top-k results cannot be compared fairly with the neural
+models. `train()` deliberately reports unsupported: fine-tuning is a later task.
+
+This run scores 9,422 documents against 473 independent topic questions. On the
+RTX 4050 laptop, the measured two-document speed check took 14.5 seconds;
+budget roughly 18–24 hours for full validation, depending on document lengths.
+Larger question batches did not improve measured throughput. Keep the laptop
+plugged in and awake during the run. `--resume` commits each completed batch to
+the ignored `prediction_cache.sqlite3` beside the metrics report. Repeat the same
+command after an interruption; add `--overwrite` if a failed summary already
+exists. Changed artifacts, inputs, settings, dependencies or evaluation code are
+rejected instead of silently reusing incompatible predictions.
+
+The cutoff is selected only after both validation languages finish. Until a
+successful full report exists, Laya quality and fine-tuning needs remain open;
+the small integration check cannot establish a final cutoff. A low full-validation
+F1 or average precision would justify domain fine-tuning, which this adapter does
+not yet implement.
+
+Upstream: [model card](https://huggingface.co/convaiinnovations/laya) and
+[SDK](https://github.com/NandhaKishorM/laya).
+
+## Completing live Jev integration
+
+Jev is on hold pending funded TypeSafe access. The existing generic transport
+does not implement TypeSafe's typed-question protocol; complete that adapter
+before enabling it:
 
 1. Confirm endpoint, authentication, request and response formats, label vocabulary
    and score semantics. Current transport supports synchronous JSON POST with one
    text field and a label-to-probability response object. Other formats require a
    provider-specific injected client implementing `predict(text)` and returning
    `{"scores": {provider_label: probability}}`.
-2. Set `JEV_API_KEY` / `JEV_API_BASE_URL` or equivalent `LAYA_*` values in ignored
+2. Set `JEV_API_KEY` / `JEV_API_BASE_URL` in ignored
    `.env`. Keys and URLs are read at inference time and never persisted in artifacts.
 3. Fill the model YAML's `contract`: `configured: true`, relative `request_path`,
    `text_field`, dotted `scores_path`, `auth_header` and `auth_prefix`. Placeholder
@@ -182,13 +265,13 @@ service documentation and sample responses before enabling them:
    `label_map` to provider-to-canonical IDs. Every response must include finite
    probabilities for all supported labels. Partial top-k lists and ranking scores
    require a documented provider-specific conversion rather than guessed values.
-5. Set `enabled: true`, pass the YAML to `JevModel(config=...)` or
-   `LayaModel(config=...)`, and verify a real sample through the pipeline.
+5. Set `enabled: true`, pass the YAML to `JevModel(config=...)`, and verify a real
+   sample through the pipeline.
 
 Adapters have configurable timeouts and fail clearly on transport errors, invalid
 JSON, unsupported labels or missing scores. They do not automatically retry POST
 requests or follow redirects. Service `train()` reports unsupported local training.
-Mock transports cover both families; live behavior and provider-owned training
+Mock transports cover Jev; live behavior and provider-owned training
 cannot be verified without real provider details and credentials.
 
 Naive Bayes/SVM, dashboard integration, expanded evaluation, calibration and
