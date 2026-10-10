@@ -4,11 +4,20 @@ import pytest
 from tests.test_pipeline import EchoModel
 
 from naltra.pipeline.ensemble import EnsembleConfig, EnsembleVoter
-from naltra.pipeline.language import LinguaLanguageDetector, UndeterminedLanguageDetector
+from naltra.pipeline.language import LinguaLanguageDetector
 from naltra.pipeline.ood import MaxProbabilityOODDetector
 from naltra.pipeline.prediction import PredictionPipeline
 from naltra.pipeline.thresholds import apply_thresholds
 from naltra.schemas.prediction import Explanation, LabelScore, LanguageInfo, PredictionResult
+
+
+class UndeterminedLanguageDetector:
+    """Detector that always reports an undetermined language (und)."""
+
+    def detect(self, text: str) -> LanguageInfo:
+        if not text.strip():
+            raise ValueError("Cannot detect the language of empty text.")
+        return LanguageInfo(primary="und", is_code_switched=False)
 
 
 class ScoredModel(EchoModel):
