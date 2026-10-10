@@ -245,6 +245,39 @@ not yet implement.
 Upstream: [model card](https://huggingface.co/convaiinnovations/laya) and
 [SDK](https://github.com/NandhaKishorM/laya).
 
+### Continue saved Laya validation on another Windows CUDA PC
+
+The normal evaluator deliberately requires identical hardware and package versions.
+For an RTX 4050 to RTX 5070 transfer, use `scripts/resume_laya_other_pc.py`.
+It retains exact data, artifact, question, inference-setting and scoring-code
+checks, while permitting Windows/Python 3.13 patch updates and the documented
+Torch 2.6.0/cu124 to 2.7.1/cu128 upgrade. All other recorded packages must match;
+`requirements-laya-transfer.txt` supplies those pins. CUDA 12.8 PyTorch wheels
+support the Blackwell architecture; no model retraining or translation is needed.
+
+Copy a consistent SQLite backup of the progress, the complete local Laya artifact,
+the audited clean data plus raw sources/split map, and the exact evaluated source
+files. A transfer ZIP can contain these as a repository-root overlay. Clone the
+transfer branch, then extract the overlay into that checkout before running:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+.\.venv\Scripts\python.exe -m pip install -e . -r requirements-laya-transfer.txt
+.\.venv\Scripts\python.exe scripts/resume_laya_other_pc.py --overwrite
+```
+
+Keep the original cache on the source PC. The copied cache records each runtime
+transfer and its completed-record boundary before rebinding its identity. Scores
+and checksums are preserved; the ordinary loader still checks record alignment
+and every probability. The final report includes the original and new GPU/package
+identities and adapter checksum. Pooled timing is marked unsuitable as a
+single-GPU latency benchmark. Classification and cutoff selection still use all
+9,422 clean validation records; the final test remains untouched.
+
+Reference: [PyTorch 2.7 Blackwell support](https://pytorch.org/blog/pytorch-2-7/)
+and [pinned wheel installation](https://pytorch.org/get-started/previous-versions/).
+
 ## Completing live Jev integration
 
 Jev is on hold pending funded TypeSafe access. The existing generic transport
