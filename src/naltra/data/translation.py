@@ -746,6 +746,9 @@ def translate_cordis_dataset(
     """Translate English CORDIS records to Turkish by split with caching and sentence alignment."""
     in_path = Path(en_processed_dir)
     out_path = Path(output_dir)
+    # The manifest records these relative to itself; refuse a cross-drive layout before writing.
+    for path in (in_path, cache_dir, *(in_path / f"{s}.jsonl" for s in splits)):
+        relative_path(path, out_path)
     out_path.mkdir(parents=True, exist_ok=True)
 
     trans = translator or HuggingFaceLocalTranslator()

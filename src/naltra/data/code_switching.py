@@ -308,6 +308,9 @@ def generate_code_switch_benchmarks(
         is_single_dir = False
 
     out_dir = Path(output_base_dir) / strategy / strength
+    # The manifest records these relative to itself; refuse a cross-drive layout before writing.
+    for path in (en_path, tr_path, *(p / f"{s}.jsonl" for p in (en_path, tr_path) for s in splits)):
+        relative_path(path, out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     results: dict[str, int] = {}

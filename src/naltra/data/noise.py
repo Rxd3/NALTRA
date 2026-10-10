@@ -401,6 +401,11 @@ def generate_noisy_benchmarks(
             f"Please run clean dataset preparation first:\n"
             f"  python scripts/prepare_data.py --dataset all"
         )
+    # Manifests record these relative to themselves; refuse a cross-drive layout before writing.
+    sources = [proc_base, *(proc_base / d / f"{s}.jsonl" for d in datasets for s in splits)]
+    for target in (out_base, *(out_base / d for d in datasets)):
+        for source in sources:
+            relative_path(source, target)
 
     results: dict[str, dict[str, int]] = {}
 

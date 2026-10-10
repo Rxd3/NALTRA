@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 from naltra.data.loader import load_jsonl
-from naltra.utils.provenance import repo_path
 
 MANIFEST_SCHEMA_VERSION = "1.1.0"
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -28,13 +27,17 @@ class GenerationCodeMismatch(ValueError):
 def relative_path(path: str | Path, start: str | Path) -> str:
     """``path`` relative to the directory ``start``, with forward slashes.
 
-    os.path.relpath fails when the two lie on different Windows drives or UNC shares; the path
-    is then recorded relative to the repository, or by its name outside it, never absolutely.
+    Manifest readers resolve every recorded source against the manifest's own directory, so a
+    path os.path.relpath cannot relate to it (another Windows drive or UNC share) is refused.
     """
+    source, base = Path(path).resolve(), Path(start).resolve()
     try:
-        return Path(os.path.relpath(Path(path).resolve(), Path(start).resolve())).as_posix()
-    except ValueError:
-        return repo_path(Path(path).resolve())
+        return Path(os.path.relpath(source, base)).as_posix()
+    except ValueError as error:
+        raise ValueError(
+            f"Cannot record {source} relative to {base}: they are on different drives or "
+            "shares. Keep sources, caches and outputs on one drive."
+        ) from error
 
 
 def get_source_config(name: str) -> dict[str, str]:

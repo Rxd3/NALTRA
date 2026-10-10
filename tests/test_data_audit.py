@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 import shutil
-from pathlib import PurePosixPath, PureWindowsPath
 
 import pytest
 from scripts import validate_datasets as audit
@@ -187,54 +186,46 @@ def test_derived_manifests_record_source_dirs_relative_to_themselves(mixed_relea
         }
 
 
-def recorded_strings(value):
-    if isinstance(value, dict):
-        for key, item in value.items():
-            yield key
-            yield from recorded_strings(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield from recorded_strings(item)
-    elif isinstance(value, str):
-        yield value
+@pytest.mark.parametrize("writer", ["english", "turkish", "code_switch", "noise"])
+def test_writers_refuse_sources_on_another_drive_before_writing(
+    cordis_release, monkeypatch, writer
+):
+    """os.path.relpath raises when a source or cache sits on another drive or a UNC share.
 
-
-def test_manifests_stay_relative_when_sources_are_on_another_drive(cordis_release, monkeypatch):
-    """os.path.relpath raises when a source or cache sits on another drive or a UNC share."""
+    A manifest could not then record that source relative to itself, so the writer stops
+    before any split file exists.
+    """
     base, taxonomy = cordis_release
-    root = base.parent
+    root, out = base.parent, base.parent / "other_drive"
+    if writer == "code_switch":
+        mock_translated_release(base, taxonomy)
 
     def other_drive(path, start=None):
         raise ValueError("path is on mount '\\\\localhost\\C$', start on mount 'C:'")
 
     monkeypatch.setattr(os.path, "relpath", other_drive)
-    preprocessing.process_cordis_h2020(
-        root / "raw",
-        root / "en_copy",
-        root / "splits",
-        taxonomy,
-        taxonomy.parent / "label_map.json",
-    )
-    mock_translated_release(base, taxonomy)
-    generate_code_switch_benchmarks(
-        en_dir=base / "en",
-        tr_dir=base / "tr",
-        output_base_dir=base / "code_switch",
-        strategy="chunk_mix",
-        taxonomy_path=taxonomy,
-    )
-    generate_noisy_benchmarks(root, root / "noisy", datasets=("processed/en", "processed/tr"))
-    assert json.loads((base / "tr/manifest.json").read_text())["source_metadata"] == {
-        "source_en_dir": "en",
-        "cache_dir": "cache",
-    }
-    written = [base / "tr", base / "code_switch/chunk_mix/balanced", root / "en_copy"]
-    written += [root / "noisy/combined/medium", root / "noisy/combined/medium/processed/en"]
-    for directory in written:
-        for text in recorded_strings(json.loads((directory / "manifest.json").read_text())):
-            assert not PureWindowsPath(text).is_absolute(), (directory, text)
-            assert not PurePosixPath(text).is_absolute(), (directory, text)
-            assert str(root) not in text and root.as_posix() not in text, (directory, text)
+    with pytest.raises(ValueError, match="one drive"):
+        if writer == "english":
+            preprocessing.process_cordis_h2020(
+                root / "raw", out, out / "splits", taxonomy, taxonomy.parent / "label_map.json"
+            )
+        elif writer == "turkish":
+            translate_cordis_dataset(
+                en_processed_dir=base / "en",
+                output_dir=out,
+                cache_dir=out / "cache",
+                taxonomy_path=taxonomy,
+                translator=MockTranslator(),
+                review_sample_path=out / "review.csv",
+                allow_mock=True,
+            )
+        elif writer == "code_switch":
+            generate_code_switch_benchmarks(
+                en_dir=base / "en", tr_dir=base / "tr", output_base_dir=out, taxonomy_path=taxonomy
+            )
+        else:
+            generate_noisy_benchmarks(root, out, datasets=("processed/en",))
+    assert not out.exists() or not any(out.rglob("*"))
 
 
 @pytest.mark.parametrize("mutation", ["text", "pair", "duplicate", "params", "input"])

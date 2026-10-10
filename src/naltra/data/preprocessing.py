@@ -265,6 +265,10 @@ def process_cordis_h2020(
 
     project_csv = raw_path / "project.csv"
     euroscivoc_csv = raw_path / "euroSciVoc.csv"
+    split_map_file = split_path / "project_splits.json"
+    # The manifest records these relative to itself; refuse a cross-drive layout before writing.
+    for path in (raw_path, project_csv, euroscivoc_csv, map_path, split_map_file):
+        relative_path(path, out_path)
 
     if not project_csv.exists():
         raise FileNotFoundError(f"Missing raw project file: {project_csv}")
@@ -458,7 +462,6 @@ def process_cordis_h2020(
         print(f"Saved {len(recs)} records -> {split_file}")
 
     # Save project split manifest
-    split_map_file = split_path / "project_splits.json"
     with split_map_file.open("w", encoding="utf-8", newline="\r\n") as f:
         json.dump(
             {

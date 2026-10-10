@@ -11,7 +11,6 @@ import pytest
 
 from naltra.data.loader import save_jsonl
 from naltra.data.manifest import (
-    REPO_ROOT,
     compute_file_sha256,
     create_manifest,
     get_environment_metadata,
@@ -203,15 +202,17 @@ def test_relative_path_is_relative_to_the_manifest_directory(tmp_path: Path) -> 
     assert relative_path(tmp_path / "en", tmp_path / "code_switch/chunk_mix") == "../../en"
 
 
-def test_relative_path_never_records_an_absolute_path_across_drives(
+def test_relative_path_refuses_a_path_on_another_drive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Readers resolve recorded sources against the manifest, so no other base may be used."""
+
     def other_drive(path: str, start: str | None = None) -> str:
         raise ValueError("path is on mount '\\\\server\\share', start on mount 'C:'")
 
     monkeypatch.setattr(os.path, "relpath", other_drive)
-    inside = REPO_ROOT / "data" / "processed" / "cordis_h2020" / "en"
-    assert relative_path(inside, tmp_path) == "data/processed/cordis_h2020/en"
-    assert relative_path(tmp_path / "cache", tmp_path / "tr") == "cache"
-    monkeypatch.chdir(tmp_path)
-    assert relative_path("sub/cache", tmp_path / "tr") == "cache"
+    source, output = tmp_path / "cache" / "shared.csv", tmp_path / "tr"
+    with pytest.raises(ValueError, match="one drive") as refused:
+        relative_path(source, output)
+    assert str(source.resolve()) in str(refused.value)
+    assert str(output.resolve()) in str(refused.value)
