@@ -38,7 +38,8 @@ def prepare_data(argv: Sequence[str] | None = None) -> None:
         "--noise-dir",
         type=Path,
         default=REPO_ROOT / "data/noisy",
-        help="Noisy output root; files land in <dir>/combined/medium/cordis_h2020/{en,tr}.",
+        help="Noisy output root, on the same drive as data/; files land in "
+        "<dir>/combined/medium/cordis_h2020/{en,tr}.",
     )
     args = parser.parse_args(argv)
     if args.batch_size < 1:

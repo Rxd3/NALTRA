@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import shutil
+from pathlib import Path
 
 import pytest
 from scripts import validate_datasets as audit
@@ -186,34 +187,69 @@ def test_derived_manifests_record_source_dirs_relative_to_themselves(mixed_relea
         }
 
 
-@pytest.mark.parametrize("writer", ["english", "turkish", "code_switch", "noise"])
-def test_writers_refuse_sources_on_another_drive_before_writing(
-    cordis_release, monkeypatch, writer
-):
-    """os.path.relpath raises when a source or cache sits on another drive or a UNC share.
+CROSS_DRIVE = [
+    ("english", "raw"),
+    ("english", "label_map"),
+    ("english", "splits"),
+    ("english", "output"),
+    ("turkish", "en"),
+    ("turkish", "cache"),
+    ("turkish", "output"),
+    ("code_switch", "en"),
+    ("code_switch", "tr"),
+    ("code_switch", "output"),
+    ("noise", "processed"),
+    ("noise", "output"),
+]
 
-    A manifest could not then record that source relative to itself, so the writer stops
-    before any split file exists.
+
+@pytest.mark.parametrize("writer, moved", CROSS_DRIVE, ids=[f"{w}-{m}" for w, m in CROSS_DRIVE])
+def test_writers_refuse_any_source_on_another_drive_before_writing(
+    cordis_release, monkeypatch, writer, moved
+):
+    """os.path.relpath raises when a source, cache or output sits on another drive or a UNC
+    share. A manifest could not then record that path relative to itself, so each writer must
+    stop before any split file exists, whichever single location is on the other drive.
     """
     base, taxonomy = cordis_release
-    root, out = base.parent, base.parent / "other_drive"
+    root, far = base.parent, base.parent / "far"
     if writer == "code_switch":
         mock_translated_release(base, taxonomy)
 
-    def other_drive(path, start=None):
-        raise ValueError("path is on mount '\\\\localhost\\C$', start on mount 'C:'")
+    def place(name, path, target=None):
+        """The path itself, or a copy on the other drive when it is the moved location."""
+        if name != moved:
+            return path
+        target = target or far / path.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_dir():
+            shutil.copytree(path, target)
+        else:
+            shutil.copy2(path, target)
+        return target
 
-    monkeypatch.setattr(os.path, "relpath", other_drive)
+    real_relpath = os.path.relpath
+
+    def relpath(path, start=None):
+        if ("far" in Path(path).parts) != ("far" in Path(start).parts):
+            raise ValueError("path is on mount 'D:', start on mount 'C:'")
+        return real_relpath(path, start)
+
+    monkeypatch.setattr(os.path, "relpath", relpath)
+    out = far / "out" if moved == "output" else root / "out"
+    splits = far / "splits" if moved == "splits" else out / "splits"
+    cache = far / "cache" if moved == "cache" else out / "cache"
     with pytest.raises(ValueError, match="one drive"):
         if writer == "english":
+            label_map = place("label_map", taxonomy.parent / "label_map.json")
             preprocessing.process_cordis_h2020(
-                root / "raw", out, out / "splits", taxonomy, taxonomy.parent / "label_map.json"
+                place("raw", root / "raw"), out, splits, taxonomy, label_map
             )
         elif writer == "turkish":
             translate_cordis_dataset(
-                en_processed_dir=base / "en",
+                en_processed_dir=place("en", base / "en"),
                 output_dir=out,
-                cache_dir=out / "cache",
+                cache_dir=cache,
                 taxonomy_path=taxonomy,
                 translator=MockTranslator(),
                 review_sample_path=out / "review.csv",
@@ -221,11 +257,16 @@ def test_writers_refuse_sources_on_another_drive_before_writing(
             )
         elif writer == "code_switch":
             generate_code_switch_benchmarks(
-                en_dir=base / "en", tr_dir=base / "tr", output_base_dir=out, taxonomy_path=taxonomy
+                en_dir=place("en", base / "en"),
+                tr_dir=place("tr", base / "tr"),
+                output_base_dir=out,
+                taxonomy_path=taxonomy,
             )
         else:
-            generate_noisy_benchmarks(root, out, datasets=("processed/en",))
-    assert not out.exists() or not any(out.rglob("*"))
+            processed = place("processed", base, far / "base" / base.name)
+            generate_noisy_benchmarks(processed.parent, out, datasets=(f"{base.name}/en",))
+    for written in (out, splits, cache):
+        assert not written.exists() or not any(written.rglob("*"))
 
 
 @pytest.mark.parametrize("mutation", ["text", "pair", "duplicate", "params", "input"])
