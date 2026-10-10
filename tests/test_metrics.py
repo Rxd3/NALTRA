@@ -1,20 +1,10 @@
 import pytest
 
-from naltra.evaluation.calibration import brier_score
 from naltra.evaluation.metrics import (
     compute_classification_metrics,
     multilabel_metrics,
-    precision_recall_f1,
 )
-from naltra.evaluation.robustness import jaccard_stability
 from naltra.schemas.prediction import LabelScore, LanguageInfo, PredictionResult
-
-
-def test_set_precision_recall_f1() -> None:
-    precision, recall, f1 = precision_recall_f1({"a", "b"}, {"a", "c"})
-    assert precision == pytest.approx(0.5)
-    assert recall == pytest.approx(0.5)
-    assert f1 == pytest.approx(0.5)
 
 
 def test_multilabel_micro_and_macro_metrics() -> None:
@@ -25,17 +15,27 @@ def test_multilabel_micro_and_macro_metrics() -> None:
     assert metrics["macro_f1"] == pytest.approx(1 / 3)
 
 
-def test_reliability_helpers_are_lightweight() -> None:
-    assert brier_score([0.0, 1.0], [0, 1]) == 0.0
-    assert jaccard_stability({"a", "b"}, {"b", "c"}) == pytest.approx(1 / 3)
-
-
 def test_macro_uses_fixed_label_universe_including_absent_labels():
     metrics = multilabel_metrics([{"a"}], [{"a"}], all_labels=["a", "b"])
     assert metrics["micro_f1"] == 1.0
     assert metrics["macro_f1"] == 0.5
     with pytest.raises(ValueError, match="universe"):
         multilabel_metrics([{"unknown"}], [set()], all_labels=["a", "b"])
+
+
+def test_classification_metrics_keep_labels_selected_below_one_half() -> None:
+    from naltra.evaluation.metrics import compute_classification_metrics
+    from naltra.schemas.prediction import LabelScore, LanguageInfo, PredictionResult
+
+    prediction = PredictionResult(
+        text="x",
+        model="svm",
+        language=LanguageInfo(primary="en"),
+        labels=[LabelScore(label="a", score=0.3)],
+    )
+    metrics = compute_classification_metrics([prediction], [{"a"}], all_labels=["a", "b"])
+    assert metrics["micro_f1"] == pytest.approx(1.0)
+    assert metrics["macro_f1"] == pytest.approx(0.5)
 
 
 def test_lower_threshold_recovers_labels_from_full_scores():

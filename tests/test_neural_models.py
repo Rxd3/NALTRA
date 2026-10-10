@@ -310,11 +310,17 @@ def test_cuda_unavailable_is_actionable(monkeypatch):
         select_device("cuda")
 
 
-def test_train_rejects_content_leakage():
+@pytest.mark.parametrize("key", ["id", "pair_id", "project_id", "text"])
+def test_train_and_head_refit_reject_record_project_and_content_leakage(key):
     train, validation = records("train"), records("validation")
-    validation[0]["text"] = train[0]["text"]
-    with pytest.raises(ValueError, match="content overlaps"):
-        BiLSTMModel(small_config()).train(train, validation)
+    config = small_config()
+    config["training"]["gradient_accumulation_steps"] = 1
+    model = BiLSTMModel(config)
+    model.train(train, validation)
+    validation[0][key] = train[0][key] = train[0].get(key, "cordis:1")
+    for fit in (model.train, model.refit_head):
+        with pytest.raises(ValueError, match=f"{key} contamination"):
+            fit(train, validation)
 
 
 def test_custom_taxonomy_is_hashed_and_cannot_change_after_training(tmp_path):

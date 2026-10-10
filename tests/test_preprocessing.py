@@ -4,6 +4,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 # Add repo root and src/ to sys.path so tests can be run directly with python
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT / "src") not in sys.path:
@@ -54,14 +56,31 @@ def test_normalize_record_text() -> None:
     assert normalized == "Bu bir Türkçe cümledir. İkinci satır."
 
 
+def test_html_tags_are_stripped() -> None:
+    assert preprocess_record_text("<p>Laser <b>optics</b></p>") == "Laser optics"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="known limitation of the 1.1.0 cleaner: the tag pattern also removes '<...>' "
+    "comparison spans (62 retained projects, docs/dataset.md); a fix needs a new release",
+)
+def test_comparison_operators_survive_cleaning() -> None:
+    text = "Galaxies after (z<3) and before (z>3) are compared."
+    assert preprocess_record_text(text) == text
+
+
 def test_validate_record_valid() -> None:
     record = {
-        "id": "sib200:en:0",
+        "id": "cordis:0:en",
+        "project_id": "0",
+        "pair_id": "cordis:0",
         "text": "Sample text",
+        "labels_direct": ["science_technology"],
         "labels": ["science_technology"],
         "language": "en",
-        "source": "sib200",
-        "license": "CC BY-SA 4.0",
+        "source": "cordis_h2020",
+        "license": "CC BY 4.0",
         "split": "train",
     }
     validate_record(record, allowed_labels={"science_technology"})
@@ -69,7 +88,7 @@ def test_validate_record_valid() -> None:
 
 def test_validate_record_missing_field() -> None:
     record = {
-        "id": "sib200:en:0",
+        "id": "cordis:0:en",
         "text": "Sample text",
         "labels": ["science_technology"],
     }
@@ -83,12 +102,12 @@ def test_validate_record_missing_field() -> None:
 
 def test_validate_record_invalid_language() -> None:
     record = {
-        "id": "sib200:en:0",
+        "id": "cordis:0:en",
         "text": "Sample text",
         "labels": ["science_technology"],
         "language": "french",
-        "source": "sib200",
-        "license": "CC BY-SA 4.0",
+        "source": "cordis_h2020",
+        "license": "CC BY 4.0",
         "split": "train",
     }
     try:
@@ -101,12 +120,12 @@ def test_validate_record_invalid_language() -> None:
 
 def test_validate_record_unknown_canonical_label() -> None:
     record = {
-        "id": "sib200:en:0",
+        "id": "cordis:0:en",
         "text": "Sample text",
         "labels": ["non_existent_label"],
         "language": "en",
-        "source": "sib200",
-        "license": "CC BY-SA 4.0",
+        "source": "cordis_h2020",
+        "license": "CC BY 4.0",
         "split": "train",
     }
     try:
@@ -120,14 +139,14 @@ def test_validate_record_unknown_canonical_label() -> None:
 def test_save_and_load_jsonl_roundtrip() -> None:
     sample_records = [
         {
-            "id": "sib200:tr:1",
+            "id": "cordis:1:tr",
             "text": "Türkçe özel karakterler: ğüşöçıİ test.",
             "labels": ["science_technology"],
             "language": "tr",
-            "source": "sib200",
-            "license": "CC BY-SA 4.0",
+            "source": "cordis_h2020",
+            "license": "CC BY 4.0",
             "split": "train",
-            "pair_id": "sib200:1",
+            "pair_id": "cordis:1",
         }
     ]
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -141,17 +160,20 @@ def test_save_and_load_jsonl_roundtrip() -> None:
 
 def test_validate_record_multilabel() -> None:
     record = {
-        "id": "multifin:Israel-4145",
-        "text": "Revenue Recognition and corporate tax audit",
-        "labels": ["accounting_assurance", "tax"],
+        "id": "cordis:673403:en",
+        "project_id": "673403",
+        "pair_id": "cordis:673403",
+        "text": "Traceable timing through optical fibres for 5G networks",
+        "labels_direct": ["5g", "fibre_optics"],
+        "labels": ["5g", "fibre_optics"],
         "language": "en",
-        "source": "multifin",
-        "license": "CC BY-NC 4.0",
+        "source": "cordis_h2020",
+        "license": "CC BY 4.0",
         "split": "train",
-        "source_id": "Israel-4145",
-        "source_labels": ["Accounting & Assurance", "Tax"],
+        "source_id": "673403",
+        "source_labels": ["5G", "fibre optics"],
     }
-    validate_record(record, allowed_labels={"accounting_assurance", "tax"})
+    validate_record(record, allowed_labels={"5g", "fibre_optics"})
 
 
 def test_multilabel_stratified_split() -> None:
@@ -242,9 +264,9 @@ def test_splits_tiny_datasets() -> None:
     assert len(t2) + len(v2) + len(te2) == 2
     assert _compute_split_capacities(2, [0.7, 0.15, 0.15]) == [2, 0, 0]
 
-    # Preserves MN-DS capacity: 10,491 records at 0.70/0.15/0.15 -> [7344, 1574, 1573]
-    mnds_caps = _compute_split_capacities(10491, [0.70, 0.15, 0.15])
-    assert mnds_caps == [7344, 1574, 1573]
+    # Largest-remainder capacity: 10,491 records at 0.70/0.15/0.15 -> [7344, 1574, 1573]
+    capacities = _compute_split_capacities(10491, [0.70, 0.15, 0.15])
+    assert capacities == [7344, 1574, 1573]
 
 
 def test_splits_invalid_and_negative_ratios() -> None:

@@ -2,38 +2,42 @@ import json
 
 import httpx
 import pytest
+from tests.test_kev_model import answers
 
-from naltra.models.jev import JevModel
-from naltra.models.jev.client import JevClient
-from naltra.models.laya import LayaModel
-from naltra.models.laya.client import LayaClient
+from naltra.models.kev import KevModel
+from naltra.models.kev.client import KevClient
 
 
-@pytest.mark.parametrize("model_type,client_type", [(JevModel, JevClient)])
-def test_external_contract_mapping_and_secret_free_persistence(model_type, client_type, tmp_path):
-    requests = []
+def kev_client(serve, **fields) -> KevClient:
+    defaults = {
+        "api_key": "secret",
+        "base_url": "https://example.test",
+        "configured": True,
+        "scores_path": "answers",
+        "questions": {"acoustics": "Is this project about acoustics?"},
+    }
+    return KevClient(**(defaults | fields), transport=httpx.MockTransport(serve))
 
+
+def test_external_contract_mapping_and_secret_free_persistence(tmp_path):
     def serve(request):
-        requests.append(request)
         assert request.headers["X-Api-Key"] == "test-secret"
-        assert json.loads(request.content) == {"input": "some text"}
+        assert json.loads(request.content)["input"] == "some text"
         assert request.url.path == "/api/classify"
-        return httpx.Response(
-            200, json={"result": {"probabilities": {"Acoustics": 0.8, "Optics": 0.2}}}
-        )
+        return httpx.Response(200, json={"result": answers({"Acoustics": 0.8, "Optics": 0.2})})
 
-    client = client_type(
+    client = kev_client(
+        serve,
         api_key="test-secret",
         base_url="https://example.test/api",
-        configured=True,
         request_path="classify",
         text_field="input",
-        scores_path="result.probabilities",
+        scores_path="result.answers",
         auth_header="X-Api-Key",
         auth_prefix="",
-        transport=httpx.MockTransport(serve),
+        questions={"Acoustics": "Is this about sound?", "Optics": "Is this about light?"},
     )
-    model = model_type(
+    model = KevModel(
         client,
         {
             "enabled": True,
@@ -49,7 +53,7 @@ def test_external_contract_mapping_and_secret_free_persistence(model_type, clien
     serialized = (tmp_path / "naltra.json").read_text()
     assert "test-secret" not in serialized
     assert "example.test" not in serialized
-    loaded = model_type()
+    loaded = KevModel()
     loaded.load(tmp_path)
     assert loaded.client is None
     assert loaded.config == model.config
@@ -61,20 +65,17 @@ def test_external_contract_mapping_and_secret_free_persistence(model_type, clien
 @pytest.mark.parametrize(
     "response",
     [
-        {"scores": {"acoustics": float("nan")}},
-        {"scores": {"acoustics": 1.1}},
-        {"scores": {"acoustics": True}},
-        {"scores": []},
-        {"scores": {}},
+        answers({"acoustics": float("nan")}),
+        answers({"acoustics": 1.1}),
+        answers({"acoustics": True}),
+        {"answers": []},
+        {"answers": {}},
         {"wrong": {}},
     ],
 )
 def test_invalid_service_response(response):
     # JSON cannot encode NaN through httpx's strict response JSON encoder.
-    transport = httpx.MockTransport(
-        lambda request: httpx.Response(200, content=json.dumps(response).encode())
-    )
-    client = JevClient("secret", "https://example.test", configured=True, transport=transport)
+    client = kev_client(lambda request: httpx.Response(200, content=json.dumps(response).encode()))
     with pytest.raises(ValueError):
         client.predict("valid text")
 
@@ -88,183 +89,154 @@ def test_service_errors_are_actionable_and_do_not_expose_secrets(error):
             return httpx.Response(401)
         return httpx.Response(200, content=b"not JSON")
 
-    client = JevClient(
-        "secret", "https://example.test", configured=True, transport=httpx.MockTransport(serve)
-    )
     with pytest.raises((RuntimeError, ValueError)) as caught:
-        client.predict("valid text")
+        kev_client(serve).predict("valid text")
     assert "secret" not in str(caught.value)
 
 
 def test_disabled_unconfigured_and_missing_credentials(monkeypatch):
     with pytest.raises(RuntimeError, match="disabled"):
-        JevModel().predict("text")
+        KevModel(config={"enabled": False}).predict("text")
     with pytest.raises(RuntimeError, match="contract"):
-        JevClient("secret", "https://example.test").predict("text")
-    monkeypatch.delenv("JEV_API_KEY", raising=False)
-    monkeypatch.delenv("JEV_API_BASE_URL", raising=False)
-    with pytest.raises(RuntimeError, match="JEV_API_KEY"):
-        JevClient.from_environment()
+        kev_client(lambda request: httpx.Response(200), configured=False).predict("text")
+    monkeypatch.setattr("naltra.models.external.load_dotenv", lambda *a, **k: None)
+    monkeypatch.delenv("KEV_API_KEY", raising=False)
+    monkeypatch.delenv("KEV_API_BASE_URL", raising=False)
+    with pytest.raises(RuntimeError, match="KEV_API_KEY"):
+        KevClient.from_environment()
 
 
 @pytest.mark.parametrize(
-    "scores,match", [({"optics": 0.5}, "Unknown"), ({"acoustics": 0.5}, "every supported")]
+    "asked,labels,match",
+    [
+        (["optics"], ["acoustics"], "Unknown"),
+        (["acoustics"], ["optics", "acoustics"], "every supported"),
+    ],
 )
-def test_external_label_space_validation(scores, match):
-    client = JevClient(
-        "secret",
-        "https://example.test",
-        configured=True,
-        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"scores": scores})),
+def test_external_label_space_validation(asked, labels, match):
+    client = kev_client(
+        lambda request: httpx.Response(200, json=answers({label: 0.5 for label in asked})),
+        questions={label: f"Is this project about {label}?" for label in asked},
     )
-    labels = ["acoustics"] if match == "Unknown" else ["optics", "acoustics"]
-    model = JevModel(client, {"enabled": True, "supported_labels": labels})
+    model = KevModel(client, {"enabled": True, "supported_labels": labels})
     with pytest.raises(ValueError, match=match):
         model.predict("valid text")
 
 
 def test_service_configuration_rejects_inline_credentials():
     with pytest.raises(ValueError, match="environment"):
-        JevModel(config={"api_key": "should-not-be-saved"})
+        KevModel(config={"api_key": "should-not-be-saved"})
     with pytest.raises(ValueError, match="timeout"):
-        JevModel(config={"request_timeout_seconds": -1})
+        KevModel(config={"request_timeout_seconds": -1})
 
 
-@pytest.fixture
-def local_laya(tmp_path):
-    from types import SimpleNamespace
+def test_api_key_is_not_sent_over_remote_plain_http():
+    def serve(request):
+        raise AssertionError("The API key left over plain http.")
 
-    from naltra.models.laya.client import CHECKPOINT_FILES
+    with pytest.raises(ValueError, match="https"):
+        kev_client(serve, base_url="http://api.example.com").predict("valid text")
 
-    model = LayaModel(
-        {
-            "device": "cpu",
-            "supported_labels": ["optics", "acoustics"],
-            "inference": {"question_batch_size": 1},
-        }
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+def test_plain_http_is_allowed_for_a_loopback_server(host):
+    client = kev_client(
+        lambda request: httpx.Response(200, json=answers({"acoustics": 0.5})),
+        base_url=f"http://{host}:8009",
     )
-    checkpoint = tmp_path / "checkpoint"
-    for name in CHECKPOINT_FILES:
-        file = checkpoint / name
-        file.parent.mkdir(parents=True, exist_ok=True)
-        file.write_text("fixture")
-    calls = []
-
-    def predict_batch(texts, questions, **kwargs):
-        calls.append((texts, questions, kwargs))
-        return [
-            {
-                "answers": {
-                    label: {
-                        "type": "choice",
-                        "probabilities": {
-                            "A": 0.8 if question["criteria"]["A"] in text else 0.2,
-                            "B": 0.2 if question["criteria"]["A"] in text else 0.8,
-                        },
-                    }
-                    for label, question in questions.items()
-                }
-            }
-            for text in texts
-        ]
-
-    client = LayaClient(model.config, checkpoint_dir=checkpoint)
-    client.agent = SimpleNamespace(device=model.device, predict_batch=predict_batch)
-    model.client = client
-    return model, calls
+    assert client.predict("valid text") == {"scores": {"acoustics": 0.5}}
 
 
-def test_local_laya_independent_topics_batch_order_and_pipeline(local_laya):
-    from naltra.pipeline.prediction import PredictionPipeline
-    from naltra.schemas.prediction import LanguageInfo
-
-    model, calls = local_laya
-    results = model.predict_batch([" optics   acoustics ", "nothing", "optics"])
-    assert results[0].label_scores == {"acoustics": 0.8, "optics": 0.8}
-    assert len(results[0].labels) == 2  # Multi-label probabilities need not sum to one.
-    assert results[1].labels == []
-    assert [item.label for item in results[2].labels] == ["optics"]
-    assert all(len(group) == 1 for _, group, _ in calls)
-    assert all(kwargs["batch_size"] == 1 for _, _, kwargs in calls)
-    pipeline = PredictionPipeline(model=model)
-    result = pipeline.predict("optics", language=LanguageInfo("tr", True))
-    assert result.language.is_code_switched and result.hierarchy_paths
-    assert model.predict_batch([]) == []
-    with pytest.raises(ValueError, match="empty"):
-        model.predict_batch(["optics", " "])
-
-
-@pytest.mark.parametrize("problem", ["missing", "nan", "range", "sum", "boolean", "batch"])
-def test_local_laya_rejects_broken_probabilities(local_laya, problem):
-    model, _ = local_laya
-
-    def broken(texts, questions, **kwargs):
-        if problem == "batch":
-            return []
-        probabilities = {"A": 0.8, "B": 0.2}
-        if problem == "nan":
-            probabilities["A"] = float("nan")
-        elif problem == "range":
-            probabilities["A"] = 1.2
-        elif problem == "sum":
-            probabilities["B"] = 0.8
-        elif problem == "boolean":
-            probabilities["A"] = True
-        return [
-            {
-                "answers": (
-                    {}
-                    if problem == "missing"
-                    else {
-                        label: {"type": "choice", "probabilities": probabilities}
-                        for label in questions
-                    }
-                )
-            }
-            for _ in texts
-        ]
-
-    model.client.agent.predict_batch = broken
-    with pytest.raises(ValueError):
-        model.predict("optics")
-
-
-def test_local_laya_portable_artifact_and_integrity(local_laya, tmp_path, monkeypatch):
-    model, _ = local_laya
-    artifact = tmp_path / "artifact"
-    model.save(artifact)
-    loaded = LayaModel({"device": "cpu"})
-    loaded.load(artifact)
-    assert loaded.labels == model.labels and loaded.questions == model.questions
-    assert loaded.client.checkpoint_dir == artifact
-    # Never download a checkpoint in unit tests; an injected engine stands in for the SDK.
-    loaded.client.agent = model.client.agent
-    assert loaded.predict("optics").label_scores == model.predict("optics").label_scores
-    with pytest.raises(ValueError, match="overwrite"):
-        model.save(artifact)
-    payload = json.loads((artifact / "naltra.json").read_text())
-    payload["questions"]["optics"]["criteria"]["A"] = "tampered"
-    (artifact / "naltra.json").write_text(json.dumps(payload))
-    with pytest.raises(ValueError, match="questions"):
-        loaded.load(artifact)
-    payload["questions"] = model.questions
-    (artifact / "naltra.json").write_text(json.dumps(payload))
-    (artifact / "model.safetensors").write_text("tampered")
-    with pytest.raises(ValueError, match="corrupted"):
-        loaded.load(artifact)
+CONTRACT_STRINGS = ("request_path", "text_field", "scores_path", "auth_header", "auth_prefix")
 
 
 @pytest.mark.parametrize(
-    "config",
+    "config,match",
     [
-        {"api_key": "forbidden"},
-        {"checkpoint": {"revision": "main"}},
-        {"inference": {"question_batch_size": 0}},
-        {"supported_labels": ["unknown"]},
-        {"supported_labels": ["optics", "optics"]},
-        {"multilabel": {"per_label": {"unknown": 0.3}}},
+        ({"request_timeout_seconds": "30"}, "timeout"),
+        ({"request_timeout_seconds": 10**400}, "timeout"),
+        ({"label_map": ["x"]}, "label_map"),
+        ({"label_map": {1: "acoustics"}}, "label_map"),
+        ({"label_map": {"Acoustics": 1}}, "label_map"),
+        ({"multilabel": ["x"]}, "multilabel"),
+        ({"multilabel": {"threshold": "0.5"}}, "threshold"),
+        ({"multilabel": {"threshold": None}}, "threshold"),
+        ({"multilabel": {"threshold": True}}, "threshold"),
+        ({"multilabel": {"threshold": float("nan")}}, "threshold"),
+        ({"multilabel": {"threshold": 1.5}}, "threshold"),
+        ({"multilabel": {"threshold": 10**400}}, "threshold"),
+        ({"multilabel": {"per_label": ["acoustics"]}}, "per_label"),
+        ({"multilabel": {"per_label": None}}, "per_label"),
+        ({"multilabel": {"per_label": {"acoustics": "0.4"}}}, "per_label"),
+        ({"multilabel": {"per_label": {"acoustics": True}}}, "per_label"),
+        ({"multilabel": {"per_label": {"acoustics": -0.1}}}, "per_label"),
+        ({"multilabel": {"per_label": {"not_a_label": 0.4}}}, "per_label"),
+        ({"multilabel": {"per_lable": {"acoustics": 0.7}}}, "multilabel"),
+        ({"label_map": {"Acoustics": "acoustics", "Sound": "acoustics"}}, "label_map"),
+        ({"contract": None}, "contract"),
+        *(({"contract": {name: 5}}, "contract") for name in CONTRACT_STRINGS),
     ],
 )
-def test_local_laya_configuration_validation(config):
+def test_wrongly_typed_service_configuration_raises_value_error(config, match):
+    with pytest.raises(ValueError, match=match):
+        KevModel(config=config)
+
+
+def test_per_label_thresholds_for_supported_labels_are_accepted():
+    model = KevModel(config={"multilabel": {"threshold": 0.4, "per_label": {"acoustics": 0.7}}})
+    assert model.config["multilabel"] == {"threshold": 0.4, "per_label": {"acoustics": 0.7}}
+
+
+def without(record: dict, field: str) -> dict:
+    return {key: value for key, value in record.items() if key != field}
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda payload: [payload],
+        lambda payload: without(payload, "model"),
+        lambda payload: without(payload, "taxonomy"),
+        lambda payload: payload | {"config": None},
+        lambda payload: payload | {"config": without(payload["config"], "multilabel")},
+        lambda payload: payload | {"config": without(payload["config"], "model")},
+    ],
+    ids=["list", "no_model", "no_taxonomy", "null_config", "no_multilabel", "no_config_model"],
+)
+def test_malformed_service_artifact_raises_value_error(tmp_path, edit):
+    KevModel().save(tmp_path)
+    path = tmp_path / "naltra.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps(edit(payload)), encoding="utf-8")
     with pytest.raises(ValueError):
-        LayaModel(config)
+        KevModel().load(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "{{name}}",
+        "Is this project about {field}?",
+        "{name} {field}",
+        "{0} {name}",
+        "{} {name}",
+        "{name.upper}",
+        "{name[0]}",
+        "{name!r}",
+        "{name:.0}",
+        "{name",
+        "about {name}}",
+        5,
+        None,
+    ],
+)
+def test_question_template_must_insert_the_label_name_and_nothing_else(template):
+    with pytest.raises(ValueError, match="question_template"):
+        KevModel(config={"question_template": template})
+
+
+@pytest.mark.parametrize("template", ["{name}", "Does {{this}} cover {name}?"])
+def test_question_template_gives_each_label_its_own_question(template):
+    questions = KevModel(config={"question_template": template}).questions()
+    assert questions["acoustics"] != questions["optics"]
+    assert "acoustics" in questions["acoustics"]
