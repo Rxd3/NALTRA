@@ -321,6 +321,7 @@ python scripts/build_dashboard.py --summary results/metrics/cordis_v1.1.0_ensemb
 
 | Path | Purpose |
 | --- | --- |
+| `contributions/` | One file per team member, `<NAME>_<ID>_<GITHUB>.md`: role, work done and results |
 | `configs/` | Source and translation locks (`data.yaml`), training defaults (`training.yaml`), benchmark protocol (`benchmark.yaml`: primary metric, system roles); one YAML per member in `models/` |
 | `data/raw/`, `data/processed/`, `data/splits/` | Committed CORDIS archive (extracted CSVs stay local); compressed EN, TR and code-switch splits with manifests; project split map |
 | `data/review/` | Stratified 100-project translation review sample (its human-review columns still read `pending`) and its AI-assisted audit |
