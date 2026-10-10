@@ -191,7 +191,7 @@ const SET_NAMES = Object.assign({en_test: "English", tr_test: "Turkish (MT)", cs
   cs_sentence_test: "Code-switch (sentence)", en_test_noisy: "English, noisy", tr_test_noisy: "Turkish, noisy"}, DATA.meta.set_labels || {});
 const AXIS_NAMES = {en_test: "EN", tr_test: "TR", cs_chunk_test: "CS chunk", cs_sentence_test: "CS sent.", en_test_noisy: "EN noisy", tr_test_noisy: "TR noisy"};
 const SYSTEM_NAMES = {naive_bayes: "Naive Bayes", svm: "SVM", hybrid_knn: "Hybrid-kNN", bilstm: "BiLSTM", transformer: "XLM-R",
-  kev: "Kev-0.8B", jev: "Jev", hard_majority: "Majority vote", hard_k: "k-of-M vote", hard_closed: "Hierarchy vote", soft: "Soft vote", weighted_soft: "Weighted soft vote"};
+  kev: "Kev-0.8B", jev: "Jev", laya: "Laya", hard_majority: "Majority vote", hard_k: "k-of-M vote", hard_closed: "Hierarchy vote", soft: "Soft vote", weighted_soft: "Weighted soft vote"};
 const setName = s => SET_NAMES[s] || s;
 const sysName = s => SYSTEM_NAMES[s] || s;
 const fmt = (v, d = 3) => v == null || Number.isNaN(v) ? "–" : v.toFixed(d);
