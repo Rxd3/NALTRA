@@ -7,16 +7,17 @@ Ranked by micro_f1 (ties share a rank); ablations and systems without it are unr
 | rank | system | role | architecture | model | micro_f1 | macro_f1 | hmicro_f1 | p_at_1 | top1_ece |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | svm | baseline | linear SVM over TF-IDF, one-vs-rest | TF-IDF word 1-2-grams (50k features, min_df 2, sublinear tf) + one LinearSVC (C 1.0) per label, 3-fold project-grouped Platt calibration | 0.5557 | 0.2541 | 0.6659 | 0.8667 | 0.1221 |
-| 2 | weighted_soft | new | NALTRA weighted soft vote | member probabilities weighted by val-A micro-F1, global threshold tuned on val-B | 0.5096 | 0.2066 | 0.6219 | 0.8083 | 0.2246 |
-| 3 | soft | new | NALTRA soft vote | mean member probability, global threshold tuned on val-B | 0.4638 | 0.1703 | 0.5768 | 0.7417 | 0.1792 |
+| 2 | weighted_soft | new | NALTRA weighted soft vote | raw member scores weighted by val-A micro-F1, global threshold tuned on val-B | 0.5096 | 0.2066 | 0.6219 | 0.8083 | 0.2246 |
+| 3 | soft | new | NALTRA soft vote | mean of raw member scores, global threshold tuned on val-B | 0.4638 | 0.1703 | 0.5768 | 0.7417 | 0.1792 |
 | 4 | hard_k | new | NALTRA hard vote | k-of-M vote of member label sets, k tuned on val-B for micro-F1 | 0.4496 | 0.1770 | 0.5790 | - | - |
 | 5 | hard_majority | new | NALTRA hard vote | strict majority (more than M/2) of member label sets, member thresholds tuned on val-A | 0.4105 | 0.1466 | 0.5228 | - | - |
-| 6 | hybrid_knn | new | sparse + dense retrieval kNN with reciprocal rank fusion that reimplements Laya's retrieval design (Laya itself is not run) | TF-IDF 1-2-grams (50k) cosine + intfloat/multilingual-e5-base mean-pooled embeddings (max_length 256), 50 neighbours per retriever, RRF k 60, fused neighbour label vote | 0.3770 | 0.1554 | 0.5406 | 0.6417 | 0.2915 |
+| 6 | hybrid_knn | new | sparse + dense retrieval kNN with reciprocal rank fusion (Cormack et al. 2009, k = 60) | TF-IDF 1-2-grams (50k) cosine + intfloat/multilingual-e5-base mean-pooled embeddings (max_length 256), 50 neighbours per retriever, RRF k 60, fused neighbour label vote | 0.3770 | 0.1554 | 0.5406 | 0.6417 | 0.2915 |
 | 7 | bilstm | baseline | bidirectional LSTM | release cordis_v0.5.0: 1-layer BiLSTM trained from scratch (300-d embeddings, 50k vocabulary, 256 hidden units per direction, dropout 0.2) with early stopping, which ended training after epoch 9 and kept the lowest-validation-loss epoch-7 checkpoint; then its sigmoid head refit on the frozen encoder (unweighted BCE, lr 1e-3); max_length 512 | 0.2983 | 0.1081 | 0.4507 | 0.5083 | 0.1362 |
 | 8 | naive_bayes | baseline | multinomial Naive Bayes over TF-IDF, one-vs-rest | TF-IDF word 1-2-grams (50k features, min_df 2, sublinear tf) + one binary MultinomialNB per label, alpha 0.03 | 0.2967 | 0.1342 | 0.4596 | 0.5500 | 0.2509 |
 | 9 | jev | new | hosted System One decision model (Jev), zero-shot yes/no per label | TypeSafe jev-latest via POST /v1/systemone, one noul question per direct label ("Is this project about {name}?"), no CORDIS fine-tuning by the team | 0.2771 | 0.1532 | 0.4925 | 0.3833 | 0.5878 |
 | 10 | kev | new | zero-shot yes/no decision model (open-source Jev alternative) | Kev-0.8B: jaredpalmer/kev-0.8b at bf75a6a8848ea6960ff2ed108d9ed44c2941174f (tag v1.0) on Qwen/Qwen3.5-0.8B-Base, System One server; one yes/no ("noul") question per direct label, p(yes) for "Is this project about {name}?"; not fine-tuned on CORDIS by the team | 0.2653 | 0.1586 | 0.4718 | 0.3333 | 0.6107 |
 | 11 | transformer | baseline | Transformer encoder (RoBERTa family) | release cordis_v0.5.0: xlm-roberta-base fine-tuned for 3 epochs (lr 2e-5), then its sigmoid head refit on the frozen encoder for up to 20 epochs (unweighted BCE, lr 1e-3); max_length 512 | 0.2649 | 0.0911 | 0.4594 | 0.3833 | 0.0725 |
+| 12 | laya | new | local pretrained multilingual choice-question model (Laya), zero-shot | convaiinnovations/laya multilingual checkpoint at 7b928d828b7b0e022f929d9bd2e44165aa270148 via laya SDK 0.4.1; one two-option question per direct label (A = the topic, B = other research topics), P(A) as the label score; not fine-tuned on CORDIS | 0.0675 | 0.0314 | 0.2123 | 0.1333 | 0.8327 |
 | - | hard_closed | new | NALTRA hierarchy-closed hard vote | k-of-M vote over ancestor-closed 586-node label sets, k tuned on val-B | - | - | 0.6126 | - | - |
 | - | leave_one_out(-svm) | new | NALTRA hard vote (ablation) | strict majority of the M-1 members left after dropping each member in turn | 0.3883 | - | - | - | - |
 | - | leave_one_out(-hybrid_knn) | new | NALTRA hard vote (ablation) | strict majority of the M-1 members left after dropping each member in turn | 0.4404 | - | - | - | - |
@@ -30,16 +31,17 @@ Ranked by micro_f1 (ties share a rank); ablations and systems without it are unr
 | rank | system | role | architecture | model | micro_f1 | macro_f1 | hmicro_f1 | p_at_1 | top1_ece |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | svm | baseline | linear SVM over TF-IDF, one-vs-rest | TF-IDF word 1-2-grams (50k features, min_df 2, sublinear tf) + one LinearSVC (C 1.0) per label, 3-fold project-grouped Platt calibration | 0.4893 | 0.2157 | 0.6189 | 0.7917 | 0.1391 |
-| 2 | weighted_soft | new | NALTRA weighted soft vote | member probabilities weighted by val-A micro-F1, global threshold tuned on val-B | 0.4678 | 0.1869 | 0.5838 | 0.7750 | 0.2121 |
-| 3 | soft | new | NALTRA soft vote | mean member probability, global threshold tuned on val-B | 0.4281 | 0.1617 | 0.5379 | 0.7250 | 0.1735 |
+| 2 | weighted_soft | new | NALTRA weighted soft vote | raw member scores weighted by val-A micro-F1, global threshold tuned on val-B | 0.4678 | 0.1869 | 0.5838 | 0.7750 | 0.2121 |
+| 3 | soft | new | NALTRA soft vote | mean of raw member scores, global threshold tuned on val-B | 0.4281 | 0.1617 | 0.5379 | 0.7250 | 0.1735 |
 | 4 | hard_k | new | NALTRA hard vote | k-of-M vote of member label sets, k tuned on val-B for micro-F1 | 0.4239 | 0.1685 | 0.5580 | - | - |
 | 5 | hard_majority | new | NALTRA hard vote | strict majority (more than M/2) of member label sets, member thresholds tuned on val-A | 0.3973 | 0.1376 | 0.5147 | - | - |
-| 6 | hybrid_knn | new | sparse + dense retrieval kNN with reciprocal rank fusion that reimplements Laya's retrieval design (Laya itself is not run) | TF-IDF 1-2-grams (50k) cosine + intfloat/multilingual-e5-base mean-pooled embeddings (max_length 256), 50 neighbours per retriever, RRF k 60, fused neighbour label vote | 0.3821 | 0.1563 | 0.5429 | 0.6167 | 0.2782 |
+| 6 | hybrid_knn | new | sparse + dense retrieval kNN with reciprocal rank fusion (Cormack et al. 2009, k = 60) | TF-IDF 1-2-grams (50k) cosine + intfloat/multilingual-e5-base mean-pooled embeddings (max_length 256), 50 neighbours per retriever, RRF k 60, fused neighbour label vote | 0.3821 | 0.1563 | 0.5429 | 0.6167 | 0.2782 |
 | 7 | naive_bayes | baseline | multinomial Naive Bayes over TF-IDF, one-vs-rest | TF-IDF word 1-2-grams (50k features, min_df 2, sublinear tf) + one binary MultinomialNB per label, alpha 0.03 | 0.2980 | 0.1224 | 0.4634 | 0.5167 | 0.2094 |
 | 8 | jev | new | hosted System One decision model (Jev), zero-shot yes/no per label | TypeSafe jev-latest via POST /v1/systemone, one noul question per direct label ("Is this project about {name}?"), no CORDIS fine-tuning by the team | 0.2786 | 0.1474 | 0.4937 | 0.3500 | 0.6178 |
 | 9 | bilstm | baseline | bidirectional LSTM | release cordis_v0.5.0: 1-layer BiLSTM trained from scratch (300-d embeddings, 50k vocabulary, 256 hidden units per direction, dropout 0.2) with early stopping, which ended training after epoch 9 and kept the lowest-validation-loss epoch-7 checkpoint; then its sigmoid head refit on the frozen encoder (unweighted BCE, lr 1e-3); max_length 512 | 0.2779 | 0.0933 | 0.4526 | 0.4750 | 0.1184 |
 | 10 | transformer | baseline | Transformer encoder (RoBERTa family) | release cordis_v0.5.0: xlm-roberta-base fine-tuned for 3 epochs (lr 2e-5), then its sigmoid head refit on the frozen encoder for up to 20 epochs (unweighted BCE, lr 1e-3); max_length 512 | 0.2413 | 0.0776 | 0.4235 | 0.3417 | 0.0960 |
 | 11 | kev | new | zero-shot yes/no decision model (open-source Jev alternative) | Kev-0.8B: jaredpalmer/kev-0.8b at bf75a6a8848ea6960ff2ed108d9ed44c2941174f (tag v1.0) on Qwen/Qwen3.5-0.8B-Base, System One server; one yes/no ("noul") question per direct label, p(yes) for "Is this project about {name}?"; not fine-tuned on CORDIS by the team | 0.2202 | 0.1473 | 0.4418 | 0.2500 | 0.7028 |
+| 12 | laya | new | local pretrained multilingual choice-question model (Laya), zero-shot | convaiinnovations/laya multilingual checkpoint at 7b928d828b7b0e022f929d9bd2e44165aa270148 via laya SDK 0.4.1; one two-option question per direct label (A = the topic, B = other research topics), P(A) as the label score; not fine-tuned on CORDIS | 0.0463 | 0.0288 | 0.2125 | 0.0667 | 0.9194 |
 | - | hard_closed | new | NALTRA hierarchy-closed hard vote | k-of-M vote over ancestor-closed 586-node label sets, k tuned on val-B | - | - | 0.5899 | - | - |
 | - | leave_one_out(-svm) | new | NALTRA hard vote (ablation) | strict majority of the M-1 members left after dropping each member in turn | 0.3757 | - | - | - | - |
 | - | leave_one_out(-hybrid_knn) | new | NALTRA hard vote (ablation) | strict majority of the M-1 members left after dropping each member in turn | 0.3976 | - | - | - | - |
@@ -79,6 +81,7 @@ all_negative_accuracy is the per-label accuracy of predicting no label at all.
 | kev | 0.2653 | 0.1586 | 0.4718 | 0.3333 |
 | jev | 0.2771 | 0.1532 | 0.4925 | 0.3833 |
 | naive_bayes | 0.2967 | 0.1342 | 0.4596 | 0.5500 |
+| laya | 0.0675 | 0.0314 | 0.2123 | 0.1333 |
 | hard_majority | 0.4105 | 0.1466 | 0.5228 | - |
 | hard_k | 0.4496 | 0.1770 | 0.5790 | - |
 | hard_closed | - | - | 0.6126 | - |
@@ -96,6 +99,7 @@ all_negative_accuracy is the per-label accuracy of predicting no label at all.
 | kev | 0.2202 | 0.1473 | 0.4418 | 0.2500 |
 | jev | 0.2786 | 0.1474 | 0.4937 | 0.3500 |
 | naive_bayes | 0.2980 | 0.1224 | 0.4634 | 0.5167 |
+| laya | 0.0463 | 0.0288 | 0.2125 | 0.0667 |
 | hard_majority | 0.3973 | 0.1376 | 0.5147 | - |
 | hard_k | 0.4239 | 0.1685 | 0.5580 | - |
 | hard_closed | - | - | 0.5899 | - |
@@ -126,6 +130,7 @@ Paired project bootstrap, 10000 resamples, 95% percentile intervals, Holm-adjust
 | kev | en_test_kev->tr_test_kev | +0.0451 [+0.0206, +0.0695] | 0.0007999 |
 | jev | en_test_kev->tr_test_kev | -0.0015 [-0.0178, +0.0140] | 0.8493 |
 | naive_bayes | en_test_kev->tr_test_kev | -0.0013 [-0.0290, +0.0264] | 0.9191 |
+| laya | en_test_kev->tr_test_kev | +0.0212 [-0.0047, +0.0481] | 0.1118 |
 | hard_majority | en_test_kev->tr_test_kev | +0.0132 [-0.0196, +0.0443] | 0.42 |
 | hard_k | en_test_kev->tr_test_kev | +0.0257 [-0.0066, +0.0584] | 0.1202 |
 | soft | en_test_kev->tr_test_kev | +0.0357 [+0.0051, +0.0659] | 0.0238 |

@@ -6,7 +6,8 @@
     "transformer": 0.12,
     "kev": 0.88,
     "jev": 0.88,
-    "naive_bayes": 0.16
+    "naive_bayes": 0.16,
+    "laya": 0.98
   },
   "val_a_micro_f1": {
     "svm": 0.5330188679245284,
@@ -15,7 +16,8 @@
     "transformer": 0.23931623931623933,
     "kev": 0.2883895131086142,
     "jev": 0.3325842696629214,
-    "naive_bayes": 0.2769857433808554
+    "naive_bayes": 0.2769857433808554,
+    "laya": 0.0644122383252818
   },
   "k": 3,
   "k_closed": 3,
@@ -32,9 +34,10 @@
     "jev"
   ],
   "baselines": [
-    "naive_bayes"
+    "naive_bayes",
+    "laya"
   ],
-  "code_commit": "ea33ff8",
+  "code_commit": "97f7e08",
   "environment": {
     "python_version": "3.13.1",
     "platform": "win32",
@@ -273,6 +276,36 @@
       },
       "config_sha256": "68bc790e4633d1a0f2ef9a6cfc52c4c0ae0d17d8ff6893aa7b927a75fc901e83"
     },
+    "laya/en_val_kev": {
+      "npz_sha256": "72f3c3cafee96f3974001a17758352f4c29420a5907b06569e6451230c1149eb",
+      "input_sha256": "49f288f305b9f17ec208bc2b4b939d98f2d69267ee670f158c806921baea475d",
+      "artifact_sha256": "43f3e0b2761a7d575eb38fe6f6ab849e6d6a79005b67192cc3c893aed7731138",
+      "artifact_files_sha256": "4baee74fc3b5c9a9f77b843ead9c2b14004b3ab32a2e0128b2276f8087a2d9b1",
+      "artifact_files": {
+        "encoder/config.json": "83f6916d13ef0f556ac461f28308dc2bffa7ebeadee8ec9e2db5812020ea5bb4",
+        "model.safetensors": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+        "naltra.json": "43f3e0b2761a7d575eb38fe6f6ab849e6d6a79005b67192cc3c893aed7731138",
+        "rl_agent_config.json": "25061739243b617ad88d1219ba6f8a9c86c5881ca28df024fa2d9b3b2fcc30c6",
+        "tokenizer/tokenizer.json": "609d8f4c067cd3950f88594c5a802616cea245823836ef5848ee4fc40aab5b6f",
+        "tokenizer/tokenizer_config.json": "6c6b2d8e3c84ce0e671c129cd6b374b235d6f9863042a5836358d00a89bbb5a1"
+      },
+      "config_sha256": "bb3244e3a247c28951d5b36480fb258d135d50666e055007d1d17f056bd30d50"
+    },
+    "laya/tr_val_kev": {
+      "npz_sha256": "85d29032620da5615cc29d9f961fdd9e5a9278cc6ba6e2f41a88ca136ec24179",
+      "input_sha256": "68ff9f5c2882daa1e472fab76758bcdf3574892e59a56a4bef29171feb70e0e3",
+      "artifact_sha256": "43f3e0b2761a7d575eb38fe6f6ab849e6d6a79005b67192cc3c893aed7731138",
+      "artifact_files_sha256": "4baee74fc3b5c9a9f77b843ead9c2b14004b3ab32a2e0128b2276f8087a2d9b1",
+      "artifact_files": {
+        "encoder/config.json": "83f6916d13ef0f556ac461f28308dc2bffa7ebeadee8ec9e2db5812020ea5bb4",
+        "model.safetensors": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+        "naltra.json": "43f3e0b2761a7d575eb38fe6f6ab849e6d6a79005b67192cc3c893aed7731138",
+        "rl_agent_config.json": "25061739243b617ad88d1219ba6f8a9c86c5881ca28df024fa2d9b3b2fcc30c6",
+        "tokenizer/tokenizer.json": "609d8f4c067cd3950f88594c5a802616cea245823836ef5848ee4fc40aab5b6f",
+        "tokenizer/tokenizer_config.json": "6c6b2d8e3c84ce0e671c129cd6b374b235d6f9863042a5836358d00a89bbb5a1"
+      },
+      "config_sha256": "bb3244e3a247c28951d5b36480fb258d135d50666e055007d1d17f056bd30d50"
+    },
     "svm/en_test_kev": {
       "npz_sha256": "c759148117294489bad2395906c94feecbd5b7bc6e30624404ccfbbbf219c4cd",
       "input_sha256": "b5a7fdb1aeda7272fed8ae248b34aa900b272055bc4555e99a08442a6414c67e",
@@ -348,6 +381,21 @@
       },
       "config_sha256": "68bc790e4633d1a0f2ef9a6cfc52c4c0ae0d17d8ff6893aa7b927a75fc901e83"
     },
+    "laya/en_test_kev": {
+      "npz_sha256": "713db7062f8a97928fdf3f9d4339008b1517507831662d865503b4f72b8ae6d9",
+      "input_sha256": "b5a7fdb1aeda7272fed8ae248b34aa900b272055bc4555e99a08442a6414c67e",
+      "artifact_sha256": "43f3e0b2761a7d575eb38fe6f6ab849e6d6a79005b67192cc3c893aed7731138",
+      "artifact_files_sha256": "4baee74fc3b5c9a9f77b843ead9c2b14004b3ab32a2e0128b2276f8087a2d9b1",
+      "artifact_files": {
+        "encoder/config.json": "83f6916d13ef0f556ac461f28308dc2bffa7ebeadee8ec9e2db5812020ea5bb4",
+        "model.safetensors": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+        "naltra.json": "43f3e0b2761a7d575eb38fe6f6ab849e6d6a79005b67192cc3c893aed7731138",
+        "rl_agent_config.json": "25061739243b617ad88d1219ba6f8a9c86c5881ca28df024fa2d9b3b2fcc30c6",
+        "tokenizer/tokenizer.json": "609d8f4c067cd3950f88594c5a802616cea245823836ef5848ee4fc40aab5b6f",
+        "tokenizer/tokenizer_config.json": "6c6b2d8e3c84ce0e671c129cd6b374b235d6f9863042a5836358d00a89bbb5a1"
+      },
+      "config_sha256": "bb3244e3a247c28951d5b36480fb258d135d50666e055007d1d17f056bd30d50"
+    },
     "svm/tr_test_kev": {
       "npz_sha256": "3e2b53e1649c32ee191870caa6e32b46183a736c358bd2f584cd9f6b37cfeeb0",
       "input_sha256": "3b4ae1994c57767f91586f14adde8d9f7a6b992ebfeccdb0525a8a3d7bf7471d",
@@ -422,6 +470,21 @@
         "naltra.json": "f4a6daecdf89a7df2a48135ec177a18cba0ed5bc50caea9d756767a4d787dfed"
       },
       "config_sha256": "68bc790e4633d1a0f2ef9a6cfc52c4c0ae0d17d8ff6893aa7b927a75fc901e83"
+    },
+    "laya/tr_test_kev": {
+      "npz_sha256": "a7c6cce116b27dcf10b23404016ee888d7377e58f3a7eb2a9ac4b05d134b3080",
+      "input_sha256": "3b4ae1994c57767f91586f14adde8d9f7a6b992ebfeccdb0525a8a3d7bf7471d",
+      "artifact_sha256": "43f3e0b2761a7d575eb38fe6f6ab849e6d6a79005b67192cc3c893aed7731138",
+      "artifact_files_sha256": "4baee74fc3b5c9a9f77b843ead9c2b14004b3ab32a2e0128b2276f8087a2d9b1",
+      "artifact_files": {
+        "encoder/config.json": "83f6916d13ef0f556ac461f28308dc2bffa7ebeadee8ec9e2db5812020ea5bb4",
+        "model.safetensors": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+        "naltra.json": "43f3e0b2761a7d575eb38fe6f6ab849e6d6a79005b67192cc3c893aed7731138",
+        "rl_agent_config.json": "25061739243b617ad88d1219ba6f8a9c86c5881ca28df024fa2d9b3b2fcc30c6",
+        "tokenizer/tokenizer.json": "609d8f4c067cd3950f88594c5a802616cea245823836ef5848ee4fc40aab5b6f",
+        "tokenizer/tokenizer_config.json": "6c6b2d8e3c84ce0e671c129cd6b374b235d6f9863042a5836358d00a89bbb5a1"
+      },
+      "config_sha256": "bb3244e3a247c28951d5b36480fb258d135d50666e055007d1d17f056bd30d50"
     }
   },
   "metrics": {
@@ -586,6 +649,29 @@
         "brier": 0.007407350486694124,
         "top1_ece": 0.25093540457698205,
         "top1_accuracy": 0.55
+      },
+      "laya": {
+        "micro_precision": 0.0729483282674772,
+        "micro_recall": 0.06282722513089005,
+        "micro_f1": 0.06751054852320675,
+        "macro_precision": 0.03724453840732911,
+        "macro_recall": 0.03206483439041579,
+        "macro_f1": 0.03140541628913722,
+        "jaccard": 0.03227471194382959,
+        "document_f1": 0.049907853820897304,
+        "mean_predicted_labels": 2.7416666666666667,
+        "hmicro_precision": 0.27903871829105475,
+        "hmicro_recall": 0.17131147540983607,
+        "hmicro_f1": 0.2122905027932961,
+        "p_at_1": 0.13333333333333333,
+        "p_at_3": 0.12222222222222222,
+        "p_at_5": 0.10333333333333333,
+        "r_precision": 0.10458333333333333,
+        "ndcg_at_5": 0.15909027887752428,
+        "ece": 0.5301880448594,
+        "brier": 0.3222230185008267,
+        "top1_ece": 0.8327216652532418,
+        "top1_accuracy": 0.13333333333333333
       },
       "hard_majority": {
         "micro_precision": 0.5506607929515418,
@@ -830,6 +916,29 @@
         "top1_ece": 0.20939621299039574,
         "top1_accuracy": 0.5166666666666667
       },
+      "laya": {
+        "micro_precision": 0.03203203203203203,
+        "micro_recall": 0.08376963350785341,
+        "micro_f1": 0.04634322954380883,
+        "macro_precision": 0.030757743548441224,
+        "macro_recall": 0.04242424242424241,
+        "macro_f1": 0.028837920545386884,
+        "jaccard": 0.025989590604225222,
+        "document_f1": 0.04475135067733091,
+        "mean_predicted_labels": 8.325,
+        "hmicro_precision": 0.17398119122257052,
+        "hmicro_recall": 0.27295081967213114,
+        "hmicro_f1": 0.21250797702616464,
+        "p_at_1": 0.06666666666666667,
+        "p_at_3": 0.04722222222222222,
+        "p_at_5": 0.05,
+        "r_precision": 0.04402777777777778,
+        "ndcg_at_5": 0.07262791340171751,
+        "ece": 0.5872864609947324,
+        "brier": 0.39035436885287367,
+        "top1_ece": 0.9193833336234093,
+        "top1_accuracy": 0.06666666666666667
+      },
       "hard_majority": {
         "micro_precision": 0.5566037735849056,
         "micro_recall": 0.3089005235602094,
@@ -946,7 +1055,7 @@
       },
       "hybrid_knn": {
         "role": "new",
-        "architecture": "sparse + dense retrieval kNN with reciprocal rank fusion that reimplements Laya's retrieval design (Laya itself is not run)",
+        "architecture": "sparse + dense retrieval kNN with reciprocal rank fusion (Cormack et al. 2009, k = 60)",
         "model": "TF-IDF 1-2-grams (50k) cosine + intfloat/multilingual-e5-base mean-pooled embeddings (max_length 256), 50 neighbours per retriever, RRF k 60, fused neighbour label vote"
       },
       "bilstm": {
@@ -974,6 +1083,11 @@
         "architecture": "multinomial Naive Bayes over TF-IDF, one-vs-rest",
         "model": "TF-IDF word 1-2-grams (50k features, min_df 2, sublinear tf) + one binary MultinomialNB per label, alpha 0.03"
       },
+      "laya": {
+        "role": "new",
+        "architecture": "local pretrained multilingual choice-question model (Laya), zero-shot",
+        "model": "convaiinnovations/laya multilingual checkpoint at 7b928d828b7b0e022f929d9bd2e44165aa270148 via laya SDK 0.4.1; one two-option question per direct label (A = the topic, B = other research topics), P(A) as the label score; not fine-tuned on CORDIS"
+      },
       "hard_majority": {
         "role": "new",
         "architecture": "NALTRA hard vote",
@@ -992,12 +1106,12 @@
       "soft": {
         "role": "new",
         "architecture": "NALTRA soft vote",
-        "model": "mean member probability, global threshold tuned on val-B"
+        "model": "mean of raw member scores, global threshold tuned on val-B"
       },
       "weighted_soft": {
         "role": "new",
         "architecture": "NALTRA weighted soft vote",
-        "model": "member probabilities weighted by val-A micro-F1, global threshold tuned on val-B"
+        "model": "raw member scores weighted by val-A micro-F1, global threshold tuned on val-B"
       },
       "leave_one_out": {
         "role": "new",
@@ -1390,6 +1504,30 @@
             "p_value": 0.0115988401159884,
             "p_resolution": 0.00019998000199980003,
             "p_holm": 0.0115988401159884
+          }
+        }
+      },
+      "laya": {
+        "en_test_kev->tr_test_kev": {
+          "micro_f1": {
+            "a": 0.06751054525375366,
+            "b": 0.046343229711055756,
+            "difference": 0.021167315542697906,
+            "ci_low": -0.004687727056443691,
+            "ci_high": 0.04814651701599358,
+            "p_value": 0.11178882111788821,
+            "p_resolution": 0.00019998000199980003,
+            "p_holm": 0.11178882111788821
+          },
+          "macro_f1": {
+            "a": 0.03140541677999194,
+            "b": 0.028837920873412116,
+            "difference": 0.002567495906579821,
+            "ci_low": -0.007255637592165465,
+            "ci_high": 0.00805020452561703,
+            "p_value": 0.9443055694430557,
+            "p_resolution": 0.00019998000199980003,
+            "p_holm": 0.9443055694430557
           }
         }
       },
