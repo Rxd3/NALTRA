@@ -12,9 +12,8 @@ if str(REPO_ROOT / "src") not in sys.path:
 
 from naltra.data.manifest import GenerationCodeMismatch, validate_manifest  # noqa: E402
 from naltra.data.noise import create_noisy_record  # noqa: E402
-from naltra.data.validation import (  # noqa: E402, F401
+from naltra.data.validation import (  # noqa: E402
     SPLITS,
-    check_disjoint_partitions,
     check_input_inventory,
     load_audit_records,
     validate_code_switch_release,
