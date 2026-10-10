@@ -1,6 +1,24 @@
 {
   "heldout_root": "humanities",
   "protocol": "Protocol: every project touching the held-out EuroSciVoc root is removed from training and validation, so neither its texts nor its labels are seen. In-distribution test projects have no held-out label; OOD test projects carry only held-out-root labels; projects that mix both are excluded as ambiguous. The OOD score is 1 - max label probability. Inputs pass the shared release audit and cross-partition isolation check before any filtering or fitting; AUROC carries a stratified 2,000-resample bootstrap 95% interval.",
+  "code_commit": "cdf5f74",
+  "environment": {
+    "python_version": "3.13.1",
+    "platform": "win32",
+    "package_versions": {
+      "numpy": "2.5.3",
+      "torch": "2.14.1+cu126",
+      "transformers": "5.19.0",
+      "scikit-learn": "1.9.1",
+      "pyyaml": "6.0.3",
+      "huggingface-hub": "1.33.0",
+      "httpx": "0.28.1"
+    }
+  },
+  "bootstrap_seeds": {
+    "id": 42,
+    "ood": 43
+  },
   "taxonomy_sha256": "0dda384c528199fc0dd4f170ce2a677bb5009f569802b963b5c9cd6ed1299b84",
   "inputs": {
     "en/train": "25ce2f59f0ee0d083292eebf536e91941c8efb345474bbfaacc67e78c444a2a4",
@@ -1011,9 +1029,9 @@
         "taxonomy_sha256": "0dda384c528199fc0dd4f170ce2a677bb5009f569802b963b5c9cd6ed1299b84",
         "label_map_sha256": "4cf881e6d78a9f9b972be861b684417ee2fdd2cab67903fe5ae40192ab4ec20a"
       },
-      "commit": "2e847e0",
-      "naltra_json_sha256": "cec6bd5997bc7884c0f94379936be23e27b3bcbd1fec31185c5401660e573820",
-      "estimator_sha256": "7f09cad296259300cf612dd0884f11f3b511bd2b7e13ab776e60cc94d2e28e5d"
+      "commit": "cdf5f74",
+      "naltra_json_sha256": "ba87b6824e5faf6f0f1b8bd07abcb5c9eda827141db779beeef5ceafe3301de8",
+      "estimator_sha256": "332a66c7bb4b45be566a1eae90ecd6e4d93bf893a066893159691f2b385c3fc5"
     },
     "svm": {
       "config": {
@@ -1067,9 +1085,9 @@
         "taxonomy_sha256": "0dda384c528199fc0dd4f170ce2a677bb5009f569802b963b5c9cd6ed1299b84",
         "label_map_sha256": "4cf881e6d78a9f9b972be861b684417ee2fdd2cab67903fe5ae40192ab4ec20a"
       },
-      "commit": "2e847e0",
-      "naltra_json_sha256": "8e08c4e2579c39a1e9b4937a0631ab8ac2a75f7ab6f68442e7be69c32a308d36",
-      "estimator_sha256": "670e48e98d30ff7b85a8a332bf2a60ac48cb0687e2570c2e6ce6ac30e9bec1a9"
+      "commit": "cdf5f74",
+      "naltra_json_sha256": "3330132bdbe03d19c113efba7c98d9f1a1e50c4e7fa000264a45e38030ae6096",
+      "estimator_sha256": "864d28bf860610ea2f2682399080e1d8d773bb118f9871a5ec531069ad189f74"
     }
   }
 }
