@@ -115,7 +115,7 @@ in this repository. Details: [dataset card](docs/dataset.md#shipped-turkish-rele
 | `hybrid_knn` | new | sparse + dense retrieval kNN with reciprocal rank fusion (Cormack et al. 2009, k = 60) | TF-IDF cosine and `intfloat/multilingual-e5-base` neighbours (50 each), RRF k 60, then a label vote | Trained and scored (`cordis_v1.1.0_knn`) |
 | `kev` | new | zero-shot yes/no decision model (open Jev alternative) | Kev-0.8B (`jaredpalmer/kev-0.8b` @ `bf75a6a8`), one yes/no question per label to a local server | Scored on 80 validation and 120 test project pairs (about 75 s per project on a GTX 1650); needs its server ([runbook](docs/runbook.md#5-kev-server-wsl2-ubuntu)) |
 | `jev` | new | hosted System One decision model, zero-shot yes/no per label | TypeSafe `jev-latest`, the same 473 questions as Kev | Scored on the same project-pair samples as Kev; needs `JEV_API_KEY` and `JEV_API_BASE_URL=https://api.typesafe.ai` in `.env` |
-| `laya` | new | local pretrained multilingual choice-question model, zero-shot | `convaiinnovations/laya` multilingual checkpoint @ `7b928d82` (laya SDK 0.4.1), one two-option question per label (the topic or other research topics), P(topic) | Being scored on the project-pair samples (results pending), from an artifact built by `scripts/prepare_laya.py` (about 145 s per document on a GTX 1650) |
+| `laya` | new | local pretrained multilingual choice-question model, zero-shot | `convaiinnovations/laya` multilingual checkpoint @ `7b928d82` (laya SDK 0.4.1), one two-option question per label (the topic or other research topics), P(topic) | Scored on the project-pair samples as a non-voting member (0.068 EN / 0.046 TR micro-F1), from an artifact built by `scripts/prepare_laya.py` (about 145 s per document on a GTX 1650) |
 | votes | new | NALTRA hard and soft votes | strict majority, tuned k-of-M, hierarchy-closed k-of-M; mean or val-A micro-F1-weighted mean of member scores; leave-one-out majority per member | Computed offline from the dumps, so no model is re-run to try another vote |
 
 In `cordis_v0.5.0` (teammate-trained) the fully trained `bilstm` and `transformer` encoders
@@ -189,6 +189,7 @@ macro-F1 (at most 224/473 = 0.474) is not comparable to the full test sets:
 | `jev` | new | 0.277 | 0.279 | -0.002 [-0.018, 0.014], not significant |
 | `kev` | new | 0.265 | 0.220 | 0.045 [0.021, 0.070] |
 | `transformer` | baseline | 0.265 | 0.241 | 0.024 [-0.010, 0.057], not significant |
+| `laya` | new | 0.068 | 0.046 | 0.021 [-0.005, 0.048], not significant |
 
 - A calibrated linear SVM is the most accurate member on every set, and none of the tested
   votes beats it: the best ensemble (weighted soft) is 0.036 [0.031, 0.040] micro-F1 below
@@ -202,6 +203,9 @@ macro-F1 (at most 224/473 = 0.474) is not comparable to the full test sets:
   on English, scores above XLM-R (0.277 vs 0.265, untested), and shows no detectable EN -> TR
   drop (-0.002 [-0.018, 0.014], Holm p 0.85); the open Kev-0.8B is level with XLM-R on
   English but drops 0.045 on Turkish.
+- Laya, a pretrained multilingual choice-question model used without CORDIS fine-tuning,
+  scores only 0.068 English / 0.046 Turkish on the sample (non-voting; threshold 0.98 tuned
+  on val-A): a negative result for this zero-shot setup. Fine-tuning was not evaluated.
 - The neural members are weak (macro-F1 0.16 BiLSTM, 0.12 XLM-R), and XLM-R scores below
   Naive Bayes on English (0.248 vs 0.278 micro-F1). This is a compute-budget result: XLM-R
   was fine-tuned for 3 epochs with validation loss still falling (0.0382 to 0.0345), and the
