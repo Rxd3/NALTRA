@@ -1,0 +1,22 @@
+model: kev
+enabled: true
+# Local open-weights System One server (github.com/jaredpalmer/kev, Kev-0.8B under WSL2).
+# The server ignores the key, but NALTRA requires one: set KEV_API_KEY=local in .env.
+api_key_env: KEV_API_KEY
+base_url_env: KEV_API_BASE_URL
+# One request carries a yes/no question for every supported label.
+request_timeout_seconds: 300
+contract:
+  configured: true
+  request_path: v1/systemone
+  text_field: state
+  scores_path: answers
+  auth_header: Authorization
+  auth_prefix: "Bearer "
+question_template: "Is this project about {name}?"
+# Empty means every direct EuroSciVoc label in taxonomy/taxonomy.json.
+supported_labels: []
+label_map: {}
+multilabel:
+  threshold: 0.5
+  per_label: {}

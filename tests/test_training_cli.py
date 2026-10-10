@@ -11,12 +11,12 @@ from naltra.models.neural import merge_config
 
 @pytest.fixture
 def prepared_track(monkeypatch):
-    def prepare(dataset, spec, heldout):
+    def prepare(dataset, spec):
         return {
             "train": records("train"),
             "validation": records("validation"),
-            "track": "clean",
-            "provenance": {"dataset": dataset, "track": "clean"},
+            "track": "en_direct",
+            "provenance": {"dataset": dataset, "track": "en_direct"},
         }
 
     monkeypatch.setattr(train_all, "prepare_track", prepare)
@@ -38,13 +38,13 @@ def test_smoke_orchestration_and_independent_failures(
 
         monkeypatch.setitem(train_all.MODEL_TYPES, "bilstm", BrokenModel)
     result = train_all.main(
-        ["--datasets", "sib200", "--smoke", "--device", "cpu", "--output-dir", str(tmp_path)]
+        ["--datasets", "cordis_h2020", "--smoke", "--device", "cpu", "--output-dir", str(tmp_path)]
     )
     assert result == int(fail_bilstm)
     summary = json.loads((tmp_path / "training_summary.json").read_text())
     assert summary[0]["status"] == ("failed" if fail_bilstm else "success")
     assert summary[1]["status"] == "success"
-    artifact = tmp_path / "sib200/clean_smoke/transformer/naltra.json"
+    artifact = tmp_path / "cordis_h2020/en_direct_smoke/transformer/naltra.json"
     metadata = json.loads(artifact.read_text())
     assert metadata["metadata"]["smoke"] is True
     assert metadata["config"]["architecture"]["pretrained_name"] == "tiny-offline-smoke"
@@ -58,19 +58,19 @@ def test_audit_failure_prevents_training_and_is_reported(tmp_path, monkeypatch):
     monkeypatch.setattr(
         train_all, "tiny_transformer", lambda *args: pytest.fail("initialized before audit")
     )
-    assert train_all.main(["--datasets", "sib200", "--smoke", "--output-dir", str(tmp_path)]) == 1
+    arguments = ["--datasets", "cordis_h2020", "--smoke", "--output-dir", str(tmp_path)]
+    assert train_all.main(arguments) == 1
     summary = json.loads((tmp_path / "training_summary.json").read_text())
     assert len(summary) == 2
     assert all(run["status"] == "failed" and "stale manifest" in run["error"] for run in summary)
-    assert not (tmp_path / "sib200").exists()
+    assert not (tmp_path / "cordis_h2020").exists()
 
 
 @pytest.mark.parametrize(
     "arguments",
     [
-        ["--models", "svm"],
+        ["--models", "kev"],
         ["--epochs", "0"],
-        ["--heldout-topic", "optics"],
         ["--models", "bilstm", "bilstm"],
     ],
 )
@@ -80,11 +80,78 @@ def test_cli_rejects_unsupported_requests(arguments):
     assert result.value.code == 2
 
 
+def test_cli_offers_only_cordis_datasets():
+    with pytest.raises(SystemExit) as result:
+        train_all.parser().parse_args(["--datasets", "unknown"])
+    assert result.value.code == 2
+
+
+def test_smoke_help_names_the_encoder_hybrid_knn_still_needs():
+    (smoke,) = [a for a in train_all.parser()._actions if "--smoke" in a.option_strings]
+    assert "hybrid_knn" in smoke.help and "Hugging Face" in smoke.help
+
+
+def test_cli_has_no_legacy_heldout_topic_option():
+    with pytest.raises(SystemExit) as result:
+        train_all.parser().parse_args(["--datasets", "cordis_h2020", "--heldout-topic", "optics"])
+    assert result.value.code == 2
+
+
 def test_smoke_records_do_not_introduce_validation_only_targets():
     track = {"train": records("train"), "validation": records("validation")}
     train, validation = train_all.smoke_records(track, 1)
     assert len(train) == len(validation) == 1
     assert all(set(record["labels"]) <= {"acoustics"} for record in validation)
+
+
+@pytest.mark.parametrize("prebuilt", [False, True])
+def test_cordis_track_routes_to_the_selected_audit(tmp_path, monkeypatch, prebuilt):
+    from naltra.data import validation
+
+    hashes = {"en": {split: split[0] * 64 for split in ("train", "validation", "test")}}
+
+    def release(audit):
+        def run(directory, languages):
+            rows = {split: [] for split in ("train", "validation", "test")}
+            result = {
+                "corpora": {"en": rows},
+                "manifests": {},
+                "label_universe": ["optics"],
+                "split_sha256": hashes,
+            }
+            return {**result, "audit": audit} if audit == "prebuilt_records_only" else result
+
+        return run
+
+    monkeypatch.setattr(validation, "validate_cordis_release", release("full"))
+    monkeypatch.setattr(
+        validation, "validate_prebuilt_cordis_release", release("prebuilt_records_only")
+    )
+    spec = {"path": str(tmp_path), "languages": ["en"]}
+    if prebuilt:
+        spec["release"] = "prebuilt"
+    track = train_all.prepare_track("cordis_h2020", spec)
+    expected = "prebuilt_records_only" if prebuilt else "full"
+    assert track["provenance"]["release_audit"] == expected
+    assert track["provenance"]["manifest_sha256_by_language"] == {}
+    assert track["provenance"]["split_sha256"] == hashes
+
+
+def test_calibration_smoke_subset_keeps_only_labels_with_enough_examples():
+    def row(index, labels):
+        return {"id": f"r{index}", "labels": labels}
+
+    common = [row(i, ["a"] if i % 2 else ["b"]) for i in range(12)]
+    rare = [row(100, ["a", "rare"]), row(101, ["b", "rare"])]
+    track = {"train": [*rare, *common], "validation": [row(200, ["a", "rare"])]}
+    train, validation = train_all.smoke_records(track, 14, min_positives=3)
+    counts = {}
+    for record in train:
+        for label in record["labels"]:
+            counts[label] = counts.get(label, 0) + 1
+    assert set(counts) == {"a", "b"}
+    assert all(3 <= count <= len(train) - 3 for count in counts.values())
+    assert validation and all(set(r["labels"]) <= {"a", "b"} for r in validation)
 
 
 @pytest.mark.parametrize("changed_release", [False, True])

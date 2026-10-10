@@ -1,11 +1,18 @@
 model: naive_bayes
 enabled: true
+target_field: labels_direct
+n_jobs: -1
 features:
   type: tfidf
   lowercase: true
   ngram_range: [1, 2]
   max_features: 50000
+  min_df: 2
+  sublinear_tf: true
 classifier:
-  alpha: 1.0
+  # alpha=1.0 smooths 50k TF-IDF features so hard that rare labels stay at their
+  # prior (val micro-F1 0.12); 0.03 was best in the EN+TR validation sweep (0.27).
+  alpha: 0.03
 multilabel:
-  threshold: 0.5
+  # Provisional sweep value; replaced by the validation threshold tuner.
+  threshold: 0.2

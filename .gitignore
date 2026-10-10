@@ -30,20 +30,27 @@ Thumbs.db
 # Notebooks
 .ipynb_checkpoints/
 
-# Local datasets (retain directory placeholders and documentation)
+# Local datasets (keep the committed release and documentation)
 data/raw/*
+!data/raw/cordis_h2020/
+data/raw/cordis_h2020/*
+!data/raw/cordis_h2020/cordis-h2020projects-csv.zip
 data/processed/*
+!data/processed/cordis_h2020/
+data/processed/cordis_h2020/**/*.jsonl
+data/processed/cordis_h2020/**/*.jsonl.tmp
 data/splits/*
-data/ood/*
+!data/splits/cordis_h2020/
+data/splits/cordis_h2020/*
+!data/splits/cordis_h2020/project_splits.json
 data/noisy/*
 data/cache/
-!data/**/.gitkeep
+data/samples/
 !data/README.md
 
 # Model artifacts and checkpoints
 models/*
 !models/README.md
-!models/.gitkeep
 *.pt
 *.pth
 *.ckpt
@@ -51,12 +58,28 @@ models/*
 *.safetensors
 checkpoints/
 
-# Generated results (retain directory placeholders and documentation)
+# Generated results (keep documentation and reported summaries)
 results/metrics/*
+!results/metrics/translation_exceptions.json
+!results/metrics/cordis_v1.1.0_ensemble/
+results/metrics/cordis_v1.1.0_ensemble/*
+!results/metrics/cordis_v1.1.0_ensemble/summary.json
+!results/metrics/cordis_v1.1.0_ensemble/summary.md
+!results/metrics/cordis_v1.1.0_sample/
+results/metrics/cordis_v1.1.0_sample/*
+!results/metrics/cordis_v1.1.0_sample/summary.json
+!results/metrics/cordis_v1.1.0_sample/summary.md
 results/plots/*
 results/predictions/*
 results/benchmarks/*
-!results/**/.gitkeep
+!results/benchmarks/cordis_v1.1.0/
+results/benchmarks/cordis_v1.1.0/*
+!results/benchmarks/cordis_v1.1.0/benchmark_summary.json
+!results/benchmarks/cordis_v1.1.0/benchmark_summary.md
+results/ood/*
+!results/ood/cordis_v1.1.0/
+results/ood/cordis_v1.1.0/*
+!results/ood/cordis_v1.1.0/summary.json
 !results/README.md
 
 # ML framework caches

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import sys
 import tempfile
 from pathlib import Path
+
+import pytest
 
 from naltra.data.loader import load_jsonl, save_jsonl
 from naltra.data.noise import (
@@ -25,7 +28,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 def test_deterministic_seeding_across_calls() -> None:
     """Verify SHA-256 seeding produces identical seeds and outputs across separate calls."""
-    record_id = "sib200:en:101"
+    record_id = "cordis:101:en"
     strategy = "combined"
     severity = "medium"
     base_seed = 42
@@ -53,7 +56,7 @@ def test_deterministic_seeding_across_calls() -> None:
     assert noisy1 == noisy2
 
     # Different record ID or seed must produce distinct seed
-    seed_diff = get_deterministic_seed("sib200:en:102", strategy, severity, base_seed)
+    seed_diff = get_deterministic_seed("cordis:102:en", strategy, severity, base_seed)
     assert seed1 != seed_diff
 
 
@@ -155,15 +158,15 @@ def test_turkish_diacritics_behavior_and_language_guard() -> None:
 def test_labels_and_metadata_preserved() -> None:
     """Verify all labels, language, source, license, and split remain intact."""
     clean_record = {
-        "id": "sib200:tr:42",
+        "id": "cordis:42:tr",
         "text": "Merkez Bankası enflasyon tahminini açıkladı.",
         "labels": ["economy"],
         "language": "tr",
-        "source": "sib200",
-        "source_id": "sib_tr_42",
+        "source": "cordis_h2020",
+        "source_id": "42",
         "split": "validation",
-        "license": "CC-BY-SA-4.0",
-        "pair_id": "pair_042",
+        "license": "CC BY 4.0",
+        "pair_id": "cordis:42",
     }
 
     noisy_record = create_noisy_record(
@@ -183,8 +186,8 @@ def test_labels_and_metadata_preserved() -> None:
     assert noisy_record["pair_id"] == clean_record["pair_id"]
 
     # Traceability attributes
-    assert noisy_record["original_id"] == "sib200:tr:42"
-    assert noisy_record["id"] == "sib200:tr:42:noise:combined:medium"
+    assert noisy_record["original_id"] == "cordis:42:tr"
+    assert noisy_record["id"] == "cordis:42:tr:noise:combined:medium"
     assert noisy_record["noise_strategy"] == "combined"
     assert noisy_record["noise_severity"] == "medium"
     assert noisy_record["text"] != clean_record["text"]
@@ -266,12 +269,12 @@ def test_invalid_parameters_raise_appropriate_errors() -> None:
 
 
 def test_generate_noisy_benchmarks_directory_structure_and_counts() -> None:
-    """Verify SIB-200 noisy benchmark generation and split filtering."""
+    """Verify noisy benchmark generation and split filtering."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_proc = Path(tmp_dir) / "processed"
         tmp_noisy = Path(tmp_dir) / "noisy"
 
-        ds = "sib200"
+        ds = "cordis_h2020"
         ds_dir = tmp_proc / ds
         ds_dir.mkdir(parents=True, exist_ok=True)
 
@@ -293,7 +296,7 @@ def test_generate_noisy_benchmarks_directory_structure_and_counts() -> None:
         counts = generate_noisy_benchmarks(
             processed_base_dir=tmp_proc,
             output_base_dir=tmp_noisy,
-            datasets=["sib200"],
+            datasets=["cordis_h2020"],
             splits=["validation", "test"],
             strategy="combined",
             severity="medium",
@@ -301,11 +304,11 @@ def test_generate_noisy_benchmarks_directory_structure_and_counts() -> None:
         )
 
         assert counts == {
-            "sib200": {"validation": 5, "test": 5},
+            "cordis_h2020": {"validation": 5, "test": 5},
         }
 
         for split in ("validation", "test"):
-            expected_path = tmp_noisy / "combined" / "medium" / "sib200" / f"{split}.jsonl"
+            expected_path = tmp_noisy / "combined" / "medium" / "cordis_h2020" / f"{split}.jsonl"
             assert expected_path.exists()
 
             loaded = load_jsonl(expected_path)
@@ -317,8 +320,22 @@ def test_generate_noisy_benchmarks_directory_structure_and_counts() -> None:
                 assert rec["noise_severity"] == "medium"
                 assert rec["labels"] == ["general"]
 
-        train_path = tmp_noisy / "combined" / "medium" / "sib200" / "train.jsonl"
+        train_path = tmp_noisy / "combined" / "medium" / "cordis_h2020" / "train.jsonl"
         assert not train_path.exists()
+
+
+def test_noisy_manifests_record_the_clean_source_relative_to_themselves(tmp_path: Path) -> None:
+    record = {"id": "cordis:1:en", "text": "Optical crop sensing.", "labels": ["optics"]}
+    save_jsonl([{**record, "language": "en", "split": "test"}], tmp_path / "clean/en/test.jsonl")
+    generate_noisy_benchmarks(tmp_path / "clean", tmp_path / "noisy", datasets=["en"])
+    out = tmp_path / "noisy/combined/medium"
+
+    def recorded(directory: Path) -> str:
+        manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        return manifest["source_metadata"]["processed_base_dir"]
+
+    assert recorded(out / "en") == "../../../../clean"
+    assert recorded(out) == "../../../clean"
 
 
 def test_single_character_inputs_across_strategies() -> None:
@@ -359,6 +376,74 @@ def test_single_character_inputs_across_strategies() -> None:
     noisy_punct = perturb_text(".", strategy="punctuation", severity="medium", seed=42)
     assert noisy_punct != "."
     assert len(noisy_punct.strip()) > 0
+
+
+@pytest.mark.parametrize("prebuilt", [False, True])
+def test_prepare_data_noisy_writes_en_and_tr_test_sets(tmp_path, monkeypatch, prebuilt) -> None:
+    """The CLI noisy step writes the EN and TR test sets every reported result reads."""
+    from naltra import cli
+    from naltra.data import validation
+
+    audited = []
+    validator = "validate_prebuilt_cordis_release" if prebuilt else "validate_cordis_release"
+    monkeypatch.setattr(validation, validator, lambda base, languages: audited.append(languages))
+    monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
+    for language in ("en", "tr"):
+        for split in ("validation", "test"):
+            record = {"id": f"cordis:{language}:{split}", "text": "Optical crop sensing."}
+            save_jsonl(
+                [record], tmp_path / "data/processed/cordis_h2020" / language / f"{split}.jsonl"
+            )
+    noise_dir = tmp_path / ("elsewhere" if prebuilt else "data/noisy")
+    flags = ["--prebuilt-release", "--noise-dir", str(noise_dir)] if prebuilt else []
+
+    cli.prepare_data(["--dataset", "noisy", *flags])
+
+    assert audited == [["en", "tr"]]
+    for language in ("en", "tr"):
+        directory = noise_dir / "combined/medium/cordis_h2020" / language
+        assert [r["original_id"] for r in load_jsonl(directory / "test.jsonl")] == [
+            f"cordis:{language}:test"
+        ]
+        assert not (directory / "validation.jsonl").exists()
+
+
+def test_missing_input_preflight_check(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="Cannot generate noisy benchmarks"):
+        generate_noisy_benchmarks(
+            processed_base_dir=tmp_path / "non_existent",
+            output_base_dir=tmp_path / "noisy_out",
+        )
+
+
+# (clean source, noisy output) sha256 of the shipped release 1.1.0 test splits.
+SHIPPED_NOISY_TEST_SHA256 = {
+    "en": (
+        "4f8564416013dff1c07e51f2c1f2064c2013c144908a26beec8122f455614052",
+        "09f9b6af9b690981e47620653d0be2819652363c79c3650a49a1036b15b4f1e7",
+    ),
+    "tr": (
+        "d269933ab6d24dd26cbbda44f9bbe3c8c8fa71c60ed1b109d2e907a227ea0141",
+        "724c800cd9af4889e22c78590fd88c2aabffb51126e77a926fdb46fdde99e26c",
+    ),
+}
+
+
+def test_default_noise_spec_reproduces_shipped_test_sets(tmp_path) -> None:
+    """The default spec regenerates the shipped noisy EN/TR test sets byte for byte."""
+    from naltra.data.manifest import compute_file_sha256
+
+    processed = PROJECT_ROOT / "data/processed"
+    for language, (source, _) in SHIPPED_NOISY_TEST_SHA256.items():
+        path = processed / "cordis_h2020" / language / "test.jsonl"
+        if not path.exists() or compute_file_sha256(path) != source:
+            pytest.skip("Shipped CORDIS 1.1.0 test splits are not unpacked.")
+
+    generate_noisy_benchmarks(processed, tmp_path)
+
+    for language, (_, noisy) in SHIPPED_NOISY_TEST_SHA256.items():
+        path = tmp_path / "combined/medium/cordis_h2020" / language / "test.jsonl"
+        assert compute_file_sha256(path) == noisy
 
 
 if __name__ == "__main__":

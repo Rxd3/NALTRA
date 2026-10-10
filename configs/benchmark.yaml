@@ -1,0 +1,91 @@
+# Benchmark protocol read by scripts/evaluate_ensemble.py; docs/evaluation.md explains the choice.
+# Kept apart from configs/models/*.yaml, whose hashes are bound into trained artifacts.
+# 473 direct labels, 3.2 per EN test project, 386 of them under 1% prevalence: per-label
+# accuracy of predicting nothing is 0.993, so systems are ranked by micro-F1 instead.
+primary_metric: micro_f1
+# Columns after the primary metric in summary.md's Benchmark table.
+secondary_metrics: [macro_f1, hmicro_f1, p_at_1, top1_ece]
+
+# role: baseline = a course method in its vanilla form; new = beyond the course methods.
+# architecture is the method family; model is the concrete configured instance.
+systems:
+  naive_bayes:
+    role: baseline
+    architecture: multinomial Naive Bayes over TF-IDF, one-vs-rest
+    model: >-
+      TF-IDF word 1-2-grams (50k features, min_df 2, sublinear tf) + one binary
+      MultinomialNB per label, alpha 0.03
+  svm:
+    role: baseline
+    architecture: linear SVM over TF-IDF, one-vs-rest
+    model: >-
+      TF-IDF word 1-2-grams (50k features, min_df 2, sublinear tf) + one LinearSVC (C 1.0)
+      per label, 3-fold project-grouped Platt calibration
+  bilstm:
+    role: baseline
+    architecture: bidirectional LSTM
+    model: >-
+      release cordis_v0.5.0: 1-layer BiLSTM trained from scratch (300-d embeddings, 50k
+      vocabulary, 256 hidden units per direction, dropout 0.2) with early stopping, which
+      ended training after epoch 9 and kept the lowest-validation-loss epoch-7 checkpoint;
+      then its sigmoid head refit on the frozen encoder (unweighted BCE, lr 1e-3); max_length 512
+  transformer:
+    role: baseline
+    architecture: Transformer encoder (RoBERTa family)
+    model: >-
+      release cordis_v0.5.0: xlm-roberta-base fine-tuned for 3 epochs (lr 2e-5), then its
+      sigmoid head refit on the frozen encoder for up to 20 epochs (unweighted BCE, lr 1e-3);
+      max_length 512
+  hybrid_knn:
+    role: new
+    architecture: >-
+      sparse + dense retrieval kNN with reciprocal rank fusion (Cormack et al. 2009,
+      k = 60)
+    model: >-
+      TF-IDF 1-2-grams (50k) cosine + intfloat/multilingual-e5-base mean-pooled embeddings
+      (max_length 256), 50 neighbours per retriever, RRF k 60, fused neighbour label vote
+  kev:
+    role: new
+    architecture: zero-shot yes/no decision model (open-source Jev alternative)
+    model: >-
+      Kev-0.8B: jaredpalmer/kev-0.8b at bf75a6a8848ea6960ff2ed108d9ed44c2941174f (tag v1.0)
+      on Qwen/Qwen3.5-0.8B-Base, System One server; one yes/no ("noul") question per direct
+      label, p(yes) for "Is this project about {name}?"; not fine-tuned on CORDIS by the team
+  jev:
+    role: new
+    architecture: hosted System One decision model (Jev), zero-shot yes/no per label
+    model: >-
+      TypeSafe jev-latest via POST /v1/systemone, one noul question per direct label
+      ("Is this project about {name}?"), no CORDIS fine-tuning by the team
+  laya:
+    role: new
+    architecture: local pretrained multilingual choice-question model (Laya), zero-shot
+    model: >-
+      convaiinnovations/laya multilingual checkpoint at
+      7b928d828b7b0e022f929d9bd2e44165aa270148 via laya SDK 0.4.1; one two-option question
+      per direct label (A = the topic, B = other research topics), P(A) as the label score;
+      not fine-tuned on CORDIS
+  hard_majority:
+    role: new
+    architecture: NALTRA hard vote
+    model: strict majority (more than M/2) of member label sets, member thresholds tuned on val-A
+  hard_k:
+    role: new
+    architecture: NALTRA hard vote
+    model: k-of-M vote of member label sets, k tuned on val-B for micro-F1
+  hard_closed:
+    role: new
+    architecture: NALTRA hierarchy-closed hard vote
+    model: k-of-M vote over ancestor-closed 586-node label sets, k tuned on val-B
+  soft:
+    role: new
+    architecture: NALTRA soft vote
+    model: mean of raw member scores, global threshold tuned on val-B
+  weighted_soft:
+    role: new
+    architecture: NALTRA weighted soft vote
+    model: raw member scores weighted by val-A micro-F1, global threshold tuned on val-B
+  leave_one_out:
+    role: new
+    architecture: NALTRA hard vote (ablation)
+    model: strict majority of the M-1 members left after dropping each member in turn

@@ -1,0 +1,10 @@
+# Files whose checked-out bytes are pinned by SHA-256 (dataset manifests, trained models,
+# tests) keep the CRLF line endings they were hashed with, on every OS.
+taxonomy/*.json text eol=crlf
+data/splits/**/*.json text eol=crlf
+data/processed/**/manifest.json text eol=crlf
+# Published result summaries keep the CRLF bytes their writers produced.
+results/metrics/translation_exceptions.json text eol=crlf
+results/metrics/cordis_v1.1.0_*/summary.* text eol=crlf
+results/benchmarks/cordis_v1.1.0/benchmark_summary.* text eol=crlf
+results/ood/cordis_v1.1.0/summary.json text eol=crlf

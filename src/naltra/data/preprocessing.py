@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html
 import json
-import os
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
@@ -12,7 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from naltra.data.loader import save_jsonl
-from naltra.data.manifest import REPO_ROOT, compute_file_sha256, create_manifest, get_source_config
+from naltra.data.manifest import (
+    REPO_ROOT,
+    compute_file_sha256,
+    create_manifest,
+    get_source_config,
+    relative_path,
+)
 from naltra.data.splits import grouped_multilabel_stratified_split
 from naltra.pipeline.preprocessing import normalize_text
 
@@ -260,6 +265,10 @@ def process_cordis_h2020(
 
     project_csv = raw_path / "project.csv"
     euroscivoc_csv = raw_path / "euroSciVoc.csv"
+    split_map_file = split_path / "project_splits.json"
+    # The manifest records these relative to itself; refuse a cross-drive layout before writing.
+    for path in (raw_path, project_csv, euroscivoc_csv, map_path, split_map_file):
+        relative_path(path, out_path)
 
     if not project_csv.exists():
         raise FileNotFoundError(f"Missing raw project file: {project_csv}")
@@ -453,8 +462,7 @@ def process_cordis_h2020(
         print(f"Saved {len(recs)} records -> {split_file}")
 
     # Save project split manifest
-    split_map_file = split_path / "project_splits.json"
-    with open(split_map_file, "w", encoding="utf-8") as f:
+    with split_map_file.open("w", encoding="utf-8", newline="\r\n") as f:
         json.dump(
             {
                 "seed": seed,
@@ -480,10 +488,10 @@ def process_cordis_h2020(
         source_metadata={
             "source": "official CORDIS / European Union open data release",
             "source_title": "CORDIS - EU research projects under Horizon 2020 (2014-2020)",
-            "raw_dir": os.path.relpath(raw_path.resolve(), out_path.resolve()),
+            "raw_dir": relative_path(raw_path, out_path),
             "raw_project_csv": "project.csv",
             "raw_euroscivoc_csv": "euroSciVoc.csv",
-            "split_map": os.path.relpath(split_map_file.resolve(), out_path.resolve()),
+            "split_map": relative_path(split_map_file, out_path),
             **source_lock,
         },
         taxonomy_dir=tax_path.parent,

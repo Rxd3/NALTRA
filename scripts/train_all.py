@@ -1,4 +1,4 @@
-"""Train independent, audited neural benchmark tracks; never prepare datasets here."""
+"""Train independent, audited classical and neural benchmark tracks; never prepare datasets."""
 
 from __future__ import annotations
 
@@ -15,18 +15,22 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from naltra.data.loader import load_jsonl  # noqa: E402
-from naltra.data.manifest import (  # noqa: E402
-    compute_file_sha256,
-    validate_manifest,
-)
-from naltra.data.preprocessing import compute_content_fingerprint  # noqa: E402
+from naltra.data.manifest import compute_file_sha256  # noqa: E402
 from naltra.models.bilstm import BiLSTMModel  # noqa: E402
+from naltra.models.hybrid_knn import HybridKNNModel  # noqa: E402
+from naltra.models.naive_bayes import NaiveBayesModel  # noqa: E402
 from naltra.models.neural import merge_config, seed_everything  # noqa: E402
+from naltra.models.svm import SVMModel  # noqa: E402
 from naltra.models.transformer import TransformerModel  # noqa: E402
 from naltra.utils.config import load_yaml  # noqa: E402
 
-MODEL_TYPES = {"bilstm": BiLSTMModel, "transformer": TransformerModel}
+MODEL_TYPES = {
+    "naive_bayes": NaiveBayesModel,
+    "svm": SVMModel,
+    "hybrid_knn": HybridKNNModel,
+    "bilstm": BiLSTMModel,
+    "transformer": TransformerModel,
+}
 
 
 def resolve_path(value: str | Path) -> Path:
@@ -37,15 +41,18 @@ def resolve_path(value: str | Path) -> Path:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--config", default="configs/training.yaml")
-    result.add_argument("--models", nargs="+", help="bilstm transformer (default: both)")
-    result.add_argument(
-        "--datasets", nargs="+", choices=("cordis_h2020", "sib200", "multifin", "mn_ds")
-    )
+    result.add_argument("--models", nargs="+", help="naive_bayes svm hybrid_knn bilstm transformer")
+    result.add_argument("--datasets", nargs="+", choices=("cordis_h2020",))
     result.add_argument(
         "--languages",
         nargs="+",
         choices=("en", "tr"),
         help="CORDIS training languages (default: en tr)",
+    )
+    result.add_argument(
+        "--prebuilt-release",
+        action="store_true",
+        help="Audit a distributed CORDIS release record-by-record (no raw sources/split map)",
     )
     result.add_argument("--device", choices=("auto", "cpu", "cuda"))
     result.add_argument("--epochs", type=int)
@@ -64,114 +71,96 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--smoke",
         action="store_true",
-        help="Bounded, offline smoke training; tiny random Transformer",
+        help=(
+            "Bounded smoke training; tiny random Transformer. Offline except hybrid_knn, "
+            "which loads its e5 encoder from the Hugging Face cache (downloading it if absent)"
+        ),
     )
     result.add_argument("--smoke-records", type=int)
-    result.add_argument("--heldout-topic", help="Use one existing SIB-200 near-OOD ID fold")
     result.add_argument(
         "--overwrite", action="store_true", help="Replace a previously produced artifact"
     )
     return result
 
 
-def prepare_track(dataset: str, spec: dict[str, Any], heldout_topic: str | None) -> dict[str, Any]:
-    directory = resolve_path(spec["path"])
-    if dataset == "cordis_h2020":
-        from naltra.data.validation import validate_cordis_release
+def prepare_track(dataset: str, spec: dict[str, Any]) -> dict[str, Any]:
+    from naltra.data import validation
 
-        if heldout_topic:
-            raise ValueError(
-                "CORDIS held-out-domain training requires a separately defined protocol."
-            )
-        languages = spec["languages"]
-        release = validate_cordis_release(directory, languages)
-        target_field = spec.get("target_field", "labels_direct")
-        if target_field != "labels_direct":
-            raise ValueError("The CORDIS baseline must train direct labels.")
-        track = "_".join(languages) + "_direct"
-        return {
-            "train": [r for language in languages for r in release["corpora"][language]["train"]],
-            "validation": [
-                r for language in languages for r in release["corpora"][language]["validation"]
-            ],
-            "track": track,
-            "target_field": target_field,
-            "provenance": {
-                "dataset": dataset,
-                "track": track,
-                "training_languages": languages,
-                "target_field": target_field,
-                "label_universe": release["label_universe"],
-                "dataset_manifests": release["manifests"],
-                "manifest_sha256_by_language": {
-                    language: compute_file_sha256(directory / language / "manifest.json")
-                    for language in languages
-                },
-            },
-        }
-    expected = ["train.jsonl", "validation.jsonl", "test.jsonl"]
-    benchmark = spec["benchmark_name"]
-    track = spec["name"]
-    train_file, validation_file = "train.jsonl", "validation.jsonl"
-    if heldout_topic:
-        if dataset != "sib200":
-            raise ValueError("--heldout-topic requires only the sib200 dataset.")
-        # Never let an arbitrary path escape the known fold directory.
-        canonical = {
-            label["id"]
-            for label in json.loads(
-                (REPO_ROOT / "taxonomy/taxonomy.json").read_text(encoding="utf-8")
-            )["labels"]
-        }
-        if heldout_topic not in canonical:
-            raise ValueError("Unknown held-out topic.")
-        directory = REPO_ROOT / "data/ood/near/sib200" / heldout_topic
-        expected = [
-            "train_id.jsonl",
-            "validation_id.jsonl",
-            "test_id.jsonl",
-            "validation_ood.jsonl",
-            "test_ood.jsonl",
-        ]
-        benchmark = f"near_ood_sib200_{heldout_topic}"
-        track = f"heldout_{heldout_topic}"
-        train_file, validation_file = "train_id.jsonl", "validation_id.jsonl"
-    manifest = validate_manifest(directory, benchmark, expected, REPO_ROOT / "taxonomy")
-    train, validation = load_jsonl(directory / train_file), load_jsonl(directory / validation_file)
-    # The audit checks test-file integrity, but no test records enter this training path.
-    if heldout_topic and any(heldout_topic in record["labels"] for record in train + validation):
-        raise ValueError("Held-out topic appears in ID training/validation.")
-    train_ids = {record["id"] for record in train}
-    train_fingerprints = {compute_content_fingerprint(record["text"]) for record in train}
-    if train_ids & {record["id"] for record in validation} or train_fingerprints & {
-        compute_content_fingerprint(record["text"]) for record in validation
-    }:
-        raise ValueError("Training/validation contamination detected.")
+    directory = resolve_path(spec["path"])
+    languages = spec["languages"]
+    prebuilt = spec.get("release") == "prebuilt"
+    audit = (
+        validation.validate_prebuilt_cordis_release
+        if prebuilt
+        else validation.validate_cordis_release
+    )
+    release = audit(directory, languages)
+    target_field = spec.get("target_field", "labels_direct")
+    if target_field != "labels_direct":
+        raise ValueError("The CORDIS baseline must train direct labels.")
+    track = "_".join(languages) + "_direct"
     return {
-        "train": train,
-        "validation": validation,
+        "train": [r for language in languages for r in release["corpora"][language]["train"]],
+        "validation": [
+            r for language in languages for r in release["corpora"][language]["validation"]
+        ],
         "track": track,
-        "manifest": manifest,
+        "target_field": target_field,
         "provenance": {
             "dataset": dataset,
             "track": track,
-            "manifest_sha256": compute_file_sha256(directory / "manifest.json"),
-            "dataset_manifest": manifest,
-            "train_sha256": compute_file_sha256(directory / train_file),
-            "validation_sha256": compute_file_sha256(directory / validation_file),
+            "training_languages": languages,
+            "target_field": target_field,
+            "label_universe": release["label_universe"],
+            "dataset_manifests": release["manifests"],
+            "manifest_sha256_by_language": {
+                language: compute_file_sha256(directory / language / "manifest.json")
+                for language in languages
+                if (directory / language / "manifest.json").exists()
+            },
+            "split_sha256": release["split_sha256"],
+            "release_audit": release.get("audit", "full"),
+            "translation_provenance": release.get("translation_provenance"),
+            "translation_issues": release.get("translation_issues"),
         },
     }
 
 
+def _keep_labels(records: list[dict[str, Any]], field: str, keep: set[str]) -> list[dict[str, Any]]:
+    trimmed = [{**r, field: [label for label in r[field] if label in keep]} for r in records]
+    return [record for record in trimmed if record[field]]
+
+
 def smoke_records(
-    track: dict[str, Any], limit: int
+    track: dict[str, Any], limit: int, min_positives: int = 1
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     train = track["train"][:limit]
     field = track.get("target_field", "labels")
+    if min_positives > 1:
+        # Calibrated members need enough positives and negatives for every kept label.
+        while True:
+            counts: dict[str, int] = {}
+            for record in train:
+                for label in record[field]:
+                    counts[label] = counts.get(label, 0) + 1
+            keep = {
+                label
+                for label, count in counts.items()
+                if min_positives <= count <= len(train) - min_positives
+            }
+            trimmed = _keep_labels(train, field, keep)
+            if trimmed == train:
+                break
+            train = trimmed
+        if len(keep) < 2:
+            raise ValueError("Smoke subset leaves fewer than two trainable labels.")
     supported = {label for record in train for label in record[field]}
-    validation = [record for record in track["validation"] if set(record[field]) <= supported][
-        :limit
-    ]
+    candidates = (
+        _keep_labels(track["validation"], field, supported)
+        if min_positives > 1
+        else [record for record in track["validation"] if set(record[field]) <= supported]
+    )
+    validation = candidates[:limit]
     if not validation:
         raise ValueError(
             "Smoke subset has no compatible validation records; increase --smoke-records."
@@ -253,8 +242,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if datasets != ["cordis_h2020"] or len(set(args.languages)) != len(args.languages):
             parser().error("--languages requires unique languages and --datasets cordis_h2020.")
         configuration["tracks"]["cordis_h2020"]["languages"] = args.languages
-    if args.heldout_topic and datasets != ["sib200"]:
-        parser().error("--heldout-topic requires --datasets sib200")
+    if args.prebuilt_release:
+        if datasets != ["cordis_h2020"]:
+            parser().error("--prebuilt-release requires --datasets cordis_h2020.")
+        configuration["tracks"]["cordis_h2020"]["release"] = "prebuilt"
     for value in (
         args.epochs,
         args.batch_size,
@@ -269,7 +260,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if unknown:
         parser().error(
             f"Unsupported local training models: {sorted(unknown)}. "
-            "Classical models are not implemented; Jev/Laya are inference services."
+            "Kev and Jev are inference services, not locally trained models."
         )
     if len(set(selected_models)) != len(selected_models) or len(set(datasets)) != len(datasets):
         parser().error("Model and dataset selections must be unique.")
@@ -279,9 +270,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Audit all selected tracks before any model is initialized or weights downloaded.
     for dataset in datasets:
         try:
-            tracks[dataset] = prepare_track(
-                dataset, configuration["tracks"][dataset], args.heldout_topic
-            )
+            tracks[dataset] = prepare_track(dataset, configuration["tracks"][dataset])
         except (OSError, ValueError, KeyError, TypeError) as exc:
             failures[dataset] = str(exc)
     summaries = []
@@ -324,7 +313,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                 config = merge_config(config, overrides)
                 train, validation = (
-                    smoke_records(track, args.smoke_records or configuration["smoke_records"])
+                    smoke_records(
+                        track,
+                        args.smoke_records or configuration["smoke_records"],
+                        config.get("classifier", {}).get("calibration_cv", 1),
+                    )
                     if args.smoke
                     else (track["train"], track["validation"])
                 )
@@ -397,6 +390,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 provenance_paths = [
                     Path(__file__),
                     REPO_ROOT / "src/naltra/models/neural.py",
+                    REPO_ROOT / "src/naltra/models/classical.py",
                     REPO_ROOT / "src/naltra/models" / family / "model.py",
                     REPO_ROOT / "configs/models" / f"{family}.yaml",
                     resolve_path(args.config),

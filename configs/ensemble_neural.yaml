@@ -1,8 +1,0 @@
-ensemble:
-  method: weighted_soft
-  threshold: 0.5
-  per_label_thresholds: {}
-  required_models: [bilstm, transformer]
-  weights:
-    bilstm: 1.0
-    transformer: 1.0

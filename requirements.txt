@@ -1,17 +1,29 @@
-numpy
-pandas
-scikit-learn
-torch>=2.6
-transformers>=4.45,<6
-httpx>=0.28,<1
-lingua-language-detector>=2,<3
-datasets
-sentencepiece
-pydantic
-pyyaml
-python-dotenv
-matplotlib
-streamlit
-pytest
-ruff
-black
+# Exact versions of the tested environment (Python 3.13.1, Windows 11). These pins need
+# Python >= 3.12 (lingua-language-detector 2.2.0, numpy 2.5.3 and scipy 1.18.1 require it);
+# pyproject.toml keeps the supported ranges (Python 3.11+). To replay the tested setup:
+#   python -m pip install -r requirements.txt
+#   python -m pip install -e . --no-deps
+# The extra index serves the tested CUDA 12.6 build, torch 2.14.1+cu126; where it has no
+# wheel for the platform, pip installs torch 2.14.1 from PyPI instead.
+--extra-index-url https://download.pytorch.org/whl/cu126
+httpx==0.28.1
+lingua-language-detector==2.2.0
+matplotlib==3.11.2
+numpy==2.5.3
+python-dotenv==1.2.4
+pyyaml==6.0.3
+scikit-learn==1.9.1
+sentencepiece==0.2.2
+torch==2.14.1
+transformers==5.19.0
+# Runtime pins: transitive dependencies of the packages above, at the tested versions.
+huggingface-hub==1.33.0
+joblib==1.6.0
+safetensors==0.8.0
+scipy==1.18.1
+threadpoolctl==3.7.0
+tokenizers==0.23.2
+# Development tools (the [dev] extra).
+black==26.10.0
+pytest==9.1.1
+ruff==0.16.10

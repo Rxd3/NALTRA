@@ -1,9 +1,11 @@
-"""Jev response adapter implementing the shared prediction contract."""
+"""Jev as a zero-shot ensemble member, asked exactly the questions Kev is asked."""
 
-from naltra.models.external import ExternalServiceModel
+from __future__ import annotations
+
 from naltra.models.jev.client import JevClient
+from naltra.models.kev.model import KevModel
 
 
-class JevModel(ExternalServiceModel):
+class JevModel(KevModel):
     model_name = "jev"
     client_type = JevClient

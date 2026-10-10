@@ -1,12 +1,19 @@
 model: svm
 enabled: true
+target_field: labels_direct
+n_jobs: -1
 features:
   type: tfidf
   lowercase: true
   ngram_range: [1, 2]
   max_features: 50000
+  min_df: 2
+  sublinear_tf: true
 classifier:
   kernel: linear
   c: 1.0
+  # Folds for per-label Platt scaling; probabilities feed soft voting and ECE.
+  calibration_cv: 3
 multilabel:
-  threshold: 0.5
+  # Provisional sweep value (val micro-F1 0.52 at 0.3); replaced by the threshold tuner.
+  threshold: 0.3

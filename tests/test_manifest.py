@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from naltra.data.manifest import (
     create_manifest,
     get_environment_metadata,
     get_taxonomy_checksums,
+    relative_path,
     validate_manifest,
 )
 
@@ -194,3 +196,23 @@ def test_aggregate_manifest_covers_nested_outputs(tmp_path: Path) -> None:
     save_jsonl([{"id": "nested"}], tmp_path / "child/test.jsonl")
     manifest = create_manifest("aggregate", tmp_path, {"seed": 42})
     assert manifest["output_files"]["child/test.jsonl"]["record_count"] == 1
+
+
+def test_relative_path_is_relative_to_the_manifest_directory(tmp_path: Path) -> None:
+    assert relative_path(tmp_path / "en", tmp_path / "code_switch/chunk_mix") == "../../en"
+
+
+def test_relative_path_refuses_a_path_on_another_drive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Readers resolve recorded sources against the manifest, so no other base may be used."""
+
+    def other_drive(path: str, start: str | None = None) -> str:
+        raise ValueError("path is on mount '\\\\server\\share', start on mount 'C:'")
+
+    monkeypatch.setattr(os.path, "relpath", other_drive)
+    source, output = tmp_path / "cache" / "shared.csv", tmp_path / "tr"
+    with pytest.raises(ValueError, match="one drive") as refused:
+        relative_path(source, output)
+    assert str(source.resolve()) in str(refused.value)
+    assert str(output.resolve()) in str(refused.value)

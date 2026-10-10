@@ -47,9 +47,10 @@ class LayaClient:
             ) from exc
         if laya.__version__ != self.config["sdk_version"]:
             raise RuntimeError(f"This artifact requires laya=={self.config['sdk_version']}.")
-        self.agent = laya.load(str(self.prepare()), device=self.config["device"], backend="eager")
-        if self.config["device"] == "cuda" and self.agent.device.type != "cuda":
+        agent = laya.load(str(self.prepare()), device=self.config["device"], backend="eager")
+        if self.config["device"] == "cuda" and agent.device.type != "cuda":
             raise RuntimeError("Laya could not load on CUDA; reduce batching or select CPU.")
+        self.agent = agent
 
     def predict_batch(
         self, texts: list[str], questions: Mapping[str, dict[str, Any]]

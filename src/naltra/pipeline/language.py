@@ -17,7 +17,7 @@ class LanguageDetector(Protocol):
 
 
 class UndeterminedLanguageDetector:
-    """Safe placeholder used until a detector is selected and validated."""
+    """Detector that always reports an undetermined language (und)."""
 
     def detect(self, text: str) -> LanguageInfo:
         if not text.strip():

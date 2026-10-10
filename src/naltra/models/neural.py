@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import math
 import random
@@ -17,23 +16,13 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from naltra.data.manifest import REPO_ROOT, compute_file_sha256, get_environment_metadata
-from naltra.data.preprocessing import compute_content_fingerprint, validate_record
+from naltra.data.preprocessing import validate_record
+from naltra.data.validation import check_disjoint_partitions
 from naltra.models.base import BaseNALTRAModel
 from naltra.pipeline.preprocessing import normalize_text
 from naltra.pipeline.thresholds import apply_thresholds
 from naltra.schemas.prediction import LanguageInfo, PredictionResult
-from naltra.utils.config import load_yaml
-
-
-def merge_config(defaults: Mapping[str, Any], overrides: Mapping[str, Any]) -> dict[str, Any]:
-    """Merge nested configuration without modifying caller-owned mappings."""
-    result = copy.deepcopy(dict(defaults))
-    for key, value in overrides.items():
-        if isinstance(value, Mapping) and isinstance(result.get(key), Mapping):
-            result[key] = merge_config(result[key], value)
-        else:
-            result[key] = copy.deepcopy(value)
-    return result
+from naltra.utils.config import load_yaml, merge_config
 
 
 def select_device(name: str) -> torch.device:
@@ -264,12 +253,7 @@ class NeuralModel(BaseNALTRAModel):
         validation = (
             self._records(validation_data, "validation") if validation_data is not None else None
         )
-        if validation and {r["id"] for r in train} & {r["id"] for r in validation}:
-            raise ValueError("Training and validation record IDs overlap.")
-        if validation and {compute_content_fingerprint(r["text"]) for r in train} & {
-            compute_content_fingerprint(r["text"]) for r in validation
-        }:
-            raise ValueError("Training and validation content overlaps.")
+        check_disjoint_partitions({"train": train, "validation": validation or []})
         seed_everything(self.config["seed"])
         self._fitted = False
         self.history = []
@@ -381,12 +365,7 @@ class NeuralModel(BaseNALTRAModel):
         train, validation = self._records(train_data, "train"), self._records(
             validation_data, "validation"
         )
-        if {r["id"] for r in train} & {r["id"] for r in validation}:
-            raise ValueError("Training and validation record IDs overlap.")
-        if {compute_content_fingerprint(r["text"]) for r in train} & {
-            compute_content_fingerprint(r["text"]) for r in validation
-        }:
-            raise ValueError("Training and validation content overlaps.")
+        check_disjoint_partitions({"train": train, "validation": validation})
         supported = {label for record in train for label in self._targets(record)}
         if supported != set(self.labels) or any(
             not set(self._targets(record)) <= supported for record in validation

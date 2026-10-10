@@ -1,1 +1,1 @@
-"""Configuration, logging, and timing utilities."""
+"""Configuration utilities."""
