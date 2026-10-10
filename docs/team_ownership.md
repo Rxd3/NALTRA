@@ -2,9 +2,9 @@
 
 Ownership identifies the primary reviewer and the contributor responsible for keeping an area coherent. It does not prevent collaboration. Contributors should coordinate before changing another member's area and avoid overlapping edits whenever possible.
 
-## joker : almutesim alakili
+## General Support - almutesim alakili
 
-helps with all the tasks
+Supports all areas; no primary file ownership.
 
 ## Technical Lead / Core ML - Rasit Isaoglu
 
@@ -19,16 +19,19 @@ src/naltra/pipeline/
 src/naltra/schemas/
 configs/
 scripts/train_all.py
+scripts/evaluate_all.py
 ```
 
 The Technical Lead also coordinates architecture, shared prediction interfaces, integration, and final experiments.
 
-## UI Member and Sildes - Mohmed kamaledin
+## UI Member and Slides - Mohmed kamaledin
 
 Owns:
 
 ```text
-dashboard/
+scripts/build_dashboard.py
+src/naltra/reporting/
+docs/results/
 ```
 
 ## Data & Taxonomy Member - omar
@@ -53,7 +56,6 @@ src/naltra/models/svm/
 configs/models/naive_bayes.yaml
 configs/models/svm.yaml
 src/naltra/pipeline/ensemble.py
-configs/ensemble.yaml
 ```
 
 Raouf is responsible for the ensemble voting implementation and configuration. This file-specific ownership is an exception to the Technical Lead's general ownership of `src/naltra/pipeline/`; shared pipeline contract changes still require coordination with the Technical Lead.
@@ -66,7 +68,6 @@ Owns:
 src/naltra/evaluation/
 results/
 docs/evaluation.md
-scripts/evaluate_all.py
 scripts/run_benchmark.py
 ```
 

@@ -1,6 +1,6 @@
 # Contributing to NALTRA
 
-NALTRA is shared by five contributors. Small, focused pull requests and clear ownership boundaries help everyone work independently.
+NALTRA is shared by six contributors (see [docs/team_ownership.md](docs/team_ownership.md)). Small, focused pull requests and clear ownership boundaries help everyone work independently.
 
 ## Git workflow
 
@@ -17,10 +17,10 @@ Use [docs/team_ownership.md](docs/team_ownership.md) to identify the primary own
 
 ## Data, models, and secrets
 
-- Do not commit large datasets. Keep them in the ignored `data/` subdirectories and document how teammates can obtain or generate them.
+- Datasets: Git tracks the raw CORDIS archive, the compressed processed splits with their manifests, the project split map `data/splits/cordis_h2020/project_splits.json` and the translation review files (see [data/README.md](data/README.md)). Keep decompressed `.jsonl` files, extracted CSVs, caches and generated copies in the ignored `data/` subdirectories.
 - Do not commit large trained model weights or checkpoints. Store them outside Git and document their provenance.
 - Do not commit API keys, tokens, passwords, or private endpoints.
-- Put local credentials such as Jev API credentials in `.env`; add only blank placeholders to `.env.example`.
+- Put local credentials such as the Kev or Jev service keys in `.env`; `.env.example` holds only blank placeholders or non-secret local defaults.
 - Before committing, review `git status` and the staged diff for generated artifacts or secrets.
 
 ## Code quality
@@ -38,5 +38,5 @@ Use [docs/team_ownership.md](docs/team_ownership.md) to identify the primary own
 - The branch has a focused purpose and an ownership-appropriate name.
 - Shared interfaces remain backward compatible, or affected contributors have agreed to the change.
 - Tests and documentation reflect the new behavior.
-- No datasets, model binaries, generated results, or secrets are included.
+- No datasets beyond the tracked release, model binaries, generated results beyond the tracked summaries ([results/README.md](results/README.md)), or secrets are included.
 - Formatting, linting, and tests pass locally.

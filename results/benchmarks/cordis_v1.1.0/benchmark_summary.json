@@ -1,0 +1,137 @@
+{
+  "eval_set": "en_test",
+  "eval_set_path": "data/processed/cordis_h2020/en/test.jsonl",
+  "eval_set_sha256": "4f8564416013dff1c07e51f2c1f2064c2013c144908a26beec8122f455614052",
+  "samples": 200,
+  "warmup": 10,
+  "batch_size": 64,
+  "requested_device": "cpu",
+  "hardware": {
+    "python": "3.13.1",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "cpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+  },
+  "runtime": {
+    "packages": {
+      "torch": "2.14.1+cu126",
+      "transformers": "5.19.0",
+      "tokenizers": "0.23.2",
+      "huggingface-hub": "1.33.0",
+      "numpy": "2.5.3",
+      "scipy": "1.18.1",
+      "scikit-learn": "1.9.1"
+    },
+    "environment": {
+      "CUDA_VISIBLE_DEVICES": "-1",
+      "PYTORCH_NVML_BASED_CUDA_CHECK": null,
+      "OMP_NUM_THREADS": null
+    },
+    "cuda_available": false,
+    "torch_cuda": "12.6",
+    "torch_threads": 4
+  },
+  "created_at_utc": "2026-10-09T22:37:39.062337+00:00",
+  "models": {
+    "naive_bayes": {
+      "single": {
+        "samples": 200,
+        "warmup": 10,
+        "mean_ms": 1.8580740001925733,
+        "p50_ms": 1.7672999965725467,
+        "p95_ms": 2.392720003263093,
+        "p99_ms": 2.908269004110479
+      },
+      "batched": {
+        "batch_size": 64,
+        "docs": 200,
+        "docs_per_second": 812.6358371151496
+      },
+      "device": "cpu",
+      "artifact_sha256": "f4a6daecdf89a7df2a48135ec177a18cba0ed5bc50caea9d756767a4d787dfed",
+      "artifact_files_sha256": "4405199f3671e43cd5b4a63779ce42bd41538ca191f25a064aa46ea84d6d9b92",
+      "artifact_bytes": 96504707,
+      "parameters": 23650473
+    },
+    "svm": {
+      "single": {
+        "samples": 200,
+        "warmup": 10,
+        "mean_ms": 2.0519174993387423,
+        "p50_ms": 1.99014999816427,
+        "p95_ms": 2.5868350065138657,
+        "p99_ms": 3.2307539999601387
+      },
+      "batched": {
+        "batch_size": 64,
+        "docs": 200,
+        "docs_per_second": 739.6370379122809
+      },
+      "device": "cpu",
+      "artifact_sha256": "b9777d3f9fe292cec6f26ad9c130c523cb475b62e5792065d4bb4c8a84abb8b5",
+      "artifact_files_sha256": "25fd699eaa3e829782b1207f1a2b399c3e93211a8d338ec6b1633276d5aed43d",
+      "artifact_bytes": 285735157,
+      "parameters": 70954257
+    },
+    "hybrid_knn": {
+      "single": {
+        "samples": 200,
+        "warmup": 10,
+        "mean_ms": 542.6024560006772,
+        "p50_ms": 545.3277999986312,
+        "p95_ms": 578.6740899980941,
+        "p99_ms": 592.582098992716
+      },
+      "batched": {
+        "batch_size": 64,
+        "docs": 200,
+        "docs_per_second": 4.451223598634919
+      },
+      "device": "cpu+encoder:cpu",
+      "artifact_sha256": "7dbddd70d81c25c836aa31324c8f66b3269dee34d367d9aaa89f98204dd60760",
+      "artifact_files_sha256": "f12d24124176e0b674113ebb162b136cff6ee42d51d5e2ed2fddd77e8a880e19",
+      "artifact_bytes": 230584962,
+      "parameters": 64288276
+    },
+    "bilstm": {
+      "single": {
+        "samples": 200,
+        "warmup": 10,
+        "mean_ms": 13.039073500112863,
+        "p50_ms": 13.412349995633122,
+        "p95_ms": 17.62300000336836,
+        "p99_ms": 18.986923011980224
+      },
+      "batched": {
+        "batch_size": 64,
+        "docs": 200,
+        "docs_per_second": 77.18590978949163
+      },
+      "device": "cpu",
+      "artifact_sha256": "5995119f41df7be31e106e5ef4e87a6cb6f761342ea59254d59356c778f64511",
+      "artifact_files_sha256": "6b16e2af1d8a2ff04e8b243d628c7a41c6050640369e6eac8b18fc3b60f49f85",
+      "artifact_bytes": 66604124,
+      "parameters": 16385433
+    },
+    "transformer": {
+      "single": {
+        "samples": 200,
+        "warmup": 10,
+        "mean_ms": 367.11088400021254,
+        "p50_ms": 376.39560000388883,
+        "p95_ms": 453.1287849946238,
+        "p99_ms": 538.6718250010745
+      },
+      "batched": {
+        "batch_size": 64,
+        "docs": 200,
+        "docs_per_second": 2.493387399480275
+      },
+      "device": "cpu",
+      "artifact_sha256": "16d60bd4796233c0362e56e2efffe43460e0491cfe9ef5e3b02eae00093ede2d",
+      "artifact_files_sha256": "f0eea7ce0f24da6358690fa7c1fb5249a7136842b7f7f34984b1ab4cc41c4e56",
+      "artifact_bytes": 1130859183,
+      "parameters": 278407385
+    }
+  },
+  "failures": {}
+}

@@ -1,0 +1,539 @@
+{
+  "artifact": {
+    "path": "models/cordis_v1.1.0/cordis_h2020/en_tr_direct/svm/naltra.json",
+    "sha256": "b9777d3f9fe292cec6f26ad9c130c523cb475b62e5792065d4bb4c8a84abb8b5",
+    "artifact_files_sha256": "25fd699eaa3e829782b1207f1a2b399c3e93211a8d338ec6b1633276d5aed43d",
+    "family": "svm"
+  },
+  "summary": {
+    "path": "results/metrics/cordis_v1.1.0_ensemble/summary.json",
+    "sha256": "6b405ad56edb1adcdc047e8a56dbf386cb6e792a967cc6a5ef019aca37f95e35"
+  },
+  "exception_pairs": 0,
+  "inputs": {
+    "en_test": {
+      "input_sha256": "4f8564416013dff1c07e51f2c1f2064c2013c144908a26beec8122f455614052",
+      "npz_sha256": {
+        "svm": "ba95157837512dc38f24f1a5e08dc1f5dfe42873c61c9da74078498c70dc1f89",
+        "hybrid_knn": "0c850b46e3809d1a11d0ce361bf3d37c31531f26012258c926bdd15cea880180",
+        "bilstm": "cf713b55df9b14d2634916dc6ce62f62eb7cee82ec2489bcd775d95df8298e1f",
+        "transformer": "baeed37ba83b00f2952f8e3402690b406c3933676ecdbd287a41e8a41cbeb6a8",
+        "naive_bayes": "765b3ad19e1035d5bc6d08a2af03818e8fe2c8b1dd4be9f9cc2eb26dea3e9fc7"
+      }
+    },
+    "tr_test": {
+      "input_sha256": "d269933ab6d24dd26cbbda44f9bbe3c8c8fa71c60ed1b109d2e907a227ea0141",
+      "npz_sha256": {
+        "svm": "95d5035a8fe1ed8c35cc1436e3037ab1c762124c6f5ff3a3ce3fbf11f98c2ce7",
+        "hybrid_knn": "f500ecacdb5de0b5bd2167f5a8d9d06640953b2caf767df83e938887422d7995",
+        "bilstm": "0a58512c26cca51fc8a77462e04f5ae6f3c37d7492e7f9660e3a9744b47bd764",
+        "transformer": "cc237e61e8eeb95349b56d5c4efcf23d2511af5f6f0f76c1234a2768dff3ccd8",
+        "naive_bayes": "bcde4c9fd9e9b2a9122192aa2165435fcad86a080458971599c79fd0460a333b"
+      }
+    },
+    "cs_chunk_test": {
+      "input_sha256": "d05ce8fbe1bb26fea9685db48c98e3c49470bd29850d91a8aafda13d41f42379",
+      "npz_sha256": {
+        "svm": "d45b6686e185f5e9b9158cfd83c00c6022eb7fc1779d5dc8e58b0874980cb53b",
+        "hybrid_knn": "63a14ec1c4a085c6b24f9ff3f4f5997880e2341e7cffb5c9711b2e43944b96f7",
+        "bilstm": "604fb6ab95c51dbab3c2f48b1bf1ece6b3771c5c41e3c4364b5b12209b025670",
+        "transformer": "db2fc2e80c1a98e8e8a5cb5aeb6d707133539a8a3e10abad57f9e43ff993a3f5",
+        "naive_bayes": "d4d5b4443fca6768b82f9d3caeb51aa281b9012c5b736bdf036fa299b7a9a332"
+      }
+    },
+    "cs_sentence_test": {
+      "input_sha256": "8f1acb12bff9a25381c32ea0c9b140651f0e964aab6c0a4eeb36016eb76264b6",
+      "npz_sha256": {
+        "svm": "7631bd18d1d442d17a4e193cd8054023f7ee163d8352bdf6575d6fa28cae0093",
+        "hybrid_knn": "60f294d69db7d326ee1cd56c5749d438bf8616e5b26d55105231bbc1a162df09",
+        "bilstm": "8d5f0d99c406f1d46d9e1d0ac5ae1b33893f35854e8312ca4c7720a8ca30ed50",
+        "transformer": "d791712cd8ada1b5fe69bd16d7cdc815bd180aa55966afdc80ba7c54225cf3e4",
+        "naive_bayes": "b5353a59970d6f998ba00ef6b12e38fd10b9eca7f0a29c93c0cda485bf2590d1"
+      }
+    },
+    "en_test_noisy": {
+      "input_sha256": "09f9b6af9b690981e47620653d0be2819652363c79c3650a49a1036b15b4f1e7",
+      "npz_sha256": {
+        "svm": "ceee8416a5027a8e665818e142f1e329fa4308a3ca29ab2bad3596b2a280a3df",
+        "hybrid_knn": "e90f8fc5a3bc0224e0c96872586722995faa2775706fbff1275e93771108ca8c",
+        "bilstm": "d4225932211e894832bf7904e476dac62aedb806aa9add34984a3aabbdc795a8",
+        "transformer": "990cbc3dd6af8da6cd56a6b2e55fa083b6f644f90c468cdb39f42f79d50148ee",
+        "naive_bayes": "8f49c6bfbadd86738519ed03a9cdda8a82dd5b22def0f5b87247c8f2cb503fcd"
+      }
+    },
+    "tr_test_noisy": {
+      "input_sha256": "724c800cd9af4889e22c78590fd88c2aabffb51126e77a926fdb46fdde99e26c",
+      "npz_sha256": {
+        "svm": "684589e42791c5b2c1dfac18fdaac44f90415dc7615727c7d8ebc9de62e8438c",
+        "hybrid_knn": "ebf3df2082b575c36bd3c1ece1eec51c4f91f1a4e7356dcb9f4d9164ad933e6e",
+        "bilstm": "80fa51649c6dafd512ef35e6c2985025d89baaae9a116bad59760b32a1159681",
+        "transformer": "954aa2f088520cced572c0ccd7cd353837eb03ec0ca2e7b10720a4eca2eca658",
+        "naive_bayes": "202c618b66ff9f81b4f8d0d658e3f382ff3d940cea7f1aed553f7b26ae3b90e5"
+      }
+    }
+  },
+  "sets": {
+    "en_test": {
+      "svm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.5583668583967816,
+          "macro_f1": 0.48928306673091215
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.5583668583967816,
+          "macro_f1": 0.48928306673091215
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "hybrid_knn": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.39293598233995586,
+          "macro_f1": 0.31205413025414375
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.39293598233995586,
+          "macro_f1": 0.31205413025414375
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "bilstm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.2890562409870213,
+          "macro_f1": 0.1610078108252708
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.2890562409870213,
+          "macro_f1": 0.1610078108252708
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "transformer": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.24764546510127725,
+          "macro_f1": 0.11937756683577258
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.24764546510127725,
+          "macro_f1": 0.11937756683577258
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "naive_bayes": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.2776641340346776,
+          "macro_f1": 0.19755168535439682
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.2776641340346776,
+          "macro_f1": 0.19755168535439682
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      }
+    },
+    "tr_test": {
+      "svm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.4886031560490941,
+          "macro_f1": 0.4228232129868968
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.4886031560490941,
+          "macro_f1": 0.4228232129868968
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "hybrid_knn": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.3817207946301444,
+          "macro_f1": 0.2946265512662224
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.3817207946301444,
+          "macro_f1": 0.2946265512662224
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "bilstm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.27077148860945266,
+          "macro_f1": 0.15444892383056671
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.27077148860945266,
+          "macro_f1": 0.15444892383056671
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "transformer": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.23975860146282266,
+          "macro_f1": 0.11128192228539102
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.23975860146282266,
+          "macro_f1": 0.11128192228539102
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "naive_bayes": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.27525252525252525,
+          "macro_f1": 0.16559091914618132
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.27525252525252525,
+          "macro_f1": 0.16559091914618132
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      }
+    },
+    "cs_chunk_test": {
+      "svm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.5123941302391959,
+          "macro_f1": 0.455114697699091
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.5123941302391959,
+          "macro_f1": 0.455114697699091
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "hybrid_knn": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.38465640205292273,
+          "macro_f1": 0.30229644930813987
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.38465640205292273,
+          "macro_f1": 0.30229644930813987
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "bilstm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.28176813367245096,
+          "macro_f1": 0.16143243483871816
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.28176813367245096,
+          "macro_f1": 0.16143243483871816
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "transformer": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.24674543093345158,
+          "macro_f1": 0.11932318584153052
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.24674543093345158,
+          "macro_f1": 0.11932318584153052
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "naive_bayes": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.27875946628200504,
+          "macro_f1": 0.19423948858766107
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.27875946628200504,
+          "macro_f1": 0.19423948858766107
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      }
+    },
+    "cs_sentence_test": {
+      "svm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.5079705702023298,
+          "macro_f1": 0.45069836914061506
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.5079705702023298,
+          "macro_f1": 0.45069836914061506
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "hybrid_knn": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.3834424105511445,
+          "macro_f1": 0.2999394446975989
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.3834424105511445,
+          "macro_f1": 0.2999394446975989
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "bilstm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.28360708534621576,
+          "macro_f1": 0.1633272662903147
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.28360708534621576,
+          "macro_f1": 0.1633272662903147
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "transformer": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.2444668642411249,
+          "macro_f1": 0.11823342162168382
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.2444668642411249,
+          "macro_f1": 0.11823342162168382
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "naive_bayes": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.27998771310090614,
+          "macro_f1": 0.1987087928726021
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.27998771310090614,
+          "macro_f1": 0.1987087928726021
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      }
+    },
+    "en_test_noisy": {
+      "svm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.4800974198949692,
+          "macro_f1": 0.40740234442128004
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.4800974198949692,
+          "macro_f1": 0.40740234442128004
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "hybrid_knn": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.3740216943567211,
+          "macro_f1": 0.27991228122507256
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.3740216943567211,
+          "macro_f1": 0.27991228122507256
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "bilstm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.24097755044046604,
+          "macro_f1": 0.11793483659404773
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.24097755044046604,
+          "macro_f1": 0.11793483659404773
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "transformer": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.20341074020319302,
+          "macro_f1": 0.08608998298522992
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.20341074020319302,
+          "macro_f1": 0.08608998298522992
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "naive_bayes": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.26174358974358974,
+          "macro_f1": 0.15679460550265203
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.26174358974358974,
+          "macro_f1": 0.15679460550265203
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      }
+    },
+    "tr_test_noisy": {
+      "svm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.43233224903547923,
+          "macro_f1": 0.36822924120906286
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.43233224903547923,
+          "macro_f1": 0.36822924120906286
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "hybrid_knn": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.3672606030186785,
+          "macro_f1": 0.2729931879198439
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.3672606030186785,
+          "macro_f1": 0.2729931879198439
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "bilstm": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.21860348292029472,
+          "macro_f1": 0.10544906860894922
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.21860348292029472,
+          "macro_f1": 0.10544906860894922
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "transformer": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.19482111676635583,
+          "macro_f1": 0.07925037834603844
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.19482111676635583,
+          "macro_f1": 0.07925037834603844
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      },
+      "naive_bayes": {
+        "all": {
+          "records": 4711,
+          "micro_f1": 0.2501945525291829,
+          "macro_f1": 0.13109752735458463
+        },
+        "without_exceptions": {
+          "records": 4711,
+          "micro_f1": 0.2501945525291829,
+          "macro_f1": 0.13109752735458463
+        },
+        "exceptions_only": {
+          "records": 0
+        }
+      }
+    }
+  }
+}
