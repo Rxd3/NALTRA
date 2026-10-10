@@ -237,8 +237,8 @@ scored zero-shot.
 
 ### Benchmark route: `prepare_laya.py` and `predict_all.py`
 
-The reported protocol scores Laya like Kev and Jev, on the fixed 80/120-pair samples of
-the [runbook](runbook.md#kev-jev-and-laya-on-fixed-samples):
+The sample protocol scores Laya on the same fixed 80/120-pair samples as Kev and Jev
+([runbook](runbook.md#kev-jev-and-laya-on-fixed-samples)), as a non-voting baseline:
 
 ```bash
 python scripts/prepare_laya.py --output-dir models/cordis_laya_v1.1.0/cordis_h2020/en_tr_direct
@@ -249,10 +249,13 @@ python scripts/predict_all.py --artifacts models/cordis_laya_v1.1.0/cordis_h2020
 their SHA-256 values and the 473 exact topic questions into `<output-dir>/laya`; it refuses a
 folder that already holds an artifact. Share the entire folder. Reload uses local files
 only and verifies their hashes, so it needs no API or second download. `predict_all.py`
-loads the artifact like a trained one and records its digest in every dump sidecar;
-`laya` then joins `--members` of the sample `evaluate_ensemble.py` command, which tunes
-its threshold on val-A. On the GTX 1650 one document takes about 145 s (473 questions,
-8 per batch), so the 400 sample documents take about 16 h.
+loads the artifact like a trained one and records its digest in every dump sidecar.
+Once those dumps exist, `laya` is added to `--baselines` of the sample
+`evaluate_ensemble.py` command (`--baselines naive_bayes laya`): like every member it is
+scored and its threshold is tuned on val-A, but it never votes, so the existing votes do
+not change. Its sample results are pending; no Laya score is reported yet. On the GTX 1650
+one document takes about 145 s (473 questions, 8 per batch), so the 400 sample documents
+take about 16 h.
 
 ### Direct validation route: `evaluate_all.py`
 
