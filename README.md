@@ -311,9 +311,12 @@ python scripts/build_dashboard.py --summary results/metrics/cordis_v1.1.0_ensemb
 - Every `train_all.py` run rewrites `<output-dir>/training_summary.json`; check that it
   reports `"success"` before the next run overwrites it.
 - If NB or SVM training fails with joblib's "A task has failed to un-serialize" (seen under
-  memory pressure with `n_jobs: -1`), set `LOKY_MAX_CPU_COUNT=4` and re-run that family. An
-  exit code 139 without a traceback (0xC0000005, seen once in an NVIDIA driver DLL during
-  CPU-only SVM training) is a native crash, not a data error: re-run that family alone.
+  memory pressure with `n_jobs: -1`), set `LOKY_MAX_CPU_COUNT=4` and re-run that family. On
+  Windows a process can also end with a native access violation and no traceback (exit
+  code 139, -1073741819 or 0xC0000005), sometimes after the model is saved, while joblib
+  worker processes shut down. It is not a data error: if the family's `naltra.json` exists
+  and `training_summary.json` (or the printed status) says `"success"`, the saved model is
+  usable (`predict_all.py` reloads and checks it); otherwise re-run that family alone.
 - `train_all.py --smoke` trains a bounded subset offline for every family except
   `hybrid_knn`, which needs the e5 encoder in the Hugging Face cache.
 
