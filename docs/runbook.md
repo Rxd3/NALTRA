@@ -44,7 +44,7 @@ builds a different TR release that needs a new release version.
 | `transformer` | GPU | `xlm-roberta-base`; release `cordis_v0.5.0`: head refit on the frozen encoder |
 | `kev` | Kev server (WSL2) | zero-shot, 473 yes/no questions per document; scored on 80 validation and 120 test pairs (section 4) |
 | `jev` | TypeSafe API | hosted System One model, same questions as Kev; `JEV_API_KEY`, `JEV_API_BASE_URL=https://api.typesafe.ai` in `.env` |
-| `laya` | GPU in practice | zero-shot, pinned local checkpoint (`requirements-laya.txt`, `scripts/prepare_laya.py`), 473 two-option questions per document, 8 per batch: about 145 s per document on the GTX 1650, about 7 s on a teammate's RTX 4050; scored on the same samples as Kev (section 4) |
+| `laya` | GPU in practice | zero-shot, pinned local checkpoint (`requirements-laya.txt`, `scripts/prepare_laya.py`), 473 two-option questions per document, 8 per batch: about 145 s per document on the GTX 1650, about 7 s on a teammate's RTX 4050; scored on the same samples as Kev, results pending (section 4) |
 
 Every locally trained member is fit on EN+TR training data, so EN -> TR measures the gap on
 translated input, not zero-shot transfer; Kev, Jev and Laya are the zero-shot members.
@@ -144,7 +144,8 @@ System One model) is scored on the same files; it needs `JEV_API_KEY` and
 `JEV_API_BASE_URL=https://api.typesafe.ai` in `.env`. Laya (`pip install -r
 requirements-laya.txt`) scores the same files from an artifact that `prepare_laya.py` builds
 from the pinned checkpoint (a 678 MB download); at about 145 s per document on the GTX 1650
-its 400 sample documents take about 16 h. With the server of section 5 running:
+its 400 sample documents take about 16 h. Once its dumps exist, add `laya` to `--baselines` of
+the sample `evaluate_ensemble.py` command, so it is scored without changing the votes. With the server of section 5 running:
 
 ```bash
 python scripts/sample_sets.py --sets en_validation tr_validation --pairs 80 --output-dir data/samples/val80
@@ -154,7 +155,7 @@ python scripts/predict_all.py --artifacts models/cordis_v1.1.0_knn/cordis_h2020/
 python scripts/predict_all.py --artifacts models/cordis_v0.5.0/cordis_h2020/en_tr_direct --models bilstm transformer --sets en_val_kev=data/samples/val80/en_validation.jsonl tr_val_kev=data/samples/val80/tr_validation.jsonl en_test_kev=data/samples/test120/en_test.jsonl tr_test_kev=data/samples/test120/tr_test.jsonl --device cuda --output-dir results/predictions/cordis_v1.1.0
 python scripts/prepare_laya.py --output-dir models/cordis_laya_v1.1.0/cordis_h2020/en_tr_direct
 python scripts/predict_all.py --artifacts models/cordis_laya_v1.1.0/cordis_h2020/en_tr_direct --models laya --sets en_val_kev=data/samples/val80/en_validation.jsonl tr_val_kev=data/samples/val80/tr_validation.jsonl en_test_kev=data/samples/test120/en_test.jsonl tr_test_kev=data/samples/test120/tr_test.jsonl --device cuda --output-dir results/predictions/cordis_v1.1.0
-python scripts/evaluate_ensemble.py --predictions results/predictions/cordis_v1.1.0 --members svm hybrid_knn bilstm transformer kev jev laya --baselines naive_bayes --tune-sets en_val_kev=data/samples/val80/en_validation.jsonl tr_val_kev=data/samples/val80/tr_validation.jsonl --test-sets en_test_kev=data/samples/test120/en_test.jsonl tr_test_kev=data/samples/test120/tr_test.jsonl --output-dir results/metrics/cordis_v1.1.0_sample
+python scripts/evaluate_ensemble.py --predictions results/predictions/cordis_v1.1.0 --members svm hybrid_knn bilstm transformer kev jev --baselines naive_bayes --tune-sets en_val_kev=data/samples/val80/en_validation.jsonl tr_val_kev=data/samples/val80/tr_validation.jsonl --test-sets en_test_kev=data/samples/test120/en_test.jsonl tr_test_kev=data/samples/test120/tr_test.jsonl --output-dir results/metrics/cordis_v1.1.0_sample
 ```
 
 ## 5. Kev server (WSL2, Ubuntu)
