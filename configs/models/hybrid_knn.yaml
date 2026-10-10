@@ -1,0 +1,26 @@
+model: hybrid_knn
+enabled: true
+target_field: labels_direct
+n_jobs: 1
+features:
+  type: tfidf
+  lowercase: true
+  ngram_range: [1, 2]
+  max_features: 50000
+  min_df: 2
+  sublinear_tf: true
+retrieval:
+  # Neighbours taken from each retriever before reciprocal rank fusion (Laya uses k=60).
+  neighbors: 50
+  rrf_k: 60
+  sparse: true
+  dense: true
+encoder:
+  pretrained_name: intfloat/multilingual-e5-base
+  revision: d128750597153bb5987e10b1c3493a34e5a4502a
+  max_length: 256
+  batch_size: 32
+  device: auto
+multilabel:
+  # Provisional; replaced by the validation threshold tuner.
+  threshold: 0.3

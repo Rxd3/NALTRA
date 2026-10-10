@@ -1,11 +1,11 @@
-model: jev
+model: kev
 enabled: true
-# TypeSafe's hosted System One model (https://api.typesafe.ai). Set JEV_API_KEY and
-# JEV_API_BASE_URL=https://api.typesafe.ai in .env; never commit the key.
-api_key_env: JEV_API_KEY
-base_url_env: JEV_API_BASE_URL
-# One request carries a yes/no question for every supported label, as for Kev.
-request_timeout_seconds: 120
+# Local open-weights System One server (github.com/jaredpalmer/kev, Kev-0.8B under WSL2).
+# The server ignores the key, but NALTRA requires one: set KEV_API_KEY=local in .env.
+api_key_env: KEV_API_KEY
+base_url_env: KEV_API_BASE_URL
+# One request carries a yes/no question for every supported label.
+request_timeout_seconds: 300
 contract:
   configured: true
   request_path: v1/systemone

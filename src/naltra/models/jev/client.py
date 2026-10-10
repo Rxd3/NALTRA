@@ -1,7 +1,13 @@
-"""Configurable Jev JSON service client; requires an explicit provider contract."""
+"""Jev, TypeSafe's hosted System One model: Kev's protocol under the jev-latest alias."""
 
-from naltra.models.external import JSONServiceClient
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from naltra.models.kev.client import KevClient
 
 
-class JevClient(JSONServiceClient):
+@dataclass(slots=True)
+class JevClient(KevClient):
+    model_alias: str = "jev-latest"
     service_name = "jev"
