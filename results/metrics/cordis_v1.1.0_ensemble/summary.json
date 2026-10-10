@@ -28,7 +28,7 @@
   "baselines": [
     "naive_bayes"
   ],
-  "code_commit": "ea33ff8",
+  "code_commit": "a9b3c1e",
   "environment": {
     "python_version": "3.13.1",
     "platform": "win32",
@@ -1844,7 +1844,7 @@
       },
       "hybrid_knn": {
         "role": "new",
-        "architecture": "sparse + dense retrieval kNN with reciprocal rank fusion that reimplements Laya's retrieval design (Laya itself is not run)",
+        "architecture": "sparse + dense retrieval kNN with reciprocal rank fusion (Cormack et al. 2009, k = 60)",
         "model": "TF-IDF 1-2-grams (50k) cosine + intfloat/multilingual-e5-base mean-pooled embeddings (max_length 256), 50 neighbours per retriever, RRF k 60, fused neighbour label vote"
       },
       "bilstm": {
@@ -1880,12 +1880,12 @@
       "soft": {
         "role": "new",
         "architecture": "NALTRA soft vote",
-        "model": "mean member probability, global threshold tuned on val-B"
+        "model": "mean of raw member scores, global threshold tuned on val-B"
       },
       "weighted_soft": {
         "role": "new",
         "architecture": "NALTRA weighted soft vote",
-        "model": "member probabilities weighted by val-A micro-F1, global threshold tuned on val-B"
+        "model": "raw member scores weighted by val-A micro-F1, global threshold tuned on val-B"
       },
       "leave_one_out": {
         "role": "new",
