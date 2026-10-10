@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -148,3 +150,38 @@ def test_local_laya_portable_artifact_and_integrity(local_laya, tmp_path, monkey
 def test_local_laya_configuration_validation(config):
     with pytest.raises(ValueError):
         LayaModel(config)
+
+
+def cuda_client(monkeypatch, tmp_path, loaded_device):
+    """A CUDA-configured client whose SDK is a stand-in; no checkpoint is downloaded."""
+    config = {**LayaModel({"device": "cpu"}).config, "device": "cuda"}
+    loads = []
+
+    def load(path, *, device, backend):
+        loads.append((path, device, backend))
+        return SimpleNamespace(device=SimpleNamespace(type=loaded_device))
+
+    sdk = ModuleType("laya")
+    sdk.__version__ = config["sdk_version"]
+    sdk.load = load
+    monkeypatch.setitem(sys.modules, "laya", sdk)
+    return LayaClient(config, checkpoint_dir=tmp_path), loads
+
+
+def test_local_laya_never_keeps_a_rejected_cpu_fallback(monkeypatch, tmp_path):
+    client, loads = cuda_client(monkeypatch, tmp_path, "cpu")
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="could not load on CUDA"):
+            client.initialize()
+        assert client.agent is None
+    assert len(loads) == 2
+
+
+def test_local_laya_caches_an_agent_loaded_on_cuda(monkeypatch, tmp_path):
+    client, loads = cuda_client(monkeypatch, tmp_path, "cuda")
+    client.initialize()
+    agent = client.agent
+    client.initialize()
+    assert agent is not None and agent.device.type == "cuda"
+    assert client.agent is agent
+    assert loads == [(str(tmp_path), "cuda", "eager")]
