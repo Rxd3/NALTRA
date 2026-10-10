@@ -13,17 +13,6 @@ def safe_divide(numerator: float, denominator: float) -> float:
     return numerator / denominator if denominator else 0.0
 
 
-def precision_recall_f1(
-    true_labels: set[str], predicted_labels: set[str]
-) -> tuple[float, float, float]:
-    """Calculate example-level set precision, recall, and F1."""
-    true_positives = len(true_labels & predicted_labels)
-    precision = safe_divide(true_positives, len(predicted_labels))
-    recall = safe_divide(true_positives, len(true_labels))
-    f1 = safe_divide(2 * precision * recall, precision + recall)
-    return precision, recall, f1
-
-
 def multilabel_metrics(
     y_true: Iterable[set[str]],
     y_pred: Iterable[set[str]],
@@ -88,14 +77,15 @@ def compute_classification_metrics(
     predictions: list[PredictionResult],
     ground_truth: list[set[str]],
     all_labels: list[str] | None = None,
-    threshold: float = 0.5,
+    threshold: float | None = None,
 ) -> dict[str, float]:
-    """Apply the requested cutoff to complete scores when provided by the model."""
-    apply_thresholds({}, threshold)
-    y_pred_sets = []
-    for pred in predictions:
-        scores = pred.label_scores or {item.label: item.score for item in pred.labels}
-        pred_set = {item.label for item in apply_thresholds(scores, threshold)}
-        y_pred_sets.append(pred_set)
-
+    """Score the labels each prediction selected, or re-threshold its complete scores."""
+    if threshold is None:
+        y_pred_sets = [{item.label for item in pred.labels} for pred in predictions]
+    else:
+        apply_thresholds({}, threshold)
+        y_pred_sets = []
+        for pred in predictions:
+            scores = pred.label_scores or {item.label: item.score for item in pred.labels}
+            y_pred_sets.append({item.label for item in apply_thresholds(scores, threshold)})
     return multilabel_metrics(ground_truth, y_pred_sets, all_labels)

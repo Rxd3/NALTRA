@@ -15,14 +15,6 @@ class OODDetector(Protocol):
         ...
 
 
-class DisabledOODDetector:
-    """Placeholder that makes the absence of an OOD detector explicit."""
-
-    def detect(self, text: str) -> OODResult:
-        del text
-        return OODResult(is_ood=False, score=0.0)
-
-
 class MaxProbabilityOODDetector:
     """Confidence baseline; the decision threshold comes from ID validation."""
 

@@ -1,0 +1,526 @@
+<title>NALTRA Results</title>
+<style>
+/* Layout: one reading column of stacked panels; summary strip, then each chart with its own controls. */
+:root {
+  --bg: #f7f8fb; --surface: #ffffff; --ink: #11151c; --ink-2: #4b5363; --ink-3: #737b8c;
+  --rule: #e2e5ec; --grid: #eceef3; --accent: #1f4fbf; --accent-soft: #e6edfb;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+  --seq-0: #f7f8fb; --seq-1: #cde2fb; --seq-2: #86b6ef; --seq-3: #3987e5; --seq-4: #256abf; --seq-5: #184f95; --seq-6: #0d366b;
+  --bad: #c43838; --good: #0b8a0b;
+  --font-ui: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12151b; --surface: #1a1e26; --ink: #f3f5f9; --ink-2: #b7bdca; --ink-3: #8b93a3;
+  --rule: #2b313c; --grid: #252a34; --accent: #7aa4ff; --accent-soft: #1f2a44;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --seq-0: #1a1e26; --seq-1: #1c3253; --seq-2: #1c4a86; --seq-3: #2a63b5; --seq-4: #3f82dc; --seq-5: #7aa9ee; --seq-6: #c4dbfb;
+  --bad: #ef7070; --good: #3cc23c; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #12151b; --surface: #1a1e26; --ink: #f3f5f9; --ink-2: #b7bdca; --ink-3: #8b93a3;
+  --rule: #2b313c; --grid: #252a34; --accent: #7aa4ff; --accent-soft: #1f2a44;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --seq-0: #1a1e26; --seq-1: #1c3253; --seq-2: #1c4a86; --seq-3: #2a63b5; --seq-4: #3f82dc; --seq-5: #7aa9ee; --seq-6: #c4dbfb;
+  --bad: #ef7070; --good: #3cc23c; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-ui); margin: 0; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 64px; display: grid; gap: 22px; }
+header h1 { font-size: 30px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+header p { margin: 6px 0 0; color: var(--ink-2); max-width: 68ch; }
+.eyebrow { font: 600 12px/1 var(--font-ui); text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.chip { font: 500 12.5px/1 var(--font-ui); padding: 7px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); }
+.chip b { font-family: var(--font-data); font-weight: 500; }
+.notice { border: 1px solid var(--rule); border-left: 4px solid var(--s4); background: var(--surface); padding: 12px 14px; border-radius: 6px; color: var(--ink-2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; gap: 4px; min-width: 0; }
+.tile .k { font-size: 12.5px; color: var(--ink-2); }
+.tile .v { font: 500 26px/1.1 var(--font-data); }
+.tile .d { font-size: 12.5px; color: var(--ink-3); }
+section.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 18px 14px; display: grid; gap: 12px; min-width: 0; }
+.panel[hidden] { display: none; }
+.panel h2 { font-size: 18px; margin: 0; text-wrap: balance; }
+.panel .sub { margin: 2px 0 0; color: var(--ink-2); font-size: 13.5px; max-width: 80ch; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.controls label { font-size: 12.5px; color: var(--ink-2); display: flex; gap: 6px; align-items: center; }
+select { font: 500 13px var(--font-ui); color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 6px; padding: 5px 8px; }
+select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.legend button { font: 500 12.5px var(--font-ui); color: var(--ink); background: none; border: 0; padding: 2px 0; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.legend button[aria-pressed="false"] { color: var(--ink-3); text-decoration: line-through; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.legend button[aria-pressed="false"] i { opacity: 0.25; }
+.chart { width: 100%; min-width: 0; position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-family: var(--font-ui); fill: var(--ink-2); font-size: 11.5px; }
+.chart .num { font-family: var(--font-data); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 22px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 600; color: var(--ink-2); font-size: 12px; }
+td { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+td:first-child { font-family: var(--font-ui); }
+tr.best td { background: var(--accent-soft); }
+.tag { font: 600 10.5px/1 var(--font-ui); padding: 3px 6px; border-radius: 4px; margin-left: 6px; background: var(--grid); color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.tag.new { background: var(--accent-soft); color: var(--accent); }
+.legend .tag, #bench-table .tag, #sample-table .tag { margin-left: 0; }
+#bench-table :is(th, td):nth-child(-n+5) { text-align: left; font-family: var(--font-ui); }
+#bench-table th, #sample-table th { white-space: normal; }
+#sample-table th[colspan] { text-align: center; }
+#bench-table td:is(:nth-child(4), :nth-child(5)) { white-space: normal; min-width: 18ch; overflow-wrap: anywhere; }
+.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--ink); color: var(--bg); font-size: 12.5px; line-height: 1.45; padding: 8px 10px; border-radius: 6px; max-width: 280px; box-shadow: 0 4px 18px rgb(0 0 0 / 0.2); }
+.tip b { font-family: var(--font-data); font-weight: 500; }
+details summary { font-size: 12.5px; color: var(--ink-2); cursor: pointer; width: fit-content; }
+details[open] summary { margin-bottom: 8px; }
+.notes { color: var(--ink-2); font-size: 13.5px; display: grid; gap: 6px; max-width: 90ch; }
+.notes p { margin: 0; }
+footer { color: var(--ink-3); font-size: 12px; }
+@media (prefers-reduced-motion: no-preference) { .chart rect, .chart circle { transition: opacity 0.15s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">NLP course research project</div>
+    <h1>NALTRA Results</h1>
+    <p id="lede">Multilingual hierarchical multi-label classification of EU research projects (CORDIS Horizon 2020) into the EuroSciVoc science taxonomy under cross-lingual, code-switched and noisy input shift, with near-OOD rejection.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+  <div class="notice" id="pending" hidden></div>
+  <div class="tiles" id="tiles"></div>
+
+  <section class="panel" id="p-bench" hidden>
+    <div><h2>Benchmark</h2>
+    <p class="sub" id="bench-sub"></p></div>
+    <div class="controls"><label for="bench-set">Test set <select id="bench-set"></select></label></div>
+    <div class="scroll" id="bench-table"></div>
+    <p class="sub" id="bench-why"></p>
+  </section>
+
+  <section class="panel" id="p-lang">
+    <div><h2>Scores by test language</h2>
+    <p class="sub">Each bar is one system on one test set. Hover for the exact value or open the data table below. Click a legend entry to hide or show a system in this chart.</p></div>
+    <div class="controls"><label for="lang-metric">Metric <select id="lang-metric"></select></label></div>
+    <div class="legend" id="lang-legend"></div>
+    <div class="chart" id="lang-chart"></div>
+    <details><summary>Show data</summary><div class="scroll" id="lang-data"></div></details>
+  </section>
+
+  <section class="panel" id="p-sig">
+    <div><h2>Significance</h2>
+    <p class="sub" id="sig-sub"></p></div>
+    <div class="grid2">
+      <div><div class="controls"><label for="sig-system">System <select id="sig-system"></select></label></div>
+        <div class="chart" id="sig-cross"></div>
+        <details><summary>Show data</summary><div class="scroll" id="sig-cross-data"></div></details></div>
+      <div><div class="controls"><label for="sig-set">Test set <select id="sig-set"></select></label></div>
+        <div class="chart" id="sig-best"></div>
+        <details><summary>Show data</summary><div class="scroll" id="sig-best-data"></div></details></div>
+    </div>
+  </section>
+
+  <section class="panel" id="p-conf">
+    <div><h2>Root-domain errors</h2>
+    <p class="sub">Rows are the gold EuroSciVoc root of a project. The diagonal is recall for that root; off-diagonal cells are the rate at which another root is predicted although the project does not have it.</p></div>
+    <div class="controls"><label for="conf-system">System <select id="conf-system"></select></label>
+      <label for="conf-set">Test set <select id="conf-set"></select></label></div>
+    <div class="chart scroll" id="conf-chart"></div>
+    <details><summary>Show data</summary><div class="scroll" id="conf-data"></div></details>
+  </section>
+
+  <div class="grid2">
+    <section class="panel" id="p-depth">
+      <div><h2>F1 by hierarchy depth</h2><p class="sub">Micro-F1 restricted to the taxonomy nodes at each depth (1 = root domains).</p></div>
+      <div class="controls"><label for="depth-set">Test set <select id="depth-set"></select></label></div>
+      <div class="legend" id="depth-legend"></div>
+      <div class="chart" id="depth-chart"></div>
+      <details><summary>Show data</summary><div class="scroll" id="depth-data"></div></details>
+    </section>
+    <section class="panel" id="p-rel">
+      <div><h2>Top-1 reliability</h2><p class="sub">Confidence of each system's top label against how often it is correct. The dashed line is perfect calibration; bin counts are in the tooltips and the data table.</p></div>
+      <div class="controls"><label for="rel-set">Test set <select id="rel-set"></select></label></div>
+      <div class="legend" id="rel-legend"></div>
+      <div class="chart" id="rel-chart"></div>
+      <details><summary>Show data</summary><div class="scroll" id="rel-data"></div></details>
+    </section>
+  </div>
+
+  <section class="panel" id="p-table">
+    <div><h2>All metrics</h2><p class="sub">Every system on the selected test set. The highlighted row is the best member chosen on validation.</p></div>
+    <div class="controls"><label for="table-set">Test set <select id="table-set"></select></label></div>
+    <div class="scroll" id="metrics-table"></div>
+  </section>
+
+  <section class="panel" id="p-sample" hidden>
+    <div><h2 id="sample-title">English–Turkish sample</h2>
+    <p class="sub" id="sample-sub"></p></div>
+    <div class="scroll" id="sample-table"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="panel" id="p-ood">
+      <div><h2>Out-of-distribution detection</h2><p class="sub" id="ood-sub"></p></div>
+      <div class="scroll" id="ood-table"></div>
+    </section>
+    <section class="panel" id="p-lat">
+      <div><h2>Latency and size</h2><p class="sub" id="lat-sub"></p></div>
+      <div class="scroll" id="lat-table"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>How these numbers were produced</h2>
+    <div class="notes" id="notes"></div>
+  </section>
+  <footer id="footer"></footer>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const DATA = /*__NALTRA_DATA__*/null;
+const SVGNS = "http://www.w3.org/2000/svg";
+const ALPHA = 0.05;
+const METRICS = {
+  micro_f1: "Micro-F1", macro_f1: "Macro-F1", hmicro_f1: "Hierarchical micro-F1",
+  p_at_1: "Precision@1", jaccard: "Jaccard (per document)", r_precision: "R-precision",
+};
+const METRIC_NAMES = {...METRICS, ece: "Pooled ECE", top1_ece: "Top-1 ECE", mean_predicted_labels: "Labels / doc"};
+const SET_NAMES = Object.assign({en_test: "English", tr_test: "Turkish (MT)", cs_chunk_test: "Code-switch (chunk)",
+  cs_sentence_test: "Code-switch (sentence)", en_test_noisy: "English, noisy", tr_test_noisy: "Turkish, noisy"}, DATA.meta.set_labels || {});
+const AXIS_NAMES = {en_test: "EN", tr_test: "TR", cs_chunk_test: "CS chunk", cs_sentence_test: "CS sent.", en_test_noisy: "EN noisy", tr_test_noisy: "TR noisy"};
+const SYSTEM_NAMES = {naive_bayes: "Naive Bayes", svm: "SVM", hybrid_knn: "Hybrid-kNN", bilstm: "BiLSTM", transformer: "XLM-R",
+  kev: "Kev-0.8B", jev: "Jev", hard_majority: "Majority vote", hard_k: "k-of-M vote", hard_closed: "Hierarchy vote", soft: "Soft vote", weighted_soft: "Weighted soft vote"};
+const setName = s => SET_NAMES[s] || s;
+const sysName = s => SYSTEM_NAMES[s] || s;
+const fmt = (v, d = 3) => v == null || Number.isNaN(v) ? "–" : v.toFixed(d);
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const sets = DATA.meta.test_sets;
+const allSystems = Object.keys(DATA.metrics[sets[0]]);
+const colorOf = s => { const i = allSystems.indexOf(s); return css(i >= 0 && i < 8 ? `--s${i + 1}` : "--ink-3"); };
+const hiddenIn = {lang: new Set(), depth: new Set(), rel: new Set()};
+class Html extends String {}
+const esc = v => v instanceof Html ? v : Array.isArray(v) ? v.map(esc).join("")
+  : String(v ?? "").replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+const html = (parts, ...values) => new Html(parts.reduce((out, part, i) => out + esc(values[i - 1]) + part));
+const ROLE_NAMES = {baseline: "Baseline", new: "New method"};
+const roleBadge = r => r ? html`<span class="tag${r === "new" ? " new" : ""}">${ROLE_NAMES[r] || r}</span>` : "";
+const roleTag = s => roleBadge(DATA.benchmark?.systems?.[s]?.role);
+const sysLabel = s => roleTag(s) ? html`${sysName(s)} ${roleTag(s)}` : sysName(s);
+
+function el(tag, attrs = {}, parent) {
+  const node = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+function text(parent, x, y, value, attrs = {}) { const t = el("text", {x, y, ...attrs}, parent); t.textContent = value; return t; }
+const tip = document.getElementById("tip");
+function hover(node, content) {
+  node.addEventListener("pointerenter", () => { tip.innerHTML = content; tip.hidden = false; });
+  node.addEventListener("pointermove", e => {
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - w - 8) + "px";
+    tip.style.top = Math.max(8, e.clientY - h - 12) + "px";
+  });
+  node.addEventListener("pointerleave", () => { tip.hidden = true; });
+}
+function options(select, values, label, initial) {
+  select.innerHTML = "";
+  for (const v of values) { const o = document.createElement("option"); o.value = v; o.textContent = label(v); select.appendChild(o); }
+  if (initial != null) select.value = initial;
+}
+function legend(container, systems, hidden, onChange) {
+  const focused = container.contains(document.activeElement) && document.activeElement.dataset.system;
+  container.innerHTML = "";
+  for (const s of systems) {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.system = s; b.setAttribute("aria-pressed", String(!hidden.has(s)));
+    b.innerHTML = html`<i style="background:${colorOf(s)}"></i>${sysLabel(s)}`;
+    b.onclick = () => { hidden.has(s) ? hidden.delete(s) : hidden.add(s); onChange(); };
+    container.appendChild(b);
+    if (s === focused) b.focus();
+  }
+}
+function frame(container, height, label) {
+  container.innerHTML = "";
+  const width = Math.max(300, container.clientWidth || 600);
+  const svg = el("svg", {viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": label}, container);
+  return {svg, width, height};
+}
+function yAxis(svg, x0, x1, y, ticks, label) {
+  for (const t of ticks) {
+    el("line", {x1: x0, x2: x1, y1: y(t), y2: y(t), stroke: css("--grid"), "stroke-width": 1}, svg);
+    text(svg, x0 - 6, y(t) + 4, t.toFixed(1), {"text-anchor": "end", class: "num"});
+  }
+  if (label) text(svg, 12, (y(ticks[0]) + y(ticks[ticks.length - 1])) / 2, label, {transform: `rotate(-90 12 ${(y(ticks[0]) + y(ticks[ticks.length - 1])) / 2})`, "text-anchor": "middle"});
+}
+function setLabels(svg, xs, y, room) {
+  const labels = sets.map((set, i) => text(svg, xs[i], y, setName(set), {"text-anchor": "middle"}));
+  if (labels.every(t => t.getComputedTextLength() <= room)) return;
+  labels.forEach((t, i) => {
+    t.textContent = "";
+    (AXIS_NAMES[sets[i]] || setName(sets[i])).split(" ").forEach((word, k) => { el("tspan", {x: xs[i], dy: k ? "1.15em" : 0}, t).textContent = word; });
+  });
+}
+function table(container, columns, rows, highlight) {
+  const head = columns.map(c => html`<th>${c.label}</th>`);
+  const body = rows.map(r => html`<tr class="${highlight && highlight(r) ? "best" : ""}">${columns.map(c => html`<td>${c.value(r)}</td>`)}</tr>`);
+  container.innerHTML = html`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+const systemColumn = {label: "System", value: s => sysName(s)};
+
+function langChart() {
+  const metric = document.getElementById("lang-metric").value;
+  const available = allSystems.filter(s => DATA.metrics[sets[0]][s][metric] != null);
+  const systems = available.filter(s => !hiddenIn.lang.has(s));
+  const {svg, width} = frame(document.getElementById("lang-chart"), 300,
+    `Bar chart of ${METRICS[metric]} for ${systems.map(sysName).join(", ")} on each test set: ${sets.map(setName).join(", ")}.`);
+  const left = 44, right = width - 8, top = 10, bottom = 250;
+  const y = v => bottom - v * (bottom - top);
+  yAxis(svg, left, right, y, [0, 0.2, 0.4, 0.6, 0.8, 1.0], "");
+  const group = (right - left) / sets.length, bar = Math.min(26, (group * 0.82) / Math.max(1, systems.length));
+  sets.forEach((set, i) => {
+    const gx = left + i * group + (group - bar * systems.length) / 2;
+    systems.forEach((s, j) => {
+      const v = DATA.metrics[set][s][metric];
+      const h = Math.max(1, bottom - y(v));
+      const r = el("rect", {x: gx + j * bar + 1, y: y(v), width: Math.max(1, bar - 2), height: h, rx: 3, fill: colorOf(s)}, svg);
+      hover(r, html`${sysLabel(s)} · ${setName(set)}<br>${METRICS[metric]} <b>${fmt(v, 4)}</b>`);
+    });
+  });
+  setLabels(svg, sets.map((_, i) => left + i * group + group / 2), bottom + 18, group - 6);
+  el("line", {x1: left, x2: right, y1: bottom, y2: bottom, stroke: css("--rule")}, svg);
+  legend(document.getElementById("lang-legend"), available, hiddenIn.lang, langChart);
+  table(document.getElementById("lang-data"),
+    [systemColumn, ...sets.map(set => ({label: setName(set), value: s => fmt(DATA.metrics[set][s][metric], 4)}))], available);
+}
+
+const atFloor = r => Number.isFinite(r.p_value) && Number.isFinite(r.p_resolution) && r.p_value <= r.p_resolution * 1.0001;
+const prec = v => v == null ? "–" : v.toPrecision(3);
+const pText = r => atFloor(r) && Number.isFinite(r.p_holm) ? `≤ ${prec(r.p_holm)} (resampling floor)` : prec(r.p_holm);
+const dotColor = r => !(Number.isFinite(r.p_holm) && r.p_holm < ALPHA) ? css("--ink-3") : r.diff < 0 ? css("--bad") : css("--good");
+function forest(id, rows, title) {
+  const rowH = 30, height = 34 + rows.length * rowH;
+  const {svg, width} = frame(document.getElementById(id), height,
+    `${title}: difference in micro-F1 with its 95% interval for ${rows.map(r => r.label).join(", ") || "no comparisons"}.`);
+  table(document.getElementById(`${id}-data`), [{label: "Comparison", value: r => r.label}, {label: "Δ micro-F1", value: r => fmt(r.diff, 4)},
+    {label: "95% CI low", value: r => fmt(r.lo, 4)}, {label: "95% CI high", value: r => fmt(r.hi, 4)},
+    {label: "p (raw)", value: r => prec(r.p_value)}, {label: "p (Holm)", value: pText}], rows);
+  const left = Math.min(190, width * 0.42), right = width - 12, top = 24;
+  if (!rows.length) { text(svg, 0, 20, "No comparable sets."); return; }
+  const lo = Math.min(0, ...rows.map(r => r.lo)), hi = Math.max(0, ...rows.map(r => r.hi));
+  const pad = (hi - lo) * 0.08 || 0.01;
+  const x = v => left + ((v - (lo - pad)) / (hi - lo + 2 * pad)) * (right - left);
+  text(svg, left, 12, title, {"font-size": 11});
+  el("line", {x1: x(0), x2: x(0), y1: top - 4, y2: height - 6, stroke: css("--ink-3"), "stroke-dasharray": "3 3"}, svg);
+  rows.forEach((r, i) => {
+    const cy = top + i * rowH + rowH / 2;
+    text(svg, left - 10, cy + 4, r.label, {"text-anchor": "end"});
+    el("line", {x1: x(r.lo), x2: x(r.hi), y1: cy, y2: cy, stroke: css("--ink-2"), "stroke-width": 2}, svg);
+    const dot = el("circle", {cx: x(r.diff), cy, r: 6, fill: dotColor(r), stroke: css("--surface"), "stroke-width": 2}, svg);
+    hover(dot, html`${r.tipLabel ?? r.label}<br>Δ micro-F1 <b>${fmt(r.diff, 4)}</b><br>95% CI <b>[${fmt(r.lo, 4)}, ${fmt(r.hi, 4)}]</b><br>p (raw) <b>${prec(r.p_value)}</b><br>p (Holm) <b>${pText(r)}</b>`);
+    el("rect", {x: left, y: cy - rowH / 2, width: right - left, height: rowH, fill: "transparent"}, svg).replaceWith(dot);
+  });
+}
+function sigCharts() {
+  const sig = DATA.significance;
+  if (!sig) { document.getElementById("p-sig").hidden = true; return; }
+  const system = document.getElementById("sig-system").value;
+  const cross = Object.entries(sig.cross_condition[system] || {}).map(([k, v]) => ({
+    ...v.micro_f1, label: setName(k.split("->")[1]), diff: -v.micro_f1.difference, lo: -v.micro_f1.ci_high, hi: -v.micro_f1.ci_low}));
+  forest("sig-cross", cross, `${sysName(system)}: change from ${setName(sig.reference_set)}`);
+  const set = document.getElementById("sig-set").value;
+  const best = Object.entries(sig.vs_best_member[set] || {}).map(([k, v]) => ({
+    ...v.micro_f1, label: sysName(k), tipLabel: sysLabel(k), diff: v.micro_f1.difference, lo: v.micro_f1.ci_low, hi: v.micro_f1.ci_high}));
+  forest("sig-best", best, `Ensemble minus ${sysName(sig.best_member)} (${setName(set)})`);
+}
+
+function confusion() {
+  const system = document.getElementById("conf-system").value, set = document.getElementById("conf-set").value;
+  const c = DATA.detail[set][system].confusion;
+  const n = c.roots.length, cell = 64, left = 150, top = 8;
+  const container = document.getElementById("conf-chart");
+  container.innerHTML = "";
+  const width = left + n * cell + 10, height = top + n * cell + 96;
+  const label = `Root-domain matrix for ${sysName(system)} on ${setName(set)}: recall on the diagonal, false-root rate off the diagonal.`;
+  const svg = el("svg", {viewBox: `0 0 ${width} ${height}`, style: `max-width:${width}px`, role: "img", "aria-label": label}, container);
+  const ramp = [0, 1, 2, 3, 4, 5, 6].map(i => css(`--seq-${i}`));
+  const short = r => r.replace("medical_and_health_sciences", "medical & health").replace("engineering_and_technology", "engineering & tech").replace(/_sciences?$/, "").replace(/_/g, " ");
+  c.roots.forEach((gold, i) => {
+    text(svg, left - 8, top + i * cell + cell / 2 + 4, short(gold), {"text-anchor": "end"});
+    c.roots.forEach((pred, j) => {
+      const v = c.matrix[i][j];
+      const level = Math.min(6, Math.round(v * 6));
+      const r = el("rect", {x: left + j * cell + 1, y: top + i * cell + 1, width: cell - 2, height: cell - 2, rx: 4, fill: ramp[level]}, svg);
+      const t = text(svg, left + j * cell + cell / 2, top + i * cell + cell / 2 + 4, v.toFixed(2), {"text-anchor": "middle", class: "num"});
+      t.style.fill = level >= 4 ? css("--surface") : css("--ink");
+      t.style.pointerEvents = "none";
+      const what = i === j ? "recall" : "false-root rate";
+      hover(r, html`Gold <b>${short(gold)}</b> (${c.support[i]} projects)<br>Predicted <b>${short(pred)}</b><br>${what} <b>${v.toFixed(3)}</b>`);
+    });
+    text(svg, left + i * cell + cell / 2, top + n * cell + 14, short(gold), {"text-anchor": "end", transform: `rotate(-35 ${left + i * cell + cell / 2} ${top + n * cell + 14})`});
+  });
+  table(document.getElementById("conf-data"), [{label: "Gold root", value: i => short(c.roots[i])}, {label: "Projects", value: i => c.support[i]},
+    ...c.roots.map((pred, j) => ({label: short(pred), value: i => c.matrix[i][j].toFixed(3)}))], c.roots.map((_, i) => i));
+}
+
+function lines(id, pick, xLabel, yLabel, diagonal, render) {
+  const set = document.getElementById(`${id}-set`).value, hidden = hiddenIn[id];
+  const systems = Object.keys(DATA.detail[set]).filter(s => pick(DATA.detail[set][s]));
+  const series = systems.map(s => ({s, pts: pick(DATA.detail[set][s])}));
+  const shown = systems.filter(s => !hidden.has(s));
+  const {svg, width} = frame(document.getElementById(`${id}-chart`), 280,
+    `Line chart of ${yLabel} by ${xLabel} for ${shown.map(sysName).join(", ") || "no systems"} on ${setName(set)}.`);
+  const left = 44, right = width - 10, top = 10, bottom = 236;
+  const xs = series.flatMap(d => d.pts.map(p => p.x));
+  const x0 = diagonal ? 0 : Math.min(...xs), x1 = diagonal ? 1 : Math.max(...xs);
+  const x = v => left + ((v - x0) / (x1 - x0 || 1)) * (right - left);
+  const y = v => bottom - v * (bottom - top);
+  const xText = v => diagonal ? v.toFixed(3) : String(v);
+  yAxis(svg, left, right, y, [0, 0.2, 0.4, 0.6, 0.8, 1.0], "");
+  const ticks = diagonal ? [0, 0.2, 0.4, 0.6, 0.8, 1] : [...new Set(xs)].sort((a, b) => a - b);
+  for (const t of ticks) text(svg, x(t), bottom + 16, diagonal ? t.toFixed(1) : String(t), {"text-anchor": "middle", class: "num"});
+  text(svg, (left + right) / 2, bottom + 34, xLabel, {"text-anchor": "middle"});
+  if (diagonal) el("line", {x1: x(0), y1: y(0), x2: x(1), y2: y(1), stroke: css("--ink-3"), "stroke-dasharray": "4 4"}, svg);
+  for (const {s, pts} of series) {
+    if (hidden.has(s)) continue;
+    el("polyline", {points: pts.map(p => `${x(p.x)},${y(p.y)}`).join(" "), fill: "none", stroke: colorOf(s), "stroke-width": 2}, svg);
+    for (const p of pts) {
+      const dot = el("circle", {cx: x(p.x), cy: y(p.y), r: 4.5, fill: colorOf(s), stroke: css("--surface"), "stroke-width": 1.5}, svg);
+      hover(dot, html`${sysLabel(s)}<br>${xLabel} <b>${xText(p.x)}</b><br>${yLabel} <b>${p.y.toFixed(3)}</b>${p.n != null ? html`<br>projects in bin <b>${p.n}</b>` : ""}`);
+    }
+  }
+  legend(document.getElementById(`${id}-legend`), systems, hidden, render);
+  const points = series.flatMap(({s, pts}) => pts.map(p => ({s, ...p})));
+  const columns = [{label: "System", value: p => sysName(p.s)}, {label: xLabel, value: p => xText(p.x)}, {label: yLabel, value: p => p.y.toFixed(3)}];
+  if (points.some(p => p.n != null)) columns.push({label: "projects in bin", value: p => p.n});
+  table(document.getElementById(`${id}-data`), columns, points);
+}
+const depthChart = () => lines("depth", d => d.depth && Object.entries(d.depth).map(([k, v]) => ({x: Number(k), y: v})), "depth", "micro-F1", false, depthChart);
+const relChart = () => lines("rel",
+  d => d.reliability && d.reliability.confidence.map((c, i) => ({x: c, y: d.reliability.accuracy[i], n: d.reliability.count[i]})),
+  "top-1 confidence", "top-1 accuracy", true, relChart);
+
+function metricsTable() {
+  const set = document.getElementById("table-set").value, m = DATA.meta;
+  const tag = s => m.baselines.includes(s) ? html`<span class="tag">non-voting</span>` : m.members.includes(s) ? "" : html`<span class="tag">ensemble</span>`;
+  const cols = [{label: "System", value: s => html`${sysName(s)}${tag(s)}`}];
+  for (const [k, label] of Object.entries(METRIC_NAMES))
+    cols.push({label, value: s => fmt(DATA.metrics[set][s][k], k === "mean_predicted_labels" ? 2 : 4)});
+  table(document.getElementById("metrics-table"), cols, Object.keys(DATA.metrics[set]), s => s === m.best_member);
+}
+
+function benchTable() {
+  const b = DATA.benchmark, set = document.getElementById("bench-set").value;
+  if (!b) return;
+  const p = b.primary_metric, value = s => DATA.metrics[set][s][p], info = s => b.systems?.[s] || {};
+  const systems = Object.keys(DATA.metrics[set]).sort((x, y) => (value(y) ?? -Infinity) - (value(x) ?? -Infinity));
+  // Competition ranking: ties share a rank; systems without the primary metric are unranked.
+  const rank = s => value(s) == null ? "–" : 1 + systems.filter(o => value(o) > value(s)).length;
+  const metric = k => ({label: `${METRIC_NAMES[k] || k}${k === p ? " (primary)" : ""}`, value: s => fmt(DATA.metrics[set][s][k], 4)});
+  table(document.getElementById("bench-table"), [{label: "Rank", value: rank}, systemColumn, {label: "Role", value: roleTag},
+    {label: "Architecture", value: s => info(s).architecture ?? "–"}, {label: "Model", value: s => info(s).model ?? "–"},
+    ...[p, ...(b.secondary_metrics || [])].map(metric)], systems);
+}
+
+function benchNotes() {
+  const b = DATA.benchmark;
+  if (!b) return;
+  document.getElementById("p-bench").hidden = false;
+  const primary = METRIC_NAMES[b.primary_metric] || b.primary_metric;
+  document.getElementById("bench-sub").textContent =
+    `Every system on the selected test set, ranked by ${primary}; ties share a rank. Baselines are the course methods in their vanilla form, new methods go beyond them. Architecture is the method family; model is the concrete configured instance.`;
+  const pct = v => v == null ? "–" : `${(100 * v).toFixed(1)}%`;
+  const entries = Object.entries(b.label_distribution || {}).filter(([, d]) => d && typeof d === "object" && !Array.isArray(d));
+  // The tuning split holds the EN and TR copies of each validation project.
+  const parts = entries.map(([part, d]) => html`<br>${part === "tuning" ? "Validation" : setName(part)}: ${d.n_records ?? "–"} ${part === "tuning" ? "records (EN+TR)" : "projects"} with on average <b>${fmt(d.mean_labels_per_record, 2)}</b> of <b>${d.n_labels ?? "–"}</b> labels; <b>${pct(d.rare_label_share)}</b> of labels occur in under 1% of projects and the top 10% of labels hold <b>${pct(d.top_decile_positive_share)}</b> of all assignments, so predicting no label at all scores <b>${pct(d.all_negative_accuracy)}</b> per-label accuracy.`);
+  const why = b.primary_metric !== "micro_f1" ? "" :
+    " Micro-F1 pools every project-label decision and ignores the true negatives that make accuracy uninformative here; macro-F1 (every label weighted equally) and the hierarchical scores are secondary and expose rare-label and taxonomy-level errors.";
+  document.getElementById("bench-why").innerHTML = html`<b>Why ${primary}?</b>${why}${parts}`;
+}
+
+function sampleTable() {
+  const S = DATA.sample;
+  if (!S) return;
+  document.getElementById("p-sample").hidden = false;
+  if (S.records) document.getElementById("sample-title").textContent = `${S.records}-pair English–Turkish sample`;
+  const list = names => names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names.join("");
+  const systems = Object.keys(S.en), only = systems.filter(s => !allSystems.includes(s)).map(sysName);
+  const lead = only.length ? `${list(only)} ${only.length > 1 ? "were" : "was"} scored only on this sample. ` : "";
+  document.getElementById("sample-sub").textContent = `${lead}All systems here are scored on the same ${S.records ? `${S.records} ` : ""}projects in English and machine-translated Turkish, and the votes combine ${list(S.members.map(sysName))}, so these scores are not comparable with the full test sets above. The drop is English minus Turkish micro-F1 with its 95% paired-bootstrap interval.`;
+  // Each metric heads an EN | TR pair; three decimals, since on a sample this size the fourth is noise.
+  const drop = s => S.drop[s], [first, ...rest] = S.headline;
+  const metric = k => [METRIC_NAMES[k] || k, ["EN", "TR"], [s => fmt(S.en[s][k]), s => fmt(S.tr[s][k])]];
+  const groups = [metric(first), ["Micro-F1 drop (EN − TR)", ["Drop", "95% CI"],
+    [s => fmt(drop(s)?.difference), s => drop(s) ? `[${fmt(drop(s).ci_low)}, ${fmt(drop(s).ci_high)}]` : "–"]], ...rest.map(metric)];
+  const name = s => S.roles[s] ? html`${sysName(s)} ${roleBadge(S.roles[s])}` : sysName(s);
+  const cells = s => groups.flatMap(([, , values]) => values.map(value => html`<td>${value(s)}</td>`));
+  document.getElementById("sample-table").innerHTML = html`<table><thead><tr><th></th>${groups.map(([label]) => html`<th colspan="2">${label}</th>`)}</tr>
+    <tr><th>System</th>${groups.flatMap(([, subs]) => subs.map(sub => html`<th>${sub}</th>`))}</tr></thead>
+    <tbody>${systems.map(s => html`<tr><td>${name(s)}</td>${cells(s)}</tr>`)}</tbody></table>`;
+}
+
+function staticSections() {
+  const m = DATA.meta;
+  const facts = [[m.labels, "direct labels"], [m.nodes, "taxonomy nodes"], [sets.length, "test sets"], [m.members.length, "voting members"], [m.test_records, "projects per test set"]];
+  document.getElementById("facts").innerHTML = html`${facts.map(([v, k]) => html`<span class="chip"><b>${v}</b> ${k}</span>`)}`;
+  if (m.pending) { const p = document.getElementById("pending"); p.hidden = false; p.textContent = m.pending; }
+  const best = m.best_member, ref = DATA.significance && DATA.significance.reference_set;
+  const tiles = [[`${sysName(best)} micro-F1, ${setName(sets[0])}`, fmt(DATA.metrics[sets[0]][best].micro_f1), "best member on validation"]];
+  const drop = DATA.significance && DATA.significance.cross_condition[best]?.[`${ref}->tr_test`];
+  if (drop) tiles.push(["Drop on machine-translated Turkish", fmt(drop.micro_f1.difference), `95% CI [${fmt(drop.micro_f1.ci_low)}, ${fmt(drop.micro_f1.ci_high)}]`]);
+  const ood = DATA.ood && DATA.ood.results[best];
+  const oodLang = ood && ("en" in ood ? "en" : Object.keys(ood).find(k => k !== "trained_labels"));
+  if (oodLang) tiles.push([`OOD AUROC (held-out ${DATA.ood.heldout_root})`, fmt(ood[oodLang].auroc), `${sysName(best)}, ${SET_NAMES[`${oodLang}_test`] || oodLang.toUpperCase()}`]);
+  const lat = DATA.latency && DATA.latency.models[best];
+  if (lat) tiles.push(["Single-text latency (p50)", `${lat.single.p50_ms.toFixed(1)} ms`, `${sysName(best)} on ${DATA.latency.hardware.cpu || "CPU"}`]);
+  document.getElementById("tiles").innerHTML = html`${tiles.map(([k, v, d]) => html`<div class="tile"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${d}</span></div>`)}`;
+  if (DATA.significance) document.getElementById("sig-sub").textContent =
+    `Paired project bootstrap, ${DATA.significance.resamples.toLocaleString()} resamples, 95% intervals. A dot is red for a significant drop and green for a significant gain (Holm-corrected p < ${ALPHA}), grey when the corrected difference is not significant. Left: how much a system changes from ${setName(ref)} on each other condition. Right: each ensemble against the best single member, ${sysName(best)}.`;
+  if (DATA.ood) {
+    document.getElementById("ood-sub").textContent = `Projects whose only root is ${DATA.ood.heldout_root} were removed from training; they are scored against ${DATA.ood.counts.en_test_id ?? ""} in-domain test projects. Score: 1 − max label probability.`;
+    const rows = Object.entries(DATA.ood.results).flatMap(([s, r]) => Object.entries(r).filter(([k]) => k !== "trained_labels").map(([lang, v]) => ({s, lang, ...v})));
+    const interval = r => r.auroc_ci_low == null || r.auroc_ci_high == null ? "–" : `[${fmt(r.auroc_ci_low)}, ${fmt(r.auroc_ci_high)}]`;
+    table(document.getElementById("ood-table"), [{label: "System", value: r => sysName(r.s)}, {label: "Language", value: r => r.lang.toUpperCase()},
+      {label: "AUROC", value: r => fmt(r.auroc)}, {label: "AUROC 95% CI", value: interval}, {label: "FPR@95%TPR", value: r => fmt(r.fpr_at_95_tpr)},
+      {label: "OOD / ID", value: r => `${r.ood_records} / ${r.id_records}`}], rows);
+  } else document.getElementById("p-ood").hidden = true;
+  if (DATA.latency) {
+    const L = DATA.latency;
+    document.getElementById("lat-sub").textContent = `End-to-end predict() on ${L.samples ?? ""} ${setName(L.eval_set || "en_test")} texts after warm-up; ${L.hardware.cpu || ""}${L.hardware.gpu ? ", " + L.hardware.gpu : ""}.`;
+    table(document.getElementById("lat-table"), [{label: "System", value: r => sysName(r[0])}, {label: "p50 ms", value: r => r[1].single.p50_ms.toFixed(2)},
+      {label: "p95 ms", value: r => r[1].single.p95_ms.toFixed(2)}, {label: "docs/s", value: r => r[1].batched.docs_per_second.toFixed(0)},
+      {label: "size MB", value: r => r[1].artifact_bytes == null ? "–" : (r[1].artifact_bytes / 1e6).toFixed(1)}], Object.entries(L.models));
+  } else document.getElementById("p-lat").hidden = true;
+  document.getElementById("notes").innerHTML = html`${(m.notes || []).map(n => html`<p>${n}</p>`)}`;
+  document.getElementById("footer").textContent = `Generated ${m.generated_at} from commit ${m.commit} · ${m.labels} labels · thresholds tuned on validation half A, ensemble settings on half B, test sets scored once.`;
+}
+
+function init() {
+  options(document.getElementById("lang-metric"), Object.keys(METRICS), k => METRICS[k], "micro_f1");
+  for (const id of ["bench-set", "conf-set", "depth-set", "rel-set", "table-set", "sig-set"]) options(document.getElementById(id), sets, setName, sets[0]);
+  options(document.getElementById("conf-system"), Object.keys(DATA.detail[sets[0]]), sysName, DATA.meta.best_member);
+  if (DATA.significance) options(document.getElementById("sig-system"), Object.keys(DATA.significance.cross_condition), sysName, DATA.meta.best_member);
+  const render = () => { benchTable(); langChart(); sigCharts(); confusion(); depthChart(); relChart(); metricsTable(); };
+  document.getElementById("bench-set").onchange = benchTable;
+  document.getElementById("lang-metric").onchange = langChart;
+  document.getElementById("sig-system").onchange = sigCharts;
+  document.getElementById("sig-set").onchange = sigCharts;
+  document.getElementById("conf-system").onchange = confusion;
+  document.getElementById("conf-set").onchange = confusion;
+  document.getElementById("depth-set").onchange = depthChart;
+  document.getElementById("rel-set").onchange = relChart;
+  document.getElementById("table-set").onchange = metricsTable;
+  staticSections();
+  benchNotes();
+  sampleTable();
+  render();
+  let timer;
+  new ResizeObserver(() => { clearTimeout(timer); timer = setTimeout(render, 120); }).observe(document.querySelector(".wrap"));
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+  new MutationObserver(render).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
+}
+init();
+</script>

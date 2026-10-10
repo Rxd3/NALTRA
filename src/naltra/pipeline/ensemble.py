@@ -10,7 +10,10 @@ from math import isfinite
 from naltra.pipeline.thresholds import apply_thresholds
 from naltra.schemas.prediction import Explanation, LabelScore, PredictionResult
 
-ENSEMBLE_MODEL_NAMES = frozenset({"naive_bayes", "svm", "bilstm", "transformer", "jev", "laya"})
+# The member systems of configs/benchmark.yaml.
+ENSEMBLE_MODEL_NAMES = frozenset(
+    {"naive_bayes", "svm", "bilstm", "transformer", "kev", "jev", "laya", "hybrid_knn"}
+)
 
 
 class EnsembleMethod(StrEnum):
