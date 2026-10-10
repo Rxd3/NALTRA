@@ -1,0 +1,41 @@
+Dataset licence: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+
+Applies to the dataset files under data/ and to taxonomy/taxonomy.json and
+taxonomy/label_map.json. Code and documentation stay under the MIT License (../LICENSE).
+
+Source
+  CORDIS - EU research projects under Horizon 2020 (2014-2020)
+  European Union, CORDIS - https://cordis.europa.eu - CC BY 4.0
+  Archive: https://cordis.europa.eu/data/cordis-h2020projects-csv.zip
+  SHA-256: d4a8e3645d0b1896b967618e8e7a7f7928738b469737363a30816c217cbd48f2
+  Reuse terms: Commission Decision 2011/833/EU on the reuse of Commission documents.
+
+  EuroSciVoc (European Science Vocabulary), Publications Office of the
+  European Union, CC BY 4.0. The category paths are taken from euroSciVoc.csv
+  in the archive above.
+
+Changes made by the NALTRA authors
+  data/raw/cordis_h2020/cordis-h2020projects-csv.zip is the unmodified archive.
+  data/processed/cordis_h2020/en      project objectives cleaned, filtered to labels
+                                      with enough support, hierarchy-closed and split
+                                      into train/validation/test (scripts/prepare_data.py).
+  data/processed/cordis_h2020/tr      machine translation of the English splits into
+                                      Turkish with Helsinki-NLP/opus-mt-tc-big-en-tr at
+                                      e539fc16 (CC BY 4.0). Release 1.1.0: the 598
+                                      records the 1.0.0 audit flagged were re-translated
+                                      in 128-token chunks; labels are unchanged.
+  data/processed/cordis_h2020/code_switch
+                                      synthetic English-Turkish code-switched validation
+                                      and test sets built from the aligned EN/TR splits.
+  data/splits/cordis_h2020            project-level split map.
+  data/review                         translation-quality review sample.
+  taxonomy/                           EuroSciVoc tree and label map rebuilt from the
+                                      archive's category paths.
+
+The European Union does not endorse this work. Translations and code-switched
+text are machine-generated and may contain errors.
+
+Suggested attribution
+  NALTRA benchmark (CORDIS H2020 EN/TR/code-switch), derived from
+  "European Union, CORDIS - https://cordis.europa.eu - CC BY 4.0", licensed CC BY 4.0.

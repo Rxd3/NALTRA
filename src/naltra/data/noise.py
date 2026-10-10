@@ -373,14 +373,14 @@ def create_noisy_record(
 def generate_noisy_benchmarks(
     processed_base_dir: str | Path = "data/processed",
     output_base_dir: str | Path = "data/noisy",
-    datasets: Sequence[str] = ("sib200",),
-    splits: Sequence[str] = ("validation", "test"),
+    datasets: Sequence[str] = ("cordis_h2020/en", "cordis_h2020/tr"),
+    splits: Sequence[str] = ("test",),
     strategy: str = "combined",
     severity: str = "medium",
     seed: int = 42,
 ) -> dict[str, dict[str, int]]:
     """Generate noisy validation/test benchmark copies from existing clean processed files."""
-    from naltra.data.manifest import create_manifest
+    from naltra.data.manifest import create_manifest, relative_path
 
     proc_base = Path(processed_base_dir)
     out_base = Path(output_base_dir) / strategy / str(severity)
@@ -434,7 +434,7 @@ def generate_noisy_benchmarks(
             },
             source_metadata={
                 "source_dataset": dataset_name,
-                "processed_base_dir": str(proc_base),
+                "processed_base_dir": relative_path(proc_base, dataset_out_dir),
             },
             input_files=[proc_base / dataset_name / f"{split}.jsonl" for split in splits],
         )
@@ -451,7 +451,7 @@ def generate_noisy_benchmarks(
             "splits": list(splits),
         },
         source_metadata={
-            "processed_base_dir": str(proc_base),
+            "processed_base_dir": relative_path(proc_base, out_base),
         },
         input_files=[
             proc_base / dataset / f"{split}.jsonl" for dataset in datasets for split in splits

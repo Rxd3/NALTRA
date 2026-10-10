@@ -25,6 +25,7 @@ from naltra.data.manifest import (
     compute_file_sha256,
     create_manifest,
     get_source_config,
+    relative_path,
     validate_manifest,
 )
 from naltra.data.preprocessing import validate_record
@@ -534,26 +535,6 @@ class HuggingFaceLocalTranslator(BaseTranslator):
         return [o for o in doc_outputs if o is not None]
 
 
-def get_translator(
-    backend: str = "mock",
-    model_name: str | None = None,
-    device: str | None = None,
-    batch_size: int = 24,
-) -> BaseTranslator:
-    """Factory creating configured translator backend."""
-    if backend == "mock":
-        return MockTranslator(model_name=model_name or "mock-en-tr-v1")
-    elif backend in ("huggingface", "huggingface_local"):
-        return HuggingFaceLocalTranslator(
-            model_name=model_name or "Helsinki-NLP/opus-mt-tc-big-en-tr",
-            device=device,
-            batch_size=batch_size,
-        )
-    raise ValueError(
-        f"Unknown translation backend: '{backend}'. Allowed: ['mock', 'huggingface_local']"
-    )
-
-
 class TranslationCache:
     """Resumable persistent file cache for translations."""
 
@@ -998,9 +979,10 @@ def translate_cordis_dataset(
             "qa_failures": total_qa_failures,
             "max_records": max_records,
         },
+        # Relative to the manifest, so the record does not depend on the checkout location.
         source_metadata={
-            "source_en_dir": str(in_path),
-            "cache_dir": str(cache_dir),
+            name: relative_path(path, out_path)
+            for name, path in (("source_en_dir", in_path), ("cache_dir", cache_dir))
         },
         taxonomy_dir=Path(taxonomy_path).parent,
         input_files=[in_path / f"{s}.jsonl" for s in splits],

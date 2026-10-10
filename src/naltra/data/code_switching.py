@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from naltra.data.loader import load_jsonl, save_jsonl
-from naltra.data.manifest import create_manifest
+from naltra.data.manifest import create_manifest, relative_path
 
 VALID_CODE_SWITCH_STRATEGIES: set[str] = {
     "sentence_mix",
@@ -247,7 +247,7 @@ def create_code_switched_record(
         pair_id=pair_id,
     )
 
-    pid = en_record.get("project_id", pair_id.replace("cordis:", "").replace("sib200:", ""))
+    pid = en_record.get("project_id", pair_id.replace("cordis:", ""))
     new_id = f"{pair_id}:codeswitch:{strategy}:{strength}"
 
     return {
@@ -366,9 +366,10 @@ def generate_code_switch_benchmarks(
             "base_seed": seed,
             "splits": list(splits),
         },
+        # Relative to the manifest, so the record does not depend on the checkout location.
         source_metadata={
-            "source_en_dir": str(en_path),
-            "source_tr_dir": str(tr_path),
+            name: relative_path(path, out_dir)
+            for name, path in (("source_en_dir", en_path), ("source_tr_dir", tr_path))
         },
         taxonomy_dir=Path(taxonomy_path).parent,
         input_files=input_files,

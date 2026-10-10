@@ -23,10 +23,12 @@ def load_jsonl(path: str | Path) -> list[dict[str, Any]]:
 
 
 def save_jsonl(records: Iterable[dict[str, Any]], path: str | Path) -> Path:
-    """Save records as JSON Lines into a UTF-8 file, creating parent directories if needed."""
+    """Save records as JSON Lines into a UTF-8 file, creating parent directories if needed.
+
+    Lines end in CRLF on every platform: the released files and their SHA-256 pins use it."""
     target_path = Path(path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    with target_path.open("w", encoding="utf-8") as handle:
+    with target_path.open("w", encoding="utf-8", newline="\r\n") as handle:
         for record in records:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     return target_path

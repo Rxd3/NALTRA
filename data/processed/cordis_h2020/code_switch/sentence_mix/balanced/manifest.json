@@ -1,0 +1,83 @@
+{
+  "benchmark_name": "cordis_h2020_code_switch",
+  "code": {
+    "dirty": false,
+    "files": {
+      "configs/data.yaml": "1f250fc75f8547f314ec56c311f3bda5f015f807f9c1cd13af03f18dd0817580",
+      "pyproject.toml": "f4b536f6bfbf8c43f46ff06a0765a727310563ac0649ee03ec0b6659efcad5eb",
+      "requirements.txt": "672dc3224eff3815f6eb4a148b5695ac03f39868cca039ac7bc01b475ac0cb46",
+      "scripts/prepare_data.py": "f3848e74f75e253e67c9388f389e7442489d0f3fb5c74e9a1dd9e801bec57473",
+      "src/naltra/cli.py": "2ee6d2b85727ba5350a3917c0abaf27a6a8c2d9398484c476eb34a2976950c69",
+      "src/naltra/data/__init__.py": "aacfd91a434e28dd1ae3142e3bf2056f16cb3853e6207819e4110e42e74d8768",
+      "src/naltra/data/code_switching.py": "868ccb4c33d87dfaaa5d36f34efa3c2ea47fe9c3c303cc2afefa1259e871e65e",
+      "src/naltra/data/loader.py": "672997d5fc908d174e64ce89e8384ae9084fc9c6c26231e617521d2d32664cfa",
+      "src/naltra/data/manifest.py": "2e0c3c25a79246e69db63954ac1d1a282204b7a91e427cfd0a4b993bfff1c900",
+      "src/naltra/data/noise.py": "f95bd52a254c8daf8eaf68516e72e1108e400e82c74af315b07e4324fd12d2e0",
+      "src/naltra/data/ood.py": "5d6d7e165b7d1a81e15fa235b2bfbd0eb2927de2421bfade1b620a254e9abe1a",
+      "src/naltra/data/preprocessing.py": "538122e82bd4e5ae6bce6af76e3b062a5a4244b1a0dc42db8410f0e6533908d2",
+      "src/naltra/data/splits.py": "2a6427e8df7450bfc345f8d2176df2ac9494d69c8cdb5c2dd9ca8424ee3904ee",
+      "src/naltra/data/translation.py": "165001519ceb527467e14d452c58e1892bde5f05a229d88cf5b4cee81d45aa99",
+      "src/naltra/data/validation.py": "1f93c371828b4799c626c0a48184a2abfb74d5f39ec5c103c7e9a4630d90707a",
+      "src/naltra/pipeline/preprocessing.py": "f80c853cd1f75a37eef24bdcc0e83f0f08f66804f4b1c59e6be6fe165891a92f"
+    },
+    "git_revision": "ea00e6b7a0fb8b8fe272846b1adb77cdf953683e"
+  },
+  "created_at_utc": "2026-10-08T13:57:30.532363+00:00",
+  "environment": {
+    "package_versions": {
+      "datasets": "5.0.1",
+      "dill": "0.4.1",
+      "fsspec": "2025.9.0",
+      "httpx": "0.28.1",
+      "huggingface-hub": "1.33.0",
+      "multiprocess": "0.70.19",
+      "numpy": "2.3.3",
+      "pandas": "2.3.3",
+      "pyarrow": "22.0.0",
+      "pyyaml": "6.0.3",
+      "scikit-learn": "1.8.0",
+      "torch": "2.6.0+cu124",
+      "transformers": "5.18.0",
+      "xxhash": "4.0.1"
+    },
+    "platform": "win32",
+    "python_version": "3.13.5"
+  },
+  "generation_parameters": {
+    "base_seed": 42,
+    "splits": [
+      "validation",
+      "test"
+    ],
+    "strategy": "sentence_mix",
+    "strength": "balanced"
+  },
+  "input_files": {
+    "../../../en/test.jsonl": "4f8564416013dff1c07e51f2c1f2064c2013c144908a26beec8122f455614052",
+    "../../../en/validation.jsonl": "77722f1d42b4eeaa60bc1f3dc1a037a43dcf97ae64721ea31cb00da26981f16f",
+    "../../../tr/test.jsonl": "d269933ab6d24dd26cbbda44f9bbe3c8c8fa71c60ed1b109d2e907a227ea0141",
+    "../../../tr/validation.jsonl": "eb9483b0db8b725f1d3f19150c9d9a1c837704af6ba62a54aca382c3b515ae59"
+  },
+  "manifest_version": "1.1.0",
+  "output_files": {
+    "test.jsonl": {
+      "record_count": 4711,
+      "sha256": "8f1acb12bff9a25381c32ea0c9b140651f0e964aab6c0a4eeb36016eb76264b6",
+      "size_bytes": 13381888
+    },
+    "validation.jsonl": {
+      "record_count": 4711,
+      "sha256": "31c4f4ba30e53e2a5f4f6738c954c05da19824cecb1227054ca4fd7c08ce893d",
+      "size_bytes": 13412222
+    }
+  },
+  "source_metadata": {
+    "source_en_dir": "../../../en",
+    "source_tr_dir": "../../../tr"
+  },
+  "taxonomy": {
+    "label_map_sha256": "4cf881e6d78a9f9b972be861b684417ee2fdd2cab67903fe5ae40192ab4ec20a",
+    "taxonomy_sha256": "0dda384c528199fc0dd4f170ce2a677bb5009f569802b963b5c9cd6ed1299b84",
+    "taxonomy_version": "0.4.0"
+  }
+}

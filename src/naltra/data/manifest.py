@@ -15,9 +15,26 @@ from pathlib import Path
 from typing import Any
 
 from naltra.data.loader import load_jsonl
+from naltra.utils.provenance import repo_path
 
 MANIFEST_SCHEMA_VERSION = "1.1.0"
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+class GenerationCodeMismatch(ValueError):
+    """The checkout's data-generation code differs from the code a manifest recorded."""
+
+
+def relative_path(path: str | Path, start: str | Path) -> str:
+    """``path`` relative to the directory ``start``, with forward slashes.
+
+    os.path.relpath fails when the two lie on different Windows drives or UNC shares; the path
+    is then recorded relative to the repository, or by its name outside it, never absolutely.
+    """
+    try:
+        return Path(os.path.relpath(Path(path).resolve(), Path(start).resolve())).as_posix()
+    except ValueError:
+        return repo_path(Path(path).resolve())
 
 
 def get_source_config(name: str) -> dict[str, str]:
@@ -33,16 +50,6 @@ def compute_file_sha256(path: str | Path) -> str:
     """Compute the SHA-256 hex digest of a file in 64KB chunks."""
     file_path = Path(path)
     h = hashlib.sha256()
-    with file_path.open("rb") as f:
-        while chunk := f.read(65536):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def compute_file_md5(path: str | Path) -> str:
-    """Compute the MD5 hex digest of a file in 64KB chunks."""
-    file_path = Path(path)
-    h = hashlib.md5()
     with file_path.open("rb") as f:
         while chunk := f.read(65536):
             h.update(chunk)
@@ -68,19 +75,12 @@ def get_taxonomy_checksums(taxonomy_dir: str | Path = "taxonomy") -> dict[str, s
 def get_environment_metadata() -> dict[str, Any]:
     """Capture relevant execution environment and package versions."""
     tracked_packages = [
-        "datasets",
-        "pandas",
         "numpy",
-        "pyarrow",
         "torch",
         "transformers",
         "scikit-learn",
         "pyyaml",
         "huggingface-hub",
-        "fsspec",
-        "dill",
-        "multiprocess",
-        "xxhash",
         "httpx",
     ]
     package_versions = {}
@@ -131,10 +131,7 @@ def create_manifest(
         }
 
     source_files = {
-        Path(
-            os.path.relpath(Path(p).resolve(), target_dir.resolve())
-        ).as_posix(): compute_file_sha256(p)
-        for p in sorted(map(Path, input_files))
+        relative_path(p, target_dir): compute_file_sha256(p) for p in sorted(map(Path, input_files))
     }
     code_hashes = get_generation_code_hashes()
     revision = subprocess.run(
@@ -164,7 +161,7 @@ def create_manifest(
     }
 
     manifest_file = target_dir / "manifest.json"
-    with manifest_file.open("w", encoding="utf-8") as f:
+    with manifest_file.open("w", encoding="utf-8", newline="\r\n") as f:
         json.dump(manifest, f, indent=2, sort_keys=True)
         f.write("\n")
 
@@ -238,5 +235,5 @@ def validate_manifest(
     ):
         raise ValueError("Invalid manifest code revision.")
     if code.get("files") != get_generation_code_hashes():
-        raise ValueError("Manifest generation code inventory or hashes do not match.")
+        raise GenerationCodeMismatch("Manifest generation code inventory or hashes do not match.")
     return manifest

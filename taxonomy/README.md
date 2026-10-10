@@ -37,3 +37,19 @@ EuroSciVoc is a hierarchical ontology. The active NALTRA benchmark uses:
 
 - `taxonomy.json`: Canonical hierarchy definition (IDs, parents, depths, codes, paths).
 - `label_map.json`: Mapping from codes, paths, and titles to canonical label IDs.
+- `validation.py`: Schema, cycle and dangling-parent checks (`python taxonomy/validation.py taxonomy/taxonomy.json`).
+
+## Rebuilding
+
+Both JSON files are built from `euroSciVoc.csv` inside the committed raw archive
+`data/raw/cordis_h2020/cordis-h2020projects-csv.zip`:
+
+```bash
+python scripts/build_taxonomy.py   # --archive <zip> --output-dir taxonomy --min-support 50
+```
+
+Support counts distinct projects per EuroSciVoc code; codes with support >= 50 become direct
+labels and every code prefix above them is added as an ancestor. `taxonomy.json` is reproduced
+byte for byte. `label_map.json` gets the same aliases, but its committed key order is not
+reproducible, so an existing file with an unchanged mapping is left as is: dataset manifests and
+trained models pin both files' SHA-256. Details: [docs/taxonomy.md](../docs/taxonomy.md#6-rebuilding-the-taxonomy).
