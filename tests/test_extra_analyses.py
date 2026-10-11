@@ -274,14 +274,17 @@ def test_every_output_records_the_commit_taken_before_the_first_write(
 
     monkeypatch.setattr(extra_analyses, "commit", described)
     monkeypatch.setattr(extra_analyses, "OUTPUTS", outputs)
-    for builder in ("label_coverage", "pairwise", "error_analysis", "drops", "translation_checks"):
+    builders = ("label_coverage", "pairwise", "error_analysis", "drops", "translation_checks")
+    for builder in (*builders, "mt_quality"):
         monkeypatch.setattr(extra_analyses, builder, lambda *args: {"value": 1})
 
     assert extra_analyses.main([]) == 0
 
     assert len(calls) == 1
-    recorded = [json.loads(path.read_text(encoding="utf-8")) for path in outputs.values()]
-    assert [payload["code_commit"] for payload in recorded] == ["abc1234"] * len(outputs)
+    defaults = [path for name, path in outputs.items() if name not in extra_analyses.OPT_IN]
+    recorded = [json.loads(path.read_text(encoding="utf-8")) for path in defaults]
+    assert [payload["code_commit"] for payload in recorded] == ["abc1234"] * len(builders)
+    assert not any(outputs[name].exists() for name in extra_analyses.OPT_IN)
 
 
 def drop_sets(rng: np.random.Generator) -> tuple[dict, dict]:
@@ -445,3 +448,81 @@ def test_translation_checks_count_flags_per_split_on_manifest_locked_files(
     save_jsonl([{"pair_id": "test:0", "text": "changed"}], tmp_path / "en/test.jsonl")
     with pytest.raises(ValueError, match="en/test.jsonl"):
         extra_analyses.translation_checks()
+
+
+def test_chrf_matches_hand_computed_scores() -> None:
+    chrf = extra_analyses.chrf
+
+    assert chrf("a b  c", "abc") == pytest.approx(100)  # whitespace is removed
+    assert chrf("ab", "cd") == chrf("", "abc") == 0
+    # Hypothesis "ab", reference "abc": P = (2/2 + 1/1) / 2 = 1, R = (2/3 + 1/2) / 2 = 7/12,
+    # F2 = 5PR / (4P + R) = 7/11; order 3 is skipped, as the hypothesis has no 3-gram.
+    assert chrf("ab", "abc") == pytest.approx(100 * 7 / 11)
+    # Swapped, P = 7/12 and R = 1 give F2 = 35/40: beta = 2 weighs recall more.
+    assert chrf("abc", "ab") == pytest.approx(87.5)
+    # Matches are clipped: "aaaa" against "aa" gives P = (2/4 + 1/3) / 2 = 5/12, R = 1.
+    assert chrf("aaaa", "aa") == pytest.approx(100 * 25 / 32)
+    # One differing last character of 7: P = R = (7 - n) / (8 - n) for n = 1..6, no 7-grams.
+    expected = sum((7 - n) / (8 - n) for n in range(1, 7)) / 6
+    assert chrf("abcdefg", "abcdefh") == pytest.approx(100 * expected)
+
+
+def test_round_trip_sample_is_seeded_sorted_and_independent_of_file_order() -> None:
+    ids = [f"cordis:{index}:tr" for index in range(1000)]
+
+    sample = extra_analyses.round_trip_sample(ids, 300)
+
+    assert len(sample) == len(set(sample)) == 300 and set(sample) <= set(ids)
+    assert sample == sorted(sample)
+    assert sample == extra_analyses.round_trip_sample(reversed(ids), 300)
+    assert sample != extra_analyses.round_trip_sample(ids, 300, seed=1)
+    with pytest.raises(ValueError):
+        extra_analyses.round_trip_sample(ids[:10], 300)
+
+
+def test_language_counts_report_records_not_detected_as_the_expected_language() -> None:
+    texts = ["tr", "en", "tr", "und", "en-tr", "en", "en", "en"]
+    records = [{"id": f"r{index}", "text": text} for index, text in enumerate(texts)]
+
+    result = extra_analyses.language_counts(records, "tr", lambda text: text)
+
+    assert result == {
+        "records": 8,
+        "detected": {"en": 4, "en-tr": 1, "tr": 2, "und": 1},
+        "not_tr": {"records": 6, "rate": 0.75, "examples": ["r1", "r3", "r4", "r5", "r6"]},
+    }
+
+
+def test_language_id_sums_the_splits_of_manifest_locked_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for split, texts in (("train", ["tr", "en", "tr"]), ("validation", ["tr"]), ("test", ["und"])):
+        records = [{"id": f"{split}:{i}", "text": text} for i, text in enumerate(texts)]
+        write_processed(tmp_path, "tr", split, records)
+    monkeypatch.setattr(extra_analyses, "PROCESSED", tmp_path)
+
+    result = extra_analyses.language_id("tr", lambda text: text)
+
+    assert result["train"]["not_tr"]["examples"] == ["train:1"]
+    assert result["all"] == {
+        "records": 5,
+        "detected": {"en": 1, "tr": 3, "und": 1},
+        "not_tr": {"records": 2, "rate": 0.4},
+    }
+
+
+def test_round_trip_summary_compares_screened_records_with_the_unflagged_sample() -> None:
+    scores = {"a": 20.0, "b": 35.0, "c": 50.0, "d": 60.0, "e": 70.0, "f": 10.0}
+    flags = {"truncation": ["a", "f"], "repetition": []}
+
+    result = extra_analyses.round_trip_summary(scores, ["a", "b", "c", "d", "e"], flags)
+
+    assert result["chrf"] == {"mean": 47, "q1": 35, "median": 50, "q3": 60, "min": 20, "max": 70}
+    assert result["below_40"] == {"documents": 2, "rate": 0.4}
+    assert result["below_30"] == {"documents": 1, "rate": 0.2}
+    screens = result["screens"]
+    assert screens["truncation"] == {"documents": 2, "in_sample": 1, "mean_chrf": 15}
+    assert screens["repetition"] == {"documents": 0, "in_sample": 0, "mean_chrf": None}
+    assert screens["any_screen"] == screens["truncation"]
+    assert screens["unflagged_sample"] == {"documents": 4, "in_sample": 4, "mean_chrf": 53.75}
+    assert result["lowest"] == {"a": 20, "b": 35, "c": 50, "d": 60, "e": 70}

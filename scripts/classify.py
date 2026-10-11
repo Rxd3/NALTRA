@@ -3,8 +3,8 @@
 Prints one JSON line per text: the selected labels (highest score first), the labels
 closed under the taxonomy, the detected language and the OOD decision. One model keeps
 its own thresholds and validation-fitted OOD threshold; several models are combined per
-label by the ensemble voter. Ensemble votes use a fixed 0.5 soft threshold (not the
-benchmark's tuned one) and report no OOD decision.
+label by the ensemble voter. --benchmark-settings loads frozen thresholds and votes
+from an evaluate_ensemble summary, after verifying the artifact and taxonomy hashes.
 """
 
 from __future__ import annotations
@@ -23,11 +23,14 @@ for path in (REPO_ROOT, REPO_ROOT / "src"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from scripts.predict_all import load_model  # noqa: E402
+from scripts.predict_all import artifact_hashes, load_model  # noqa: E402
 from scripts.train_all import MODEL_TYPES, resolve_path  # noqa: E402
 
+from naltra.data.manifest import compute_file_sha256  # noqa: E402
 from naltra.pipeline import EnsembleConfig, PredictionPipeline  # noqa: E402
+from naltra.pipeline.thresholds import is_probability  # noqa: E402
 from naltra.schemas.prediction import PredictionResult  # noqa: E402
+from naltra.utils.resources import resource_path  # noqa: E402
 
 
 def parser() -> argparse.ArgumentParser:
@@ -37,8 +40,12 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--models", nargs="+", choices=sorted(MODEL_TYPES), default=["svm"])
     result.add_argument(
-        "--method", choices=("hard", "soft"), default="hard", help="Vote used for several models"
+        "--method",
+        choices=("hard", "hard_k", "soft", "weighted_soft"),
+        default="hard",
+        help="Vote used for several models; hard_k/weighted_soft require --benchmark-settings",
     )
+    result.add_argument("--benchmark-settings", help="Frozen evaluate_ensemble summary.json")
     source = result.add_mutually_exclusive_group(required=True)
     source.add_argument("--text")
     source.add_argument("--input", help="JSONL file with a 'text' field per record")
@@ -92,9 +99,84 @@ def input_texts(path: Path) -> list[str]:
     return texts
 
 
+def benchmark_config(
+    path: Path, models: dict, artifacts: Path, method: str
+) -> EnsembleConfig | None:
+    """Bind frozen decisions to the exact artifacts and label space that were evaluated."""
+    settings = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(settings, dict):
+        raise ValueError("Benchmark settings must be a summary object.")
+    if settings.get("taxonomy_sha256") != compute_file_sha256(
+        resource_path("taxonomy/taxonomy.json")
+    ):
+        raise ValueError("Benchmark taxonomy differs from the current taxonomy.")
+    thresholds = settings.get("thresholds")
+    dumps = settings.get("dumps")
+    if not isinstance(thresholds, dict) or not isinstance(dumps, dict):
+        raise ValueError("Benchmark settings need thresholds and artifact provenance.")
+    for family, model in models.items():
+        if not is_probability(thresholds.get(family)):
+            raise ValueError(f"Benchmark threshold is missing or invalid for {family}.")
+        if settings.get("label_count") != len(model.labels):
+            raise ValueError(f"Benchmark label universe differs for {family}.")
+        actual = artifact_hashes(artifacts / family)
+        origins = [v for k, v in dumps.items() if k.startswith(f"{family}/")]
+        if not origins or any(
+            not isinstance(origin, dict)
+            or any(
+                origin.get(key) != actual[key]
+                for key in ("artifact_sha256", "artifact_files_sha256")
+            )
+            for origin in origins
+        ):
+            raise ValueError(f"Benchmark artifact hashes differ for {family}.")
+    config = None
+    if len(models) > 1:
+        members = settings.get("members")
+        if (
+            not isinstance(members, list)
+            or len(members) != len(models)
+            or set(members) != set(models)
+        ):
+            raise ValueError("Benchmark voting members must exactly match --models.")
+        if method == "hard_k":
+            config = EnsembleConfig(
+                method="hard", threshold=0.0, required_models=models, vote_count=settings.get("k")
+            )
+            if config.vote_count is None:
+                raise ValueError("Benchmark settings have no tuned vote count.")
+        elif method == "hard":
+            config = EnsembleConfig(method="hard", required_models=models)
+        else:
+            key = "soft_threshold" if method == "soft" else "weighted_soft_threshold"
+            if not is_probability(settings.get(key)):
+                raise ValueError(f"Benchmark settings have no valid {key}.")
+            weights = {}
+            if method == "weighted_soft":
+                values = settings.get("val_a_micro_f1")
+                if not isinstance(values, dict) or any(
+                    not is_probability(values.get(family)) for family in models
+                ):
+                    raise ValueError("Benchmark member weights must be finite scores in [0, 1].")
+                weights = {family: values[family] for family in models}
+                if sum(weights.values()) <= 0:
+                    raise ValueError("Benchmark member weights must have a positive sum.")
+            config = EnsembleConfig(
+                method=method, threshold=settings[key], weights=weights, required_models=models
+            )
+    # Change decisions only after every identity and setting has validated.
+    for family, model in models.items():
+        model.config["multilabel"] = {"threshold": thresholds[family], "per_label": {}}
+    return config
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     artifacts = resolve_path(args.artifacts)
+    if len(set(args.models)) != len(args.models):
+        parser().error("--models must contain distinct model families.")
+    if args.method in {"hard_k", "weighted_soft"} and not args.benchmark_settings:
+        parser().error(f"--method {args.method} requires --benchmark-settings.")
     missing = [family for family in args.models if not (artifacts / family).is_dir()]
     if missing:
         parser().error(f"No saved artifact for {missing} under {artifacts}.")
@@ -112,13 +194,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"Cannot load the {family} artifact under {artifacts / family}: "
                 f"{type(error).__name__}: {error}"
             )
+    config = None
+    provenance = None
+    if args.benchmark_settings:
+        settings_path = resolve_path(args.benchmark_settings)
+        try:
+            config = benchmark_config(settings_path, models, artifacts, args.method)
+            provenance = {
+                "benchmark_sha256": compute_file_sha256(settings_path),
+                "method": args.method if len(models) > 1 else "single",
+            }
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            parser().error(f"Cannot use benchmark settings: {error}")
     if len(models) == 1:
         pipeline = PredictionPipeline(model=next(iter(models.values())))
     else:
-        config = EnsembleConfig(method=args.method, required_models=models)
+        config = config or EnsembleConfig(method=args.method, required_models=models)
         pipeline = PredictionPipeline(models=models, ensemble_config=config)
     for result in pipeline.predict_batch(texts):
-        print(json.dumps(summary(result)), flush=True)
+        row = summary(result)
+        if provenance is not None:
+            row["threshold_source"] = provenance
+        print(json.dumps(row), flush=True)
     return 0
 
 

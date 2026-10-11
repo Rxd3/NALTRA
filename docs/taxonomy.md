@@ -1,104 +1,97 @@
-# Taxonomy Design: European Science Vocabulary (EuroSciVoc)
+# Taxonomy
 
-The canonical NALTRA taxonomy is defined in `taxonomy/taxonomy.json`, built from the raw CORDIS archive by `scripts/build_taxonomy.py` (section 6) and validated by `taxonomy/validation.py`.
+NALTRA builds its active EuroSciVoc hierarchy from category paths in the committed
+CORDIS Horizon 2020 archive. The canonical files are
+`taxonomy/taxonomy.json` and `taxonomy/label_map.json`.
 
-Under the CORDIS Horizon 2020 migration, NALTRA restores full hierarchical multi-label classification using the official **European Science Vocabulary (EuroSciVoc)** ontology maintained by the Publications Office of the European Union.
+## Active hierarchy
 
----
+| Property | Value |
+| --- | --- |
+| Version | 0.4.0 |
+| Supported direct labels | 473 |
+| Total active nodes | 586 |
+| Roots | 6 |
+| Maximum depth | 7 |
+| Structure | Single-parent hierarchy with no cycles |
 
-## 1. Active Taxonomy Overview
+The six roots form a forest of trees. Every non-root node has one parent.
 
-- **Taxonomy Version**: `0.4.0`
-- **Ontology**: EuroSciVoc (OECD Fields of Science and Technology baseline)
-- **Active Canonical Labels**: 586
-- **Root Domains (Level 1)**: Exactly 6 OECD fields
-- **Hierarchy Depth**: Ranges from Level 1 (roots) to Level 7 (specialized leaf subdisciplines)
-- **Mathematical Structure**: Strict single-parent directed tree (no cycles, no polyhierarchy conflicts in active paths)
+| Root ID | Source code | Active descendants |
+| --- | --- | --- |
+| `natural_sciences` | `/23` | 218 |
+| `engineering_and_technology` | `/25` | 136 |
+| `medical_and_health_sciences` | `/21` | 90 |
+| `social_sciences` | `/29` | 82 |
+| `agricultural_sciences` | `/27` | 22 |
+| `humanities` | `/31` | 32 |
 
----
+## Support filtering
 
-## 2. Root Domains (OECD Fields of Science)
+A directly assigned category is retained if at least **50 distinct projects**
+in the full source archive carry it. This calculation precedes splitting, so it
+includes projects later assigned to validation and test. It is not a training-only
+support threshold and does not guarantee a particular count in each split. In the
+shipped splits, every retained direct label has at least 34 train, 6 validation,
+and 6 test projects.
 
-The six top-level scientific root domains (Depth 1) are:
+The source has 1,053 directly assigned categories across 32,210 projects. At the
+chosen threshold, 473 categories retain 31,407 projects (97.51% of labeled projects).
+Their 225 required ancestors include 112 already-direct labels; adding the remaining
+113 produces the 586-node active hierarchy. Ancestors are retained even when
+their direct support is zero.
 
-| Canonical ID | EuroSciVoc Code | Display Name | Depth | Active Descendants |
-| :--- | :---: | :--- | :---: | :---: |
-| `natural_sciences` | `/23` | Natural Sciences | 1 | 218 |
-| `engineering_and_technology` | `/25` | Engineering and Technology | 1 | 136 |
-| `medical_and_health_sciences` | `/21` | Medical and Health Sciences | 1 | 90 |
-| `social_sciences` | `/29` | Social Sciences | 1 | 82 |
-| `agricultural_sciences` | `/27` | Agricultural Sciences | 1 | 22 |
-| `humanities` | `/31` | Humanities | 1 | 32 |
+| Minimum support | Direct labels | Added ancestors | Active nodes | Retained projects |
+| --- | --- | --- | --- | --- |
+| 5 | 965 | 25 | 990 | 32,171 |
+| 10 | 857 | 47 | 904 | 32,093 |
+| 20 | 714 | 77 | 791 | 31,944 |
+| **50** | **473** | **113** | **586** | **31,407** |
+| 100 | 297 | 112 | 409 | 30,395 |
 
----
+## Direct labels and ancestors
 
-## 3. Active Label Support & Pruning Policy
+Dataset `labels_direct` stores the assigned canonical labels that pass the support
+threshold. Codes below it are dropped, not rolled up to their nearest supported
+ancestor: 8,128 of the 31,407 retained projects lose at least one assigned code
+([dataset card, known issue 2](../data/README.md#known-issues)). Dataset `labels`
+adds every ancestor. Models learn and score direct labels; the prediction pipeline
+provides root-to-label `hierarchy_paths` without inventing ancestor probabilities.
 
-The Horizon 2020 release assigns 1,053 distinct EuroSciVoc categories directly to 32,210 projects, with a long tail of rare categories (88 of them have fewer than 5 projects).
+Ordinary classification compares direct labels. Hierarchical metrics close both
+predictions and targets upward before scoring. A hierarchy violation occurs when
+a set contains a non-root node but omits its parent; the violation rate is the
+fraction of records with at least one such omission. Archived target sets have
+zero violations.
 
-The support threshold improves label coverage; the shipped full splits have minima of 34/6/6 examples per retained direct label in train/validation/test.
+## Label mapping
 
-- A minimum direct-label support threshold of **50 projects** is applied.
-- 473 directly supported categories satisfy this threshold.
-- All **225 required ancestors** are propagated upward to the OECD roots; 112 of them are direct labels already, so 113 are added.
-- Total active canonical label set comprises **586 categories**.
-- Direct labels retain **97.51%** of all labeled projects (31,407 out of 32,210).
+The label map contains 1,752 aliases for source codes, full title paths, and titles.
+Root titles and paths coincide. For example, a source code or title path resolves
+to a canonical ID such as `data_science`.
 
-Ancestors are **never pruned** merely because they are rarely annotated directly; structural integrity from root to leaf is strictly preserved.
+The builder derives IDs by lowercasing titles and replacing runs of other
+characters with underscores. Nodes are ordered by depth and source code;
+`is_leaf` means that the active hierarchy contains no child.
 
-Codes below the threshold are dropped from a project's direct labels, not rolled up to their nearest supported ancestor: 8,128 of the 31,407 retained projects lose at least one directly assigned code ([dataset specification, section 3](dataset.md#3-classification-ontology-euroscivoc)).
+## Rebuild and validate
 
----
-
-## 4. Hierarchy Closure & Violations
-
-Stored dataset targets preserve both sets:
-1. `labels_direct`: The project's directly assigned EuroSciVoc categories that pass the support threshold, i.e. those among the 473 direct labels.
-2. `labels`: Direct labels plus all required ancestors up to the root domain.
-
-Models train on `labels_direct`. Prediction `labels` contains direct selections, and `hierarchy_paths` contains required ancestors without invented scores. Ordinary metrics compare direct assignments; hierarchical metrics expand ancestors.
-
-### Hierarchy Violation Metric
-A prediction set $P$ violates hierarchy consistency if it predicts child label $c$ but fails to predict its canonical parent $p = \text{parent}(c)$:
-$$\text{violation}(P) = \sum_{c \in P} \mathbb{I}(\text{parent}(c) \neq \text{None} \land \text{parent}(c) \notin P)$$
-$$\text{Hierarchy Violation Rate} = \frac{1}{N} \sum_{i=1}^N \mathbb{I}(\text{violation}(P_i) > 0)$$
-
-In clean benchmark target labels, the hierarchy violation rate is strictly **0.00%**.
-
----
-
-## 5. Source-to-Canonical Label Mapping
-
-Upstream CORDIS data references categories by slash-delimited codes (e.g. `/23/47/299`) and full title paths (e.g. `natural sciences/computer and information sciences/data science`).
-
-The file `taxonomy/label_map.json` contains 1,752 alias mappings that resolve official numeric codes, full English path strings and category titles to deterministic canonical label IDs (e.g. `data_science`): one code, path and title per active label, where a root's path and title coincide.
-
----
-
-## 6. Rebuilding the Taxonomy
-
-`scripts/build_taxonomy.py` rebuilds both files from the committed archive, reading `euroSciVoc.csv` straight from the zip:
-
-```bash
-python scripts/build_taxonomy.py   # --archive data/raw/cordis_h2020/cordis-h2020projects-csv.zip --output-dir taxonomy --min-support 50
-```
-
-1. **Support**: `direct_project_support` is the number of distinct projects that `euroSciVoc.csv` assigns a code to directly. Every classified project has a non-empty objective in `project.csv`, so restricting the count to usable projects changes nothing.
-2. **Direct labels**: codes with support >= `--min-support`.
-3. **Ancestors**: every code prefix of a direct label (`/23/47/299` -> `/23/47`, `/23`), named by the matching prefix of its title path, so ancestors never annotated directly (support 0) still enter the tree.
-4. **Labels**: `id` is the lowercased title with each run of other characters replaced by `_`; labels are ordered by depth, then code; `is_leaf` means no active child.
-5. **Label map**: each label's code, path and title map to its `id`.
-
-It prints a JSON status line such as `{"status": "success", "labels": 586, "direct_labels": 473, "aliases": 1752, "written": ["taxonomy.json"]}`. Other thresholds reproduce the sensitivity table in [dataset.md](dataset.md): 5, 10, 20, 50 and 100 give 965, 857, 714, 473 and 297 direct labels.
-
-`taxonomy.json` is rebuilt byte for byte (SHA-256 `0dda384c...` in the CRLF checkout that the dataset manifests and trained models pin). `label_map.json` is rebuilt with the same 1,752 aliases, but the committed key order came from an unseeded Python set and cannot be regenerated; because the manifests and models also pin its hash, the script leaves an existing file whose mapping is unchanged untouched (`written` lists what it rewrote). `tests/test_build_taxonomy.py` checks both hashes.
-
----
-
-## 7. Taxonomy Validation
-
-To verify taxonomy schema compliance and ensure zero cycles or dangling nodes:
+Run from the repository root:
 
 ```bash
+python scripts/build_taxonomy.py
 python taxonomy/validation.py taxonomy/taxonomy.json
 ```
+
+The builder reads `euroSciVoc.csv` directly from the committed ZIP, computes
+distinct-project support, includes code-prefix ancestors, and writes the canonical
+files. `--min-support`, `--archive`, and `--output-dir` select alternatives.
+
+The archived taxonomy checksum is
+`0dda384c528199fc0dd4f170ce2a677bb5009f569802b963b5c9cd6ed1299b84`.
+Its CRLF byte representation is pinned by dataset/model manifests. The label-map
+key order originated from an unseeded set; an equivalent existing mapping is left
+untouched to preserve its byte checksum. Builder tests verify both identities.
+
+Changing labels or file identity can invalidate datasets and model artifacts.
+Keep the archived taxonomy for result replay and version any new hierarchy.

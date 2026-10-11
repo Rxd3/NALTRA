@@ -1,0 +1,206 @@
+{
+  "code_commit": "b601267-dirty",
+  "environment": {
+    "python_version": "3.13.1",
+    "platform": "win32",
+    "package_versions": {
+      "numpy": "2.5.3",
+      "torch": "2.14.1+cu126",
+      "transformers": "5.19.0",
+      "scikit-learn": "1.9.1",
+      "pyyaml": "6.0.3",
+      "huggingface-hub": "1.33.0",
+      "httpx": "0.28.1"
+    }
+  },
+  "inputs": {
+    "data/processed/cordis_h2020/en/train.jsonl": "25ce2f59f0ee0d083292eebf536e91941c8efb345474bbfaacc67e78c444a2a4",
+    "data/processed/cordis_h2020/en/validation.jsonl": "77722f1d42b4eeaa60bc1f3dc1a037a43dcf97ae64721ea31cb00da26981f16f",
+    "data/processed/cordis_h2020/en/test.jsonl": "4f8564416013dff1c07e51f2c1f2064c2013c144908a26beec8122f455614052",
+    "data/processed/cordis_h2020/tr/train.jsonl": "edbb7112a474c140775663b26fa8ead1e88a384f50119688bf9054f340f109ef",
+    "data/processed/cordis_h2020/tr/validation.jsonl": "eb9483b0db8b725f1d3f19150c9d9a1c837704af6ba62a54aca382c3b515ae59",
+    "data/processed/cordis_h2020/tr/test.jsonl": "d269933ab6d24dd26cbbda44f9bbe3c8c8fa71c60ed1b109d2e907a227ea0141"
+  },
+  "tools": {
+    "lingua-language-detector": "2.2.0",
+    "sentencepiece": "0.2.2"
+  },
+  "definitions": {
+    "language_id": "primary language of each record's text by naltra.pipeline.language.LinguaLanguageDetector (lingua restricted to EN and TR; minimum confidence 0.6, minimum share 0.2): en-tr when both languages hold at least 2 words and that share of the confidently detected words, und under 2 words or below that confidence",
+    "not_tr, not_en": "records not detected as their own language; examples are the first 5 in file order",
+    "round_trip": "300 TR test records drawn by random.Random(seed).sample from the sorted record ids, plus every TR test record a translation_checks screen flags; each stored TR aligned sentence is translated back to English with the pinned model and the sentences are joined with spaces",
+    "chrf": "document chrF (Popovic 2015) of the back-translation against the EN source text: character n-grams of orders 1..6 with whitespace removed, clipped matches, precision and recall averaged over the orders, F-beta with beta = 2, 0-100; chrf, below_40, below_30 and lowest cover the sample only",
+    "screens": "mean chrF of every TR test record each translation_checks screen flags (in_sample: how many are in the sample) and of the sampled records no screen flags",
+    "scope": "round-trip chrF is an automatic proxy, not a human judgement: errors of the EN->TR release model can cancel out or be introduced by the reverse model, and chrF measures character overlap with the EN source, not Turkish fluency; language ID shows a record reads as Turkish, not that it is a faithful translation"
+  },
+  "language_id": {
+    "tr": {
+      "train": {
+        "records": 21985,
+        "detected": {
+          "en-tr": 3,
+          "tr": 21982
+        },
+        "not_tr": {
+          "records": 3,
+          "rate": 0.0001,
+          "examples": [
+            "cordis:763721:tr",
+            "cordis:881806:tr",
+            "cordis:869764:tr"
+          ]
+        }
+      },
+      "validation": {
+        "records": 4711,
+        "detected": {
+          "en-tr": 1,
+          "tr": 4710
+        },
+        "not_tr": {
+          "records": 1,
+          "rate": 0.0002,
+          "examples": [
+            "cordis:101017622:tr"
+          ]
+        }
+      },
+      "test": {
+        "records": 4711,
+        "detected": {
+          "en-tr": 3,
+          "tr": 4708
+        },
+        "not_tr": {
+          "records": 3,
+          "rate": 0.0006,
+          "examples": [
+            "cordis:731077:tr",
+            "cordis:641615:tr",
+            "cordis:776258:tr"
+          ]
+        }
+      },
+      "all": {
+        "records": 31407,
+        "detected": {
+          "en-tr": 7,
+          "tr": 31400
+        },
+        "not_tr": {
+          "records": 7,
+          "rate": 0.0002
+        }
+      }
+    },
+    "en": {
+      "train": {
+        "records": 21985,
+        "detected": {
+          "en": 21985
+        },
+        "not_en": {
+          "records": 0,
+          "rate": 0.0,
+          "examples": []
+        }
+      },
+      "validation": {
+        "records": 4711,
+        "detected": {
+          "en": 4711
+        },
+        "not_en": {
+          "records": 0,
+          "rate": 0.0,
+          "examples": []
+        }
+      },
+      "test": {
+        "records": 4711,
+        "detected": {
+          "en": 4711
+        },
+        "not_en": {
+          "records": 0,
+          "rate": 0.0,
+          "examples": []
+        }
+      },
+      "all": {
+        "records": 31407,
+        "detected": {
+          "en": 31407
+        },
+        "not_en": {
+          "records": 0,
+          "rate": 0.0
+        }
+      }
+    }
+  },
+  "round_trip": {
+    "translator": {
+      "model": "Helsinki-NLP/opus-mt-tc-big-tr-en",
+      "revision": "2261c8fc7b1af59caee87f8ff0ecf3fbccfe8391",
+      "device": "cuda",
+      "dtype": "torch.float16",
+      "batch_size": 8,
+      "num_beams": 4,
+      "no_repeat_ngram_size": 4,
+      "max_new_tokens": 512
+    },
+    "sample": {
+      "split": "test",
+      "population": 4711,
+      "documents": 300,
+      "seed": 42,
+      "scored_documents": 334
+    },
+    "chrf": {
+      "mean": 77.1443,
+      "q1": 75.3601,
+      "median": 78.4986,
+      "q3": 80.8552,
+      "min": 40.5798,
+      "max": 86.6142
+    },
+    "below_40": {
+      "documents": 0,
+      "rate": 0.0
+    },
+    "below_30": {
+      "documents": 0,
+      "rate": 0.0
+    },
+    "screens": {
+      "truncation": {
+        "documents": 31,
+        "in_sample": 2,
+        "mean_chrf": 53.4526
+      },
+      "repetition": {
+        "documents": 6,
+        "in_sample": 1,
+        "mean_chrf": 77.0579
+      },
+      "any_screen": {
+        "documents": 37,
+        "in_sample": 3,
+        "mean_chrf": 57.2805
+      },
+      "unflagged_sample": {
+        "documents": 297,
+        "in_sample": 297,
+        "mean_chrf": 77.3612
+      }
+    },
+    "lowest": {
+      "cordis:730846:tr": 40.5798,
+      "cordis:744457:tr": 42.7722,
+      "cordis:687757:tr": 46.8916,
+      "cordis:641615:tr": 48.4069,
+      "cordis:768583:tr": 52.6719
+    }
+  }
+}

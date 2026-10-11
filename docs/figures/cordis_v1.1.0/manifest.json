@@ -1,0 +1,41 @@
+{
+  "description": "Charts of archived summaries; experiments were not rerun.",
+  "sources": {
+    "full": {
+      "path": "results/metrics/cordis_v1.1.0_ensemble/summary.json",
+      "sha256": "36b985401373d4fb2c2aabbd9c841fb9006354ecb8863dce1e6d37baaf5e7ce4"
+    },
+    "sample": {
+      "path": "results/metrics/cordis_v1.1.0_sample/summary.json",
+      "sha256": "abd6fa3192d93e58768eb92b969b479210ac2c62ed1a4144ab81142937597233"
+    },
+    "benchmark": {
+      "path": "results/benchmarks/cordis_v1.1.0/benchmark_summary.json",
+      "sha256": "fa2779f4edc3a54f7efee84bffe7c4f74c5557e3de92713e7f9d1e90c696f00d"
+    },
+    "ood": {
+      "path": "results/ood/cordis_v1.1.0/summary.json",
+      "sha256": "f1b4296c5dc6aceb5d0e4b924fa25e2fabb88aee8d91ad781894dfdf252164cb"
+    }
+  },
+  "figures": [
+    "full_f1.png",
+    "full_f1.svg",
+    "robustness_heatmap.png",
+    "robustness_heatmap.svg",
+    "robustness_drops.png",
+    "robustness_drops.svg",
+    "sample_f1.png",
+    "sample_f1.svg",
+    "cpu_benchmark.png",
+    "cpu_benchmark.svg",
+    "accuracy_latency.png",
+    "accuracy_latency.svg",
+    "artifact_size.png",
+    "artifact_size.svg",
+    "ood_detection.png",
+    "ood_detection.svg"
+  ],
+  "generator": "scripts/plot_results.py",
+  "generator_sha256": "8b0a32eec3f3a53d9f4a7e13bcfca0e81b0ab3b3a8731081fe9c3c79a239a674"
+}

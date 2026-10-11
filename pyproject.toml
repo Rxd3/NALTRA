@@ -43,6 +43,9 @@ naltra-prepare-data = "naltra.cli:prepare_data"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+naltra = ["reporting/*.html"]
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]

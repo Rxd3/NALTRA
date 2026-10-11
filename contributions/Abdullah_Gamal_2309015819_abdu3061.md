@@ -1,37 +1,38 @@
-# Team Member Contribution Report
+# Student Contribution Report
 
-- **Name**: Abdullah Gamal
-- **Student ID**: 2309015819
-- **GitHub Username**: abdu3061
-- **Role**: Evaluation & Benchmarking Lead
-
----
-
-## What I Owned
-I was responsible for the entire evaluation and benchmarking pipeline for our project. My main focus was making sure we could accurately measure how smart, fast, and reliable our models were across different languages and noisy text conditions.
-
-Files and modules I created and maintained:
-- `src/naltra/evaluation/` (metrics engine and hierarchical scoring)
-- `scripts/evaluate_all.py` (automated testing across language/noise slices)
-- `scripts/run_benchmark.py` (measuring speed, latency, and CPU memory)
-- `results/` (storing JSON evaluation outputs)
-- `docs/evaluation.md` (documentation for the evaluation setup)
+**Student Name:** Abdullah 
+**Student id:**2309015819 
+**Role:** Evaluation & Benchmarking Lead  
+**Github username:**abdu3061
 
 ---
 
-## What I Did
+## Executive Summary
+As the Evaluation & Benchmarking Lead for the NALTRA project, my primary responsibility was designing and implementing the end-to-end evaluation engine, metric suite, and performance benchmarking scripts. I established the mathematical and empirical standards used to evaluate all classification models against the 586-node EuroSciVoc taxonomy across clean, noisy, and cross-lingual text datasets.
 
-1. **Built the Metrics Engine (`metrics.py` & `hierarchical.py`)**
-   - Implemented standard evaluation metrics like Precision, Recall, Micro-F1, and Macro-F1.
-   - Built the hierarchical scoring logic to give partial credit when predictions match ancestor nodes in our EuroSciVoc taxonomy tree.
+---
 
-2. **Created Automated Evaluation Scripts (`evaluate_all.py`)**
-   - Wrote scripts that automatically run predictions through our metrics engine across all test sets: English, machine-translated Turkish, code-switched text, and noisy text.
-   - Saved all structured results directly into `results/metrics/` so the team could compare baseline models against our main NALTRA model side-by-side.
+## Technical Deliverables & Key Contributions
+### 1. Core Evaluation Engine (`src/naltra/evaluation/`)
+* **`metrics.py` (Metric Framework & Sparsity Resolution)**:
+  * Researched and implemented global **Micro-F1**, **Macro-F1**, and standard accuracy metrics for extreme multi-label classification across 473 leaf categories.
+  * Identified and documented the **99.3% accuracy trap** caused by label sparsity (where predicting all zero labels yields 99.3% standard accuracy) and justified the selection of Micro-F1 as the primary global evaluation metric.
+* **`hierarchical.py` (Hierarchical Closure Metrics)**:
+  * Designed hierarchical evaluation logic leveraging the 7-level EuroSciVoc tree structure (586 total nodes).
+  * Implemented partial-credit scoring algorithms so models are fairly rewarded when predicting higher-level parent topics along the correct taxonomic branch (e.g., *Optics* instead of *Nonlinear Optics*).
 
-3. **Benchmarked System Speed & Efficiency (`run_benchmark.py`)**
-   - Measured real-world CPU speed for every model, capturing p50, p95, and p99 latency percentiles alongside throughput (documents per second).
+### 2. Multi-Slice & Speed Benchmarking Pipeline (`scripts/`)
+* **`scripts/evaluate_all.py` (Multi-Slice Evaluation)**:
+  * Engineered automated multi-slice evaluation scripts to stress-test models across Clean English, Turkish, Code-Switched, and Noisy Text datasets.
+* **`scripts/run_benchmark.py` (CPU Latency & Throughput Testing)**:
+  * Created standardized latency benchmarks using 4 PyTorch CPU threads across 200 document batches.
+  * Benchmarked inference speeds across classical baselines, neural architectures, and transformer models.
 
-4. **Testing & Team Integration**
-   - Maintained full test coverage to make sure nothing broke, verifying all 116 unit tests passed.
-   - Managed remote git branches and merged my work into `main` via Pull Request #2.
+### 3. Baseline Validation & Empirical Findings
+* **Calibrated Linear SVM (TF-IDF) Baseline**:
+  * Established the calibrated SVM as our primary benchmark model.
+  * Proved through empirical testing that Linear SVM achieved the top multi-label accuracy score (**0.558 Micro-F1** on clean English) while maintaining an ultra-fast production speed (**2.0 ms median CPU latency**).
+  * Evaluated and documented the trade-offs of heavier neural baselines (BiLSTM), cross-lingual transformers (XLM-R), and zero-shot LLMs.
+
+### 4. Testing, Code Quality & Verification
+* Developed and maintained rigorous unit and integration tests for all evaluation scripts and pipeline modules, contributing directly to the repository's overall suite of **808 passing tests**.

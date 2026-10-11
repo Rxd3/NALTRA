@@ -63,6 +63,7 @@ results/metrics/*
 !results/metrics/translation_exceptions.json
 !results/metrics/label_coverage.json
 !results/metrics/translation_checks.json
+!results/metrics/translation_quality.json
 !results/metrics/cordis_v1.1.0_ensemble/
 results/metrics/cordis_v1.1.0_ensemble/*
 !results/metrics/cordis_v1.1.0_ensemble/summary.json
@@ -93,3 +94,6 @@ huggingface/
 transformers_cache/
 wandb/
 runs/
+
+# Temporary presentation/chart workspaces
+.chart-data-*/

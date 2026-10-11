@@ -12,9 +12,13 @@ drops     results/metrics/cordis_v1.1.0_ensemble/robustness.json: each member's 
           member's (paired project bootstrap, Holm-adjusted within each condition).
 translation  results/metrics/translation_checks.json: TR records with a possibly truncated
           aligned sentence or a repeated word n-gram the EN source lacks (data only).
+mtquality results/metrics/translation_quality.json: lingua language ID of every EN and TR record
+          and round-trip chrF of 300 seeded TR test records translated back to English. Run
+          only when named: it downloads the pinned TR->EN model and uses CUDA when available.
 
-CPU only. Reads the committed archive (in memory), taxonomy and splits, and the local dumps of
-scripts/predict_all.py, which must be the ones whose hashes the committed summaries recorded.
+CPU only, apart from mtquality. Reads the committed archive (in memory), taxonomy and splits,
+and the local dumps of scripts/predict_all.py, which must be the ones whose hashes the committed
+summaries recorded.
 Every output of one run records the code commit taken before the first file is written.
 """
 
@@ -26,11 +30,13 @@ import hashlib
 import io
 import json
 import math
+import random
 import re
 import sys
 import zipfile
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -51,6 +57,7 @@ from naltra.data.manifest import (  # noqa: E402
     get_environment_metadata,
     get_source_config,
 )
+from naltra.data.translation import HuggingFaceLocalTranslator  # noqa: E402
 from naltra.evaluation.bootstrap import (  # noqa: E402
     SEED,
     f1_scores,
@@ -73,7 +80,9 @@ OUTPUTS = {
     "errors": ENSEMBLE / "error_analysis.json",
     "drops": ENSEMBLE / "robustness.json",
     "translation": REPO_ROOT / "results/metrics/translation_checks.json",
+    "mtquality": REPO_ROOT / "results/metrics/translation_quality.json",
 }
+OPT_IN = ("mtquality",)  # needs the network for the model and is slow without a GPU
 FULL_TEST = ("en_test", "tr_test")
 ZERO_SHOT = ("jev", "kev", "laya")
 TRAINED = ("transformer", "naive_bayes", "bilstm", "svm", "hybrid_knn")
@@ -93,6 +102,12 @@ REPEAT_MIN_N = 4  # words
 EXAMPLES = 5
 WORD = re.compile(r"\w+")
 DECIMALS = 4
+BACK_MODEL = "Helsinki-NLP/opus-mt-tc-big-tr-en"
+BACK_REVISION = "2261c8fc7b1af59caee87f8ff0ecf3fbccfe8391"
+ROUND_TRIP_SIZE = 300
+CHRF_ORDER = 6
+CHRF_BETA = 2
+CHRF_CUTS = (40, 30)
 
 
 class Tree(NamedTuple):
@@ -579,18 +594,21 @@ def flag_rates(flagged: Mapping[str, list[str]], records: int) -> dict[str, Any]
     }
 
 
+def screened(records: Sequence[Mapping], sources: Mapping[str, str]) -> dict[str, list[str]]:
+    """Ids of the TR records each screen flags, in file order; sources are EN texts by pair_id."""
+    return {
+        "truncation": [r["id"] for r in records if truncated(r["sentence_alignment"])],
+        "repetition": [r["id"] for r in records if mt_repetition(r["text"], sources[r["pair_id"]])],
+    }
+
+
 def translation_checks() -> dict[str, Any]:
     splits, inputs, totals = {}, [], Counter()
     for split in SPLITS:
         en, tr = checked_split("en", split), checked_split("tr", split)
         sources = {record["pair_id"]: record["text"] for record in load_jsonl(en)}
         records = load_jsonl(tr)
-        flagged = {
-            "truncation": [r["id"] for r in records if truncated(r["sentence_alignment"])],
-            "repetition": [
-                r["id"] for r in records if mt_repetition(r["text"], sources[r["pair_id"]])
-            ],
-        }
+        flagged = screened(records, sources)
         splits[split] = flag_rates(flagged, len(records))
         totals.update({"records": len(records)} | {k: len(v) for k, v in flagged.items()})
         inputs += [en, tr]
@@ -617,6 +635,198 @@ def translation_checks() -> dict[str, Any]:
     }
 
 
+def language_counts(
+    records: Iterable[Mapping[str, Any]], expected: str, detect: Callable[[str], str]
+) -> dict[str, Any]:
+    """Detected language of every record's text, and the records not detected as ``expected``."""
+    found = {record["id"]: detect(record["text"]) for record in records}
+    other = [record_id for record_id, language in found.items() if language != expected]
+    detected = dict(sorted(Counter(found.values()).items()))
+    return {"records": len(found), "detected": detected} | flag_rates(
+        {f"not_{expected}": other}, len(found)
+    )
+
+
+def language_id(language: str, detect: Callable[[str], str]) -> dict[str, Any]:
+    """language_counts of each manifest-locked split of ``language``, and of all of them."""
+    splits = {
+        split: language_counts(load_jsonl(checked_split(language, split)), language, detect)
+        for split in SPLITS
+    }
+    detected = sum((Counter(counts["detected"]) for counts in splits.values()), Counter())
+    records = detected.total()
+    splits["all"] = {
+        "records": records,
+        "detected": dict(sorted(detected.items())),
+        f"not_{language}": {
+            "records": records - detected[language],
+            "rate": (records - detected[language]) / records,
+        },
+    }
+    return splits
+
+
+def char_ngrams(text: str, n: int) -> Counter[str]:
+    chars = "".join(text.split())
+    return Counter(chars[i : i + n] for i in range(len(chars) - n + 1))
+
+
+def chrf(hypothesis: str, reference: str) -> float:
+    """chrF (Popovic 2015) on 0-100: character n-grams of orders 1..6, whitespace removed.
+
+    Clipped n-gram precision and recall are each averaged over the orders both texts reach and
+    combined as F-beta with beta = 2, so recall counts more than precision.
+    """
+    precision = recall = 0.0
+    orders = 0
+    for n in range(1, CHRF_ORDER + 1):
+        hyp, ref = char_ngrams(hypothesis, n), char_ngrams(reference, n)
+        if hyp and ref:
+            matches = (hyp & ref).total()
+            precision += matches / hyp.total()
+            recall += matches / ref.total()
+            orders += 1
+    if not precision + recall:
+        return 0.0
+    precision, recall, factor = precision / orders, recall / orders, CHRF_BETA**2
+    return 100 * (1 + factor) * precision * recall / (factor * precision + recall)
+
+
+def round_trip_sample(
+    ids: Iterable[str], size: int = ROUND_TRIP_SIZE, seed: int = SEED
+) -> list[str]:
+    """``size`` ids drawn with the seed from their sorted order (not file order), sorted."""
+    return sorted(random.Random(seed).sample(sorted(ids), size))
+
+
+def round_trip_summary(
+    scores: Mapping[str, float], sample: Sequence[str], flags: Mapping[str, Sequence[str]]
+) -> dict[str, Any]:
+    """chrF distribution of the sample; mean chrF of screened records and the unflagged sample."""
+    values = np.array([scores[record_id] for record_id in sample])
+    q1, median, q3 = (float(q) for q in np.percentile(values, [25, 50, 75]))
+    in_sample, flagged = set(sample), set().union(*flags.values())
+
+    def group(ids: Iterable[str]) -> dict[str, Any]:
+        ids = sorted(ids)
+        return {
+            "documents": len(ids),
+            "in_sample": len(in_sample.intersection(ids)),
+            "mean_chrf": float(np.mean([scores[i] for i in ids])) if ids else None,
+        }
+
+    lowest = sorted(sample, key=lambda record_id: (scores[record_id], record_id))[:EXAMPLES]
+    below = {cut: values < cut for cut in CHRF_CUTS}
+    return {
+        "chrf": {
+            "mean": float(values.mean()),
+            "q1": q1,
+            "median": median,
+            "q3": q3,
+            "min": float(values.min()),
+            "max": float(values.max()),
+        },
+        **{
+            f"below_{cut}": {"documents": int(mask.sum()), "rate": float(mask.mean())}
+            for cut, mask in below.items()
+        },
+        "screens": {name: group(ids) for name, ids in flags.items()}
+        | {"any_screen": group(flagged), "unflagged_sample": group(in_sample - flagged)},
+        "lowest": {record_id: scores[record_id] for record_id in lowest},
+    }
+
+
+class BackTranslator(HuggingFaceLocalTranslator):
+    """The release translator's chunking, batching and decoding on the pinned TR->EN model."""
+
+    def __init__(self, device: str | None, batch_size: int) -> None:
+        super().__init__(BACK_MODEL, device=device, batch_size=batch_size)
+        self._revision = BACK_REVISION
+
+    def settings(self) -> dict[str, Any]:
+        self._load_model()
+        return {
+            "model": self.model_name,
+            "revision": self.model_revision,
+            "device": self._device,
+            "dtype": str(next(self._model.parameters()).dtype),
+            "batch_size": self._batch_size,
+            "num_beams": self._model.generation_config.num_beams,
+            "no_repeat_ngram_size": 4,  # as HuggingFaceLocalTranslator.translate_sentences
+            "max_new_tokens": self._max_length,
+        }
+
+
+def round_trip(device: str | None, batch_size: int) -> dict[str, Any]:
+    """Back-translate the seeded sample and every screened TR test record; score them by chrF."""
+    sources = {r["pair_id"]: r["text"] for r in load_jsonl(checked_split("en", "test"))}
+    records = load_jsonl(checked_split("tr", "test"))
+    flags = screened(records, sources)
+    sample = round_trip_sample(record["id"] for record in records)
+    chosen = set(sample).union(*flags.values())
+    documents = [record for record in records if record["id"] in chosen]
+    translator = BackTranslator(device, batch_size)
+    settings = translator.settings()
+    back = translator.translate_sentences(
+        [pair["tr"] for record in documents for pair in record["sentence_alignment"]]
+    )
+    scores, start = {}, 0
+    for record in documents:
+        end = start + len(record["sentence_alignment"])
+        scores[record["id"]] = chrf(" ".join(back[start:end]), sources[record["pair_id"]])
+        start = end
+    return {
+        "translator": settings,
+        "sample": {
+            "split": "test",
+            "population": len(records),
+            "documents": len(sample),
+            "seed": SEED,
+            "scored_documents": len(documents),
+        },
+        **round_trip_summary(scores, sample, flags),
+    }
+
+
+def mt_quality(device: str | None, batch_size: int) -> dict[str, Any]:
+    from naltra.pipeline.language import LinguaLanguageDetector
+
+    detector = LinguaLanguageDetector()
+    inputs = [PROCESSED / lang / f"{split}.jsonl" for lang in ("en", "tr") for split in SPLITS]
+    return {
+        **provenance(inputs),
+        "tools": {name: version(name) for name in ("lingua-language-detector", "sentencepiece")},
+        "definitions": {
+            "language_id": "primary language of each record's text by naltra.pipeline.language."
+            "LinguaLanguageDetector (lingua restricted to EN and TR; minimum confidence "
+            f"{detector.minimum_confidence}, minimum share {detector.minimum_share}): en-tr when "
+            "both languages hold at least 2 words and that share of the confidently detected "
+            "words, und under 2 words or below that confidence",
+            "not_tr, not_en": "records not detected as their own language; examples are the "
+            f"first {EXAMPLES} in file order",
+            "round_trip": f"{ROUND_TRIP_SIZE} TR test records drawn by random.Random(seed).sample "
+            "from the sorted record ids, plus every TR test record a translation_checks screen "
+            "flags; each stored TR aligned sentence is translated back to English with the "
+            "pinned model and the sentences are joined with spaces",
+            "chrf": "document chrF (Popovic 2015) of the back-translation against the EN source "
+            f"text: character n-grams of orders 1..{CHRF_ORDER} with whitespace removed, clipped "
+            "matches, precision and recall averaged over the orders, F-beta with beta = "
+            f"{CHRF_BETA}, 0-100; chrf, below_40, below_30 and lowest cover the sample only",
+            "screens": "mean chrF of every TR test record each translation_checks screen flags "
+            "(in_sample: how many are in the sample) and of the sampled records no screen flags",
+            "scope": "round-trip chrF is an automatic proxy, not a human judgement: errors of "
+            "the EN->TR release model can cancel out or be introduced by the reverse model, and "
+            "chrF measures character overlap with the EN source, not Turkish fluency; language "
+            "ID shows a record reads as Turkish, not that it is a faithful translation",
+        },
+        "language_id": {
+            language: language_id(language, lambda text: detector.detect(text).primary)
+            for language in ("tr", "en")
+        },
+        "round_trip": round_trip(device, batch_size),
+    }
+
+
 def rounded(value: Any) -> Any:
     if isinstance(value, float):
         return round(value, DECIMALS)
@@ -631,16 +841,22 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    result.add_argument("analyses", nargs="*", choices=sorted(OUTPUTS), help="default: all")
+    result.add_argument(
+        "analyses", nargs="*", choices=sorted(OUTPUTS), help=f"default: all but {', '.join(OPT_IN)}"
+    )
     result.add_argument("--predictions", default="results/predictions/cordis_v1.1.0")
     result.add_argument("--resamples", type=int, default=10000, help="Paired bootstrap resamples")
+    result.add_argument(
+        "--device", choices=("auto", "cuda", "cpu"), default="auto", help="mtquality model device"
+    )
+    result.add_argument("--batch-size", type=int, default=8, help="mtquality sentences per batch")
     return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    if args.resamples < 1:
-        parser().error("--resamples must be positive.")
+    if args.resamples < 1 or args.batch_size < 1:
+        parser().error("--resamples and --batch-size must be positive.")
     predictions = resolve_path(args.predictions)
     builders: dict[str, Callable[[], dict]] = {
         "coverage": lambda: label_coverage(predictions),
@@ -648,10 +864,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "errors": lambda: error_analysis(predictions),
         "drops": lambda: drops(predictions, args.resamples),
         "translation": lambda: translation_checks(),
+        "mtquality": lambda: mt_quality(
+            None if args.device == "auto" else args.device, args.batch_size
+        ),
     }
     # Once, before any write: a written result would make later outputs record a dirty tree.
     code_commit = commit()
-    for name in dict.fromkeys(args.analyses or sorted(OUTPUTS)):
+    default = [name for name in sorted(OUTPUTS) if name not in OPT_IN]
+    for name in dict.fromkeys(args.analyses or default):
         try:
             payload = {"code_commit": code_commit, **builders[name]()}
         except (OSError, ValueError, KeyError) as exc:

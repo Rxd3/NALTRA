@@ -11,7 +11,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from naltra.data.manifest import REPO_ROOT, compute_file_sha256, get_taxonomy_checksums
+from naltra.data.manifest import compute_file_sha256, get_taxonomy_checksums
 from naltra.models.base import BaseNALTRAModel
 from naltra.models.laya.client import CHECKPOINT_FILES, LayaClient
 from naltra.models.neural import merge_config, select_device
@@ -19,6 +19,7 @@ from naltra.pipeline.preprocessing import normalize_text
 from naltra.pipeline.thresholds import apply_thresholds
 from naltra.schemas.prediction import LanguageInfo, PredictionResult
 from naltra.utils.config import load_yaml
+from naltra.utils.resources import resource_path
 
 
 class LayaModel(BaseNALTRAModel):
@@ -27,11 +28,13 @@ class LayaModel(BaseNALTRAModel):
     def __init__(
         self, config: Mapping[str, Any] | None = None, *, client: LayaClient | None = None
     ) -> None:
-        self.config = merge_config(load_yaml(REPO_ROOT / "configs/models/laya.yaml"), config or {})
+        self.config = merge_config(
+            load_yaml(resource_path("configs/models/laya.yaml")), config or {}
+        )
         self._validate_config()
         self.device = select_device(self.config["device"])
-        self.taxonomy_identity = get_taxonomy_checksums(REPO_ROOT / "taxonomy")
-        taxonomy = json.loads((REPO_ROOT / "taxonomy/taxonomy.json").read_text(encoding="utf-8"))
+        self.taxonomy_identity = get_taxonomy_checksums(resource_path("taxonomy"))
+        taxonomy = json.loads(resource_path("taxonomy/taxonomy.json").read_text(encoding="utf-8"))
         self.parents = {item["id"]: item["parent"] for item in taxonomy["labels"]}
         direct = sorted(item["id"] for item in taxonomy["labels"] if item["is_direct_supported"])
         self.labels = self.config["supported_labels"] or direct

@@ -7,6 +7,7 @@ data/processed/**/manifest.json text eol=crlf
 results/metrics/translation_exceptions.json text eol=crlf
 results/metrics/label_coverage.json text eol=crlf
 results/metrics/translation_checks.json text eol=crlf
+results/metrics/translation_quality.json text eol=crlf
 results/metrics/cordis_v1.1.0_*/summary.* text eol=crlf
 results/metrics/cordis_v1.1.0_ensemble/error_analysis.json text eol=crlf
 results/metrics/cordis_v1.1.0_ensemble/robustness.json text eol=crlf

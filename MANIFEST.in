@@ -1,0 +1,3 @@
+recursive-include configs *.yaml
+recursive-include taxonomy *.json
+include src/naltra/reporting/dashboard.html

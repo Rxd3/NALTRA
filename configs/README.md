@@ -8,3 +8,8 @@ YAML read by the scripts and models; overview in the [repository map](../README.
   system roles)
 - `evaluation.yaml`: calibration bins, read only by `scripts/evaluate_all.py`
 - `models/*.yaml`: one file per model; their hashes are bound into trained artifacts
+
+`setup.py` copies these files and `taxonomy/*.json` into the wheel under
+`naltra/resources/`, and `MANIFEST.in` adds them to the source distribution, so an
+installed package finds its defaults outside a checkout. In a checkout, the files here
+are read directly (`naltra.utils.resources`).

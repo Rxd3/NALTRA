@@ -1,52 +1,75 @@
-# Contributing to NALTRA
+# Contributing
 
-NALTRA is shared by six contributors (see [docs/team_ownership.md](docs/team_ownership.md)). Small, focused pull requests and clear ownership boundaries help everyone work independently.
+Use a focused branch for each change and open a pull request before merging into
+`main`. Include the problem, resulting behavior, checks run, and any changes to
+configuration or data assumptions.
 
-## Git workflow
+## Development setup
 
-- `main` must stay stable and runnable.
-- Do not commit directly to `main`.
-- Create a separate branch for every feature or fix.
-- Suggested branch prefixes are `feature/data-*`, `feature/ui-*`, `feature/classical-*`, `feature/evaluation-*`, and `feature/core-*`.
-- Open a pull request before merging. Describe the change, tests run, and any configuration or data assumptions.
-- Ask at least one teammate to review shared interfaces, schemas, taxonomy changes, and configuration changes.
+Follow the [quick start](README.md#quick-start) to create an environment and install
+`python -m pip install -e ".[dev]"`. The package supports Python 3.11+; the pinned
+experiment requirements need Python 3.12+ and were recorded with Python 3.13.1.
 
-## Ownership and coordination
+Run these commands from the repository root:
 
-Use [docs/team_ownership.md](docs/team_ownership.md) to identify the primary owner of a module. Ownership does not block collaboration, but avoid editing another member's module without discussing the change first. Coordinate interface changes before implementation so dependent branches do not break.
+```bash
+python -m ruff check .
+python -m black --check .
+python -m pytest
+```
 
-## Data, models, and secrets
+To apply formatting and automatic lint fixes:
 
-- Datasets: Git tracks the raw CORDIS archive, the compressed processed splits with their manifests, the project split map `data/splits/cordis_h2020/project_splits.json` and the translation review files (see [data/README.md](data/README.md)). Keep decompressed `.jsonl` files, extracted CSVs, caches and generated copies in the ignored `data/` subdirectories.
-- Do not commit large trained model weights or checkpoints. Store them outside Git and document their provenance.
-- Do not commit API keys, tokens, passwords, or private endpoints.
-- Put local credentials such as the Kev or Jev service keys in `.env`; `.env.example` holds only blank placeholders or non-secret local defaults.
-- Before committing, review `git status` and the staged diff for generated artifacts or secrets.
+```bash
+python -m ruff check --fix .
+python -m black .
+```
 
-## Code quality
+If Make is available, `make lint`, `make test`, and `make format` run the equivalent
+commands.
 
-- Target Python 3.11+ and add type hints to shared functions.
-- Keep modules small and prefer readable code over premature abstraction.
-- Format code with `make format` before submitting (Windows: `python -m ruff check --fix .`,
-  then `python -m black .`).
-- Run `make lint` and `make test` before opening a pull request. On Windows, without `make`,
-  run the same checks in PowerShell, with one process per test file and a failing file re-run
-  once (why: README, [Reproduce](README.md#reproduce)):
+On Windows, run each test file in its own process and re-run a failing file once. A
+process there occasionally stops with exit code 139 / 0xC0000005 and no traceback (a
+native crash at varying points, for example inside transformers or scikit-learn), which
+is not a test failure; one process per file confines it:
 
-  ```powershell
-  python -m ruff check .
-  python -m black --check .
-  Get-ChildItem tests\test_*.py | ForEach-Object { python -m pytest -q $_.FullName; if ($LASTEXITCODE -ne 0) { python -m pytest -q $_.FullName } }
-  ```
+```powershell
+Get-ChildItem tests\test_*.py | ForEach-Object { python -m pytest -q $_.FullName; if ($LASTEXITCODE -ne 0) { python -m pytest -q $_.FullName } }
+# bash: for f in tests/test_*.py; do python -m pytest -q "$f" || python -m pytest -q "$f"; done
+```
 
-- Add or update tests whenever shared code or behavior changes.
-- Tests must not download external datasets or pretrained models.
-- Keep configuration in YAML or environment variables instead of hard-coding machine-specific paths.
+## Code and tests
 
-## Pull request checklist
+Keep shared interfaces typed and modules focused. Put adjustable settings in
+`configs/`, rather than machine-specific paths in code.
 
-- The branch has a focused purpose and an ownership-appropriate name.
-- Shared interfaces remain backward compatible, or affected contributors have agreed to the change.
-- Tests and documentation reflect the new behavior.
-- No datasets beyond the tracked release, model binaries, generated results beyond the tracked summaries ([results/README.md](results/README.md)), or secrets are included.
-- Formatting, linting, and tests pass locally.
+Add meaningful tests for behavior changes. Tests use small fixtures and must not
+download datasets or pretrained models, call live APIs, or require a GPU. Preserve
+the common prediction contract and complete direct-label score universe.
+
+Use [team ownership](docs/team_ownership.md) to find reviewers. Coordinate changes
+to shared schemas, taxonomy identifiers, split definitions, and evaluation semantics.
+
+## Data and artifacts
+
+Git stores the raw CORDIS archive, compressed release splits and manifests, split
+map, translation review files, taxonomy, and small result summaries. See the
+[data guide](data/README.md) and [result file guide](results/README.md).
+
+Keep trained weights, prediction dumps, decompressed datasets, extracted CSVs,
+and caches in their ignored locations. Share model releases using the
+[artifact layout](models/README.md) and [reproduction checklist](docs/reproducibility.md).
+
+Keep credentials in ignored `.env` files. `.env.example` contains only placeholders
+and non-secret defaults. Review the staged diff for generated files and secrets.
+
+Dataset changes require a new release and genuine regeneration of manifests.
+Do not edit checksums to make changed data or code appear compatible.
+
+## Before opening a pull request
+
+- Keep the change focused and describe its effect.
+- Update relevant tests and documentation.
+- Run formatting, linting, and the applicable tests.
+- Check `git status` and the staged diff.
+- Identify any artifact, dataset, or interface compatibility changes.

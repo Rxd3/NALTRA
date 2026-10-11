@@ -39,3 +39,23 @@ Files and folders I managed:
 5. **Documentation & Verifiability**
    - Wrote comprehensive technical guides in `docs/dataset.md` and `docs/taxonomy.md`.
    - Verified data integrity across all generated splits using SHA-256 integrity checksums for full experiment reproducibility.
+
+## GitHub Contribution Evidence and Commit Status
+
+My Data & Taxonomy implementation has been **committed to GitHub and merged into the main branch** under my GitHub account, `Devinci101`.
+
+**Primary implementation commit:**
+- `3b09900` — CORDIS H2020 data and taxonomy pipeline
+
+**Merged pull requests:**
+- [PR #1 — Data and Taxonomy pipeline](https://github.com/Rxd3/NALTRA/pull/1)
+- [PR #3 — CORDIS H2020 multilingual data and EuroSciVoc taxonomy pipeline](https://github.com/Rxd3/NALTRA/pull/3)
+
+**Additional contribution commits:**
+- `66631e8` — Noisy benchmark functionality
+- `c1ad03b` — Code-switching benchmark functionality
+- `5076ca3` — Data validation and leakage fixes
+
+These commits provide GitHub history confirming my contributions to dataset preprocessing, multilingual data preparation, code-switching, taxonomy implementation, and validation.
+
+Later model training, evaluation experiments, and release-specific dataset repairs were collaborative work performed by the responsible team members.
