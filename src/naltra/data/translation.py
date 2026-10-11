@@ -317,8 +317,6 @@ class HuggingFaceLocalTranslator(BaseTranslator):
         "Helsinki-NLP/opus-mt-en-tr": "Helsinki-NLP/opus-mt-tc-big-en-tr",
         "opus-mt-en-tr": "Helsinki-NLP/opus-mt-tc-big-en-tr",
     }
-    # Backward compatibility reference
-    MODEL_ALIASES = LEGACY_MODEL_FALLBACKS
 
     def __init__(
         self,
@@ -347,10 +345,6 @@ class HuggingFaceLocalTranslator(BaseTranslator):
 
     @property
     def model_name(self) -> str:
-        return self._checkpoint_name
-
-    @property
-    def checkpoint_name(self) -> str:
         return self._checkpoint_name
 
     @property
@@ -552,16 +546,10 @@ class TranslationCache:
         raw_key = f"{self.namespace}:{project_id}:{source_hash}:{backend}:{model}"
         return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
-    def get_cache_key(self, project_id: str, source_hash: str, backend: str, model: str) -> str:
-        return self.compute_key(project_id, source_hash, backend, model)
-
-    def _compute_key(self, project_id: str, source_hash: str, backend: str, model: str) -> str:
-        return self.compute_key(project_id, source_hash, backend, model)
-
     def get(
         self, project_id: str, source_hash: str, backend: str, model: str
     ) -> TranslationOutput | None:
-        key = self._compute_key(project_id, source_hash, backend, model)
+        key = self.compute_key(project_id, source_hash, backend, model)
         cache_file = self.cache_dir / f"{key}.json"
         if not cache_file.exists():
             return None
@@ -589,7 +577,7 @@ class TranslationCache:
         project_id: str,
         output: TranslationOutput,
     ) -> None:
-        key = self._compute_key(project_id, output.source_hash, output.backend, output.model)
+        key = self.compute_key(project_id, output.source_hash, output.backend, output.model)
         cache_file = self.cache_dir / f"{key}.json"
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(output.to_dict(), f, indent=2, ensure_ascii=False)

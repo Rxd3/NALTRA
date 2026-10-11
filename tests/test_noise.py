@@ -444,17 +444,3 @@ def test_default_noise_spec_reproduces_shipped_test_sets(tmp_path) -> None:
     for language, (_, noisy) in SHIPPED_NOISY_TEST_SHA256.items():
         path = tmp_path / "combined/medium/cordis_h2020" / language / "test.jsonl"
         assert compute_file_sha256(path) == noisy
-
-
-if __name__ == "__main__":
-    print("Running test_noise suite...")
-    test_deterministic_seeding_across_calls()
-    test_deep_copy_isolation()
-    test_text_actually_changes_and_never_empty()
-    test_turkish_diacritics_behavior_and_language_guard()
-    test_labels_and_metadata_preserved()
-    test_individual_perturbation_strategies()
-    test_invalid_parameters_raise_appropriate_errors()
-    test_generate_noisy_benchmarks_directory_structure_and_counts()
-    test_single_character_inputs_across_strategies()
-    print("All 9 noise benchmark tests passed successfully!")
