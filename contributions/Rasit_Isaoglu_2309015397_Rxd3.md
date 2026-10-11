@@ -31,7 +31,7 @@
 
 **Final review and documentation**
 
-- Coordinated an AI-assisted audit and critical fixes for prediction validation, packaging, and benchmark inference settings.
+- Coordinated an audit and critical fixes for prediction validation, packaging, and benchmark inference settings.
 - Simplified the README, reorganized documentation, removed temporary audit files, and documented the artifact handoff.
 
 ## Key results
@@ -41,4 +41,4 @@ The team benchmark reports these neural-model micro-F1 scores on the 4,711-proje
 - **BiLSTM:** 0.289 / 0.271.
 - **Transformer:** 0.248 / 0.240.
 
-The team now reports Laya on the 120-pair sample as a non-voting baseline (0.068 EN / 0.046 TR micro-F1). The dataset, classical models, full benchmark, and reporting retain their respective team contributors' credit.
+The team now reports Laya on the 120-pair sample as a new method that is scored but does not vote (0.068 EN / 0.046 TR micro-F1). The dataset, classical models, full benchmark, and reporting retain their respective team contributors' credit.
