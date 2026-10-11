@@ -61,14 +61,17 @@ checkpoints/
 # Generated results (keep documentation and reported summaries)
 results/metrics/*
 !results/metrics/translation_exceptions.json
+!results/metrics/label_coverage.json
 !results/metrics/cordis_v1.1.0_ensemble/
 results/metrics/cordis_v1.1.0_ensemble/*
 !results/metrics/cordis_v1.1.0_ensemble/summary.json
 !results/metrics/cordis_v1.1.0_ensemble/summary.md
+!results/metrics/cordis_v1.1.0_ensemble/error_analysis.json
 !results/metrics/cordis_v1.1.0_sample/
 results/metrics/cordis_v1.1.0_sample/*
 !results/metrics/cordis_v1.1.0_sample/summary.json
 !results/metrics/cordis_v1.1.0_sample/summary.md
+!results/metrics/cordis_v1.1.0_sample/pairwise.json
 results/plots/*
 results/predictions/*
 results/benchmarks/*
