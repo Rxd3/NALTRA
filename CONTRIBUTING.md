@@ -27,8 +27,18 @@ Use [docs/team_ownership.md](docs/team_ownership.md) to identify the primary own
 
 - Target Python 3.11+ and add type hints to shared functions.
 - Keep modules small and prefer readable code over premature abstraction.
-- Format code with `make format` before submitting.
-- Run `make lint` and `make test` before opening a pull request.
+- Format code with `make format` before submitting (Windows: `python -m ruff check --fix .`,
+  then `python -m black .`).
+- Run `make lint` and `make test` before opening a pull request. On Windows, without `make`,
+  run the same checks in PowerShell, with one process per test file and a failing file re-run
+  once (why: README, [Reproduce](README.md#reproduce)):
+
+  ```powershell
+  python -m ruff check .
+  python -m black --check .
+  Get-ChildItem tests\test_*.py | ForEach-Object { python -m pytest -q $_.FullName; if ($LASTEXITCODE -ne 0) { python -m pytest -q $_.FullName } }
+  ```
+
 - Add or update tests whenever shared code or behavior changes.
 - Tests must not download external datasets or pretrained models.
 - Keep configuration in YAML or environment variables instead of hard-coding machine-specific paths.

@@ -3,8 +3,12 @@
 # pyproject.toml keeps the supported ranges (Python 3.11+). To replay the tested setup:
 #   python -m pip install -r requirements.txt
 #   python -m pip install -e . --no-deps
-# The extra index serves the tested CUDA 12.6 build, torch 2.14.1+cu126; where it has no
-# wheel for the platform, pip installs torch 2.14.1 from PyPI instead.
+# The extra index serves the tested CUDA 12.6 build, torch 2.14.1+cu126 (~4 GB installed),
+# which pip prefers even on CPU-only machines; where it has no wheel for the platform, pip
+# installs torch 2.14.1 from PyPI. CPU-only users: first install the CPU build,
+#   python -m pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+# then run the replay above (2.14.1+cpu satisfies the torch==2.14.1 pin); or use the
+# default python -m pip install -e ".[dev]" (version ranges, plain PyPI torch).
 --extra-index-url https://download.pytorch.org/whl/cu126
 httpx==0.28.1
 lingua-language-detector==2.2.0

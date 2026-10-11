@@ -4,12 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "naltra"
-version = "0.1.0"
+version = "1.1.0"
 description = "Natural Language Analysis & Taxonomy Robust Architecture"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "NALTRA Contributors" }]
+authors = [
+    { name = "Abdalraouf Alkabi" },
+    { name = "Abdullah Gamal" },
+    { name = "Omar Ibrahim Fahmi Alzyod" },
+    { name = "Almutesim Alakili" },
+    { name = "Mohamed Kamaleldin" },
+    { name = "Rasit Isaoglu" },
+]
 dependencies = [
     "httpx>=0.28,<1",
     "lingua-language-detector>=2,<3",
