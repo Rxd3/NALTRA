@@ -16,7 +16,7 @@ example. Use the guides below for a specific task.
 | [Contributing](../CONTRIBUTING.md) | Set up development checks and submit changes |
 | [Team ownership](team_ownership.md) | Find the reviewer responsible for each area |
 | [Audit report](audit_report.md) | Read the original audit and the fixes applied afterward |
-| [Presentation](presentation/README.md) | The final deck: five slides, two hidden backups, speaker notes and their number sources |
+| [Presentation](presentation/README.md) | The final deck: five slides, three hidden backups, speaker notes and their number sources |
 
 The [interactive dashboard](results/index.html) is a self-contained HTML file.
 Download it and open it in a browser, or serve it locally as described in the
