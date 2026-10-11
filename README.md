@@ -222,7 +222,9 @@ Top level: `pyproject.toml` (package, dependencies, pytest/Ruff/Black settings),
 `setup.py` (copies `configs/` and `taxonomy/` into wheels as package resources),
 `MANIFEST.in` (the same files plus the results-page template in source distributions),
 `requirements.txt`, `requirements-laya.txt` (optional pinned laya SDK), `Makefile`
-(`install`, `data`, `test`, `lint`, `format`), `.env.example`, `LICENSE`,
+(`install`, `data`, `test`, `lint`, `format`), `run.sh` (bash helper for Linux/macOS:
+`./run.sh dashboard|classify|train|check` serves the results page, classifies a text with a
+locally trained SVM, trains NB/SVM on CPU or runs the checks), `.env.example`, `LICENSE`,
 [CONTRIBUTING.md](CONTRIBUTING.md) (development checks and the pull request workflow).
 
 ## Scripts
