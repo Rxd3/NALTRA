@@ -7,9 +7,11 @@ import shutil
 
 import pytest
 from scripts import classify
+from scripts.predict_all import artifact_hashes
 from tests.test_classical_models import config, records
 
 from naltra.data.loader import save_jsonl
+from naltra.data.manifest import REPO_ROOT, compute_file_sha256
 from naltra.models.classical import ESTIMATOR_FILE
 from naltra.models.naive_bayes import NaiveBayesModel
 from naltra.models.svm import SVMModel
@@ -173,3 +175,130 @@ def test_an_incomplete_artifact_is_a_usage_error_naming_the_family(artifacts, tm
     err = capsys.readouterr().err
     assert "usage:" in err
     assert "svm" in err and ESTIMATOR_FILE in err
+
+
+@pytest.fixture
+def benchmark_settings(artifacts, tmp_path):
+    settings = {
+        "taxonomy_sha256": compute_file_sha256(REPO_ROOT / "taxonomy/taxonomy.json"),
+        "label_count": 2,
+        "members": ["svm", "naive_bayes"],
+        "thresholds": {"svm": 0.2, "naive_bayes": 0.3},
+        "soft_threshold": 0.1,
+        "weighted_soft_threshold": 0.15,
+        "val_a_micro_f1": {"svm": 0.8, "naive_bayes": 0.2},
+        "k": 1,
+        "dumps": {
+            f"{family}/validation": artifact_hashes(artifacts / family)
+            for family in ("svm", "naive_bayes")
+        },
+    }
+    path = tmp_path / "summary.json"
+    path.write_text(json.dumps(settings), encoding="utf-8")
+    return path, settings
+
+
+@pytest.mark.parametrize("method", ["hard", "hard_k", "soft", "weighted_soft"])
+def test_benchmark_inference_matches_offline_vote(artifacts, capsys, benchmark_settings, method):
+    import numpy as np
+
+    from naltra.evaluation.offline import strict_majority, weighted_soft_vote
+
+    path, settings = benchmark_settings
+    models = [classify.load_model(f, artifacts, "cpu")[0] for f in settings["members"]]
+    scores = np.array([[list(m.predict(OPTICS).label_scores.values())] for m in models])
+    selected = (
+        scores >= np.array([settings["thresholds"][m.model_name] for m in models])[:, None, None]
+    )
+    if method in {"hard", "hard_k"}:
+        expected_scores = selected.mean(axis=0)[0]
+        threshold = strict_majority(2) if method == "hard" else settings["k"] / 2
+    elif method == "soft":
+        expected_scores = scores.mean(axis=0)[0]
+        threshold = settings["soft_threshold"]
+    else:
+        expected_scores = weighted_soft_vote(scores, np.array([0.8, 0.2]))[0]
+        threshold = settings["weighted_soft_threshold"]
+    expected = {
+        label: s
+        for label, s in zip(models[0].labels, expected_scores, strict=True)
+        if s >= threshold
+    }
+    (row,) = run(
+        capsys,
+        artifacts,
+        "--models",
+        "svm",
+        "naive_bayes",
+        "--method",
+        method,
+        "--benchmark-settings",
+        str(path),
+        "--text",
+        OPTICS,
+    )
+    assert {item["label"]: item["score"] for item in row["labels"]} == pytest.approx(expected)
+    assert row["threshold_source"]["benchmark_sha256"] == compute_file_sha256(path)
+
+
+def test_single_model_uses_the_frozen_benchmark_threshold(artifacts, capsys, benchmark_settings):
+    path, settings = benchmark_settings
+    settings["thresholds"]["svm"] = 0.0
+    path.write_text(json.dumps(settings), encoding="utf-8")
+    (row,) = run(capsys, artifacts, "--benchmark-settings", str(path), "--text", OPTICS)
+    assert {item["label"] for item in row["labels"]} == {"acoustics", "optics"}
+    assert row["threshold_source"]["method"] == "single"
+
+
+@pytest.mark.parametrize(
+    "failure", ["taxonomy", "artifact", "members", "threshold", "weights", "k", "labels"]
+)
+def test_incompatible_benchmark_settings_are_rejected(
+    artifacts, capsys, benchmark_settings, monkeypatch, failure
+):
+    path, settings = benchmark_settings
+    method = "weighted_soft" if failure == "weights" else "hard_k"
+    if failure == "taxonomy":
+        settings["taxonomy_sha256"] = "0" * 64
+    elif failure == "artifact":
+        settings["dumps"]["svm/validation"]["artifact_files_sha256"] = "0" * 64
+    elif failure == "members":
+        settings["members"] = ["svm"]
+    elif failure == "threshold":
+        settings["thresholds"]["svm"] = -1
+    elif failure == "weights":
+        settings["val_a_micro_f1"]["svm"] = float("nan")
+    elif failure == "k":
+        settings["k"] = 0
+    else:
+        settings["label_count"] = 473
+    path.write_text(json.dumps(settings), encoding="utf-8")
+    monkeypatch.setattr(
+        classify.PredictionPipeline, "predict_batch", lambda *args: pytest.fail("inference ran")
+    )
+    with pytest.raises(SystemExit) as error:
+        classify.main(
+            [
+                "--artifacts",
+                str(artifacts),
+                "--models",
+                "svm",
+                "naive_bayes",
+                "--method",
+                method,
+                "--benchmark-settings",
+                str(path),
+                "--text",
+                OPTICS,
+            ]
+        )
+    assert error.value.code == 2
+    assert "benchmark settings" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("method", ["hard_k", "weighted_soft"])
+def test_tuned_votes_require_benchmark_settings(artifacts, capsys, method):
+    with pytest.raises(SystemExit) as error:
+        classify.main(["--artifacts", str(artifacts), "--method", method, "--text", OPTICS])
+    assert error.value.code == 2
+    assert "requires --benchmark-settings" in capsys.readouterr().err

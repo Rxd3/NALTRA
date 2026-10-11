@@ -7,13 +7,13 @@ from collections.abc import Mapping
 from string import Formatter
 from typing import Any
 
-from naltra.data.manifest import REPO_ROOT
 from naltra.models.external import ExternalServiceModel
 from naltra.models.kev.client import KevClient
+from naltra.utils.resources import resource_path
 
 
 def _taxonomy() -> list[dict[str, Any]]:
-    path = REPO_ROOT / "taxonomy/taxonomy.json"
+    path = resource_path("taxonomy/taxonomy.json")
     return json.loads(path.read_text(encoding="utf-8"))["labels"]
 
 

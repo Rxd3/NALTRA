@@ -21,6 +21,7 @@ from naltra.pipeline.thresholds import apply_thresholds
 from naltra.pipeline.thresholds import is_probability as _is_probability
 from naltra.schemas.prediction import LanguageInfo, PredictionResult
 from naltra.utils.config import load_yaml, merge_config
+from naltra.utils.resources import resource_path
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
@@ -67,7 +68,7 @@ class JSONServiceClient:
 
     @classmethod
     def from_environment(cls, config: Mapping[str, Any] | None = None) -> JSONServiceClient:
-        config = config or load_yaml(REPO_ROOT / "configs/models" / f"{cls.service_name}.yaml")
+        config = config or load_yaml(resource_path(f"configs/models/{cls.service_name}.yaml"))
         load_dotenv(REPO_ROOT / ".env", override=False)
         key = os.getenv(config["api_key_env"], "")
         url = os.getenv(config["base_url_env"], "")
@@ -139,7 +140,7 @@ class ExternalServiceModel(BaseNALTRAModel):
         self, client: JSONServiceClient | None = None, config: Mapping[str, Any] | None = None
     ) -> None:
         self.config = merge_config(
-            load_yaml(REPO_ROOT / "configs/models" / f"{self.model_name}.yaml"), config or {}
+            load_yaml(resource_path(f"configs/models/{self.model_name}.yaml")), config or {}
         )
         self._validate_config()
         self.client = client
@@ -177,7 +178,7 @@ class ExternalServiceModel(BaseNALTRAModel):
             not isinstance(label, str) for label in (*label_map, *label_map.values())
         ):
             raise ValueError("Service label_map must map service labels to canonical labels.")
-        taxonomy = json.loads((REPO_ROOT / "taxonomy/taxonomy.json").read_text(encoding="utf-8"))
+        taxonomy = json.loads(resource_path("taxonomy/taxonomy.json").read_text(encoding="utf-8"))
         canonical = {item["id"] for item in taxonomy["labels"]}
         if not set(labels) <= canonical or not set(label_map.values()) <= set(labels):
             raise ValueError("Service label mapping must target supported canonical labels.")
@@ -280,7 +281,7 @@ class ExternalServiceModel(BaseNALTRAModel):
             "artifact_version": 1,
             "model": self.model_name,
             "config": self.config,
-            "taxonomy": get_taxonomy_checksums(REPO_ROOT / "taxonomy"),
+            "taxonomy": get_taxonomy_checksums(resource_path("taxonomy")),
         }
         (target / "naltra.json").write_text(
             json.dumps(payload, indent=2, allow_nan=False) + "\n", encoding="utf-8"
@@ -292,7 +293,7 @@ class ExternalServiceModel(BaseNALTRAModel):
             isinstance(payload, dict)
             and payload.get("artifact_version") == 1
             and payload.get("model") == self.model_name
-            and payload.get("taxonomy") == get_taxonomy_checksums(REPO_ROOT / "taxonomy")
+            and payload.get("taxonomy") == get_taxonomy_checksums(resource_path("taxonomy"))
             and isinstance(payload.get("config"), dict)
         ):
             raise ValueError("Incompatible service artifact or taxonomy.")

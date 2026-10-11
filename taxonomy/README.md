@@ -1,55 +1,33 @@
-# EuroSciVoc Taxonomy (v0.4.0)
+# Taxonomy files
 
-Canonical scientific taxonomy for NALTRA based on the official European Science Vocabulary
-(EuroSciVoc) used by the European Union CORDIS Horizon 2020 project database.
+NALTRA uses EuroSciVoc taxonomy version **0.4.0**: 473 directly supported labels,
+586 total nodes, six roots, and a maximum depth of seven.
 
-## Overview
+| File | Purpose |
+| --- | --- |
+| `taxonomy.json` | Canonical labels, parents, depths, source codes, and paths |
+| `label_map.json` | Source codes, titles, and paths mapped to canonical label IDs |
+| `validation.py` | Checks schema, cycles, and parent references |
 
-- **Ontology**: European Science Vocabulary (EuroSciVoc)
-- **Publisher**: Publications Office of the European Union / European Commission
-- **Taxonomy Version**: `0.4.0`
-- **Active Labels**: 586 canonical labels
-  - **Supported Direct Labels**: 473 (support >= 50)
-  - **Total Required Ancestors**: 225
-  - **Ancestors Already Direct**: 112 (in DIRECT ∩ ANCESTORS_ALL)
-  - **Newly Added Ancestors**: 113 (in ANCESTORS_ALL - DIRECT)
-- **Root Domains**: 6 top-level OECD Fields of Science
-- **Direct Label Support Threshold**: >= 50 projects in CORDIS H2020
-- **Max Hierarchy Depth**: 7 levels
+Models predict direct labels. Hierarchy paths add their ancestors. The 50-project
+support threshold is computed over the source archive before splitting.
 
-## Root Scientific Domains (Depth 1)
-
-- **medical and health sciences** (`medical_and_health_sciences`) - EuroSciVoc code: `/21`
-- **natural sciences** (`natural_sciences`) - EuroSciVoc code: `/23`
-- **engineering and technology** (`engineering_and_technology`) - EuroSciVoc code: `/25`
-- **agricultural sciences** (`agricultural_sciences`) - EuroSciVoc code: `/27`
-- **social sciences** (`social_sciences`) - EuroSciVoc code: `/29`
-- **humanities** (`humanities`) - EuroSciVoc code: `/31`
-
-## Hierarchy Semantics
-
-EuroSciVoc is a hierarchical ontology. The active NALTRA benchmark uses:
-- **Direct Labels**: Specific EuroSciVoc categories directly assigned to each project.
-- **Hierarchy-Closed Labels**: Direct labels expanded along parent paths to root domains.
-- **Strict Tree Hierarchy**: Each category node has exactly one parent or is root.
-
-## File Artifacts
-
-- `taxonomy.json`: Canonical hierarchy definition (IDs, parents, depths, codes, paths).
-- `label_map.json`: Mapping from codes, paths, and titles to canonical label IDs.
-- `validation.py`: Schema, cycle and dangling-parent checks (`python taxonomy/validation.py taxonomy/taxonomy.json`).
-
-## Rebuilding
-
-Both JSON files are built from `euroSciVoc.csv` inside the committed raw archive
-`data/raw/cordis_h2020/cordis-h2020projects-csv.zip`:
+Validate from the repository root:
 
 ```bash
-python scripts/build_taxonomy.py   # --archive <zip> --output-dir taxonomy --min-support 50
+python taxonomy/validation.py taxonomy/taxonomy.json
 ```
 
-Support counts distinct projects per EuroSciVoc code; codes with support >= 50 become direct
-labels and every code prefix above them is added as an ancestor. `taxonomy.json` is reproduced
-byte for byte. `label_map.json` gets the same aliases, but its committed key order is not
-reproducible, so an existing file with an unchanged mapping is left as is: dataset manifests and
-trained models pin both files' SHA-256. Details: [docs/taxonomy.md](../docs/taxonomy.md#6-rebuilding-the-taxonomy).
+Rebuild from the committed source archive:
+
+```bash
+python scripts/build_taxonomy.py
+```
+
+Rebuilding can invalidate model and dataset fingerprints. Preserve the original
+release for benchmark replay. The label-map writer leaves an existing equivalent
+mapping untouched because archived key order affects its checksum.
+
+See the [taxonomy guide](../docs/taxonomy.md) for roots, support filtering,
+hierarchy semantics, and rebuilding details. Licensing is covered by
+[data/LICENSE](../data/LICENSE).

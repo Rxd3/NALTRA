@@ -1,103 +1,52 @@
-# Core ML operation and integration
+# Model usage
 
-BiLSTM and Transformer train independently on prepared records and save locally
-reloadable artifacts. The shipped neural release `cordis_v0.5.0` refits their
-classifier heads on frozen encoders (see [evaluation](evaluation.md)). Kev and Jev are
-inference adapters: Kev queries a local Kev-0.8B server and Jev TypeSafe's hosted API
-with the same questions. Laya runs a pinned pretrained checkpoint locally, zero-shot
-([below](#local-multilingual-laya)). Naive Bayes, SVM and hybrid kNN are
-documented in the [README](../README.md#models) and [evaluation](evaluation.md).
+Use the shared prediction pipeline to load one model or combine multiple models.
+Install dependencies using the [quick start](../README.md#quick-start), or use the
+[pinned environment](reproducibility.md#environment) for benchmark artifacts.
 
 ## Setup and training
 
-Activate the project environment and install the updated dependencies:
+Install original artifacts according to the [model file guide](../models/README.md).
+The [runbook](runbook.md#2-train) contains full training/refit commands. Kev, Jev,
+and Laya are zero-shot members and are not trained on CORDIS.
 
-```powershell
-.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+For a bounded CPU integration check using the restored dataset:
+
+```bash
+python scripts/train_all.py --prebuilt-release --smoke --models bilstm transformer --device cpu --output-dir models/smoke
 ```
 
-New dependencies include `httpx` and `lingua-language-detector`. CUDA training
-requires a compatible PyTorch build (see the README's Reproduce section); CPU is
-supported. Dataset manifests include dependency-file hashes, so changes require
-genuine regeneration, not hash edits. The commands below rebuild EN and the derived tracks
-from the raw archive; a standard translation run produces a new TR release, not the frozen
-TR 1.1.0 that ships (see [the README's Data section](../README.md#data)). To audit the
-shipped release instead, run `python scripts/unpack_data.py` and
-`python scripts/validate_datasets.py --prebuilt-release`. To rebuild:
+Smoke mode uses small architectures and a training-only tokenizer; its artifacts
+are not benchmark models. Hybrid kNN smoke mode still needs the e5 encoder.
 
-```powershell
-python scripts/prepare_data.py --dataset all --download
-python scripts/validate_datasets.py
-```
+Training never prepares data. It audits inputs, trains on direct targets, builds
+vocabularies from training only, and selects checkpoints using validation loss.
+Test inputs are audited but not used for fitting. Neural training uses AdamW,
+gradient clipping, early stopping, and the lowest-validation-loss checkpoint.
+CUDA uses FP16 autocast/scaling; CPU uses ordinary precision.
 
-Preparation verifies the locked CORDIS raw CSVs and publishes manifest schema 1.1.0. Translation pins the OPUS-MT checkpoint and versions its cache with the generation code.
-Preserve the complete data release and model artifacts with experiments; final
-release data should be generated from reviewed code as described in [dataset
-provenance](dataset.md).
+A head refit freezes the existing encoder, vocabulary, and label order and trains
+only the sigmoid classifier. `cordis_v0.5.0` uses 512-token inputs and unweighted
+BCE after this refit. [Evaluation](evaluation.md#how-the-cordis_v050-neural-members-were-built)
+documents the candidate selection and original encoder provenance.
 
-Run bounded smoke training (offline except `--models hybrid_knn`, which loads the e5
-encoder from the Hugging Face cache) or full experiments. On the shipped release
-(restored by `scripts/unpack_data.py`) every command needs `--prebuilt-release`
-([why](dataset.md#shipped-turkish-release-110)); drop it only for a release rebuilt as
-above:
-
-```powershell
-python scripts/train_all.py --prebuilt-release --smoke --device cpu --output-dir models/smoke
-python scripts/train_all.py --prebuilt-release --device auto
-python scripts/train_all.py --prebuilt-release --models bilstm --datasets cordis_h2020 --languages en --device cpu
-python scripts/train_all.py --prebuilt-release --models transformer --datasets cordis_h2020 --languages en tr --device cuda --batch-size 2 --accumulation 8
-python scripts/train_all.py --prebuilt-release --datasets cordis_h2020 --languages en tr --device auto --output-dir models/cordis_v0.4.0
-```
-
-`configs/training.yaml` selects CORDIS English and Turkish jointly by default. Use `--languages en` for the original-language baseline. The loader audits each manifest and checks project/content partition isolation, complete direct-label training coverage, translation provenance, and aligned source fidelity before initializing any model. Missing Turkish records fail a bilingual request explicitly.
-
-Model YAML files control architecture and training. Overrides include `--epochs`, `--batch-size`, `--accumulation`, `--device`, `--output-dir`, `--config`, and `--smoke-records`. Existing artifacts require a new output directory or explicit `--overwrite`. Failures produce a nonzero exit status and are recorded in `<output-dir>/training_summary.json`, which each run rewrites. Kev, Jev and Laya are scored zero-shot and are not trained locally.
-
-Training never prepares data. Test files are audited for integrity but never used for fitting, vocabulary construction, or checkpoint selection. Noise and code-switch records remain evaluation-only. Near-OOD evaluation holds the humanities root out of training and validation (`scripts/run_ood.py`); it never alters the ordinary training splits.
-
-Smoke mode uses at most 128 training and compatible validation records, one epoch
-unless overridden, smaller BiLSTM dimensions, and a tiny randomly initialized
-Transformer with a training-only tokenizer. Smoke artifacts have a `_smoke`
-track suffix and `smoke: true`; they are not benchmark models. Validation records
-with labels absent from the bounded training subset are excluded. Increase
-`--smoke-records` if no compatible validation records remain.
-
-Both CORDIS models explicitly use `target_field: labels_direct` to train multi-hot direct-label targets with binary cross-entropy with
-logits. Labels are sorted canonical IDs from training. BiLSTM preserves Unicode
-and casing, builds its vocabulary only from training, uses learned random
-embeddings, and packs sequences so padding does not affect recurrent state. This
-baseline does not use externally aligned bilingual embeddings. Transformer uses
-XLM-RoBERTa with a multi-label classification head.
-
-Training uses AdamW, gradient clipping, and early stopping after two epochs
-without validation-loss improvement. The lowest-validation-loss checkpoint is
-restored. Without validation, the final epoch is used and OOD remains disabled.
-Transformer defaults use batch size 2, eight accumulation steps, and gradient
-checkpointing. CUDA uses FP16 autocast/scaling; CPU uses ordinary precision.
-Seeds, resolved configuration, framework versions and device details are saved;
-bitwise reproducibility across hardware/versions is not guaranteed.
-
-Full Transformer training needs an initial pretrained-weight download or local
-checkpoint. For local weights, set `architecture.pretrained_name` to that directory
-and `local_files_only: true`. An optional `revision` pins Hub weights; resolved
-commit metadata is recorded when available. Saved artifacts reload offline. The
-shipped `cordis_v0.5.0` transformer was trained without a pinned revision, and its
-`naltra.json` records `pretrained_revision` as null; inference does not need the base
-checkpoint, because the fine-tuned weights are stored in the artifact's
-`model.safetensors`.
+Configurations live in `configs/models/` and `configs/training.yaml`.
+The default training families are BiLSTM and Transformer; name `--models`
+explicitly for another selection. Saved configuration, history, dataset identity,
+seeds, and framework/device details describe each run. Existing artifacts require
+a fresh output directory or explicit `--overwrite`. Each run rewrites
+`training_summary.json` in its output directory.
 
 ## Prediction and artifacts
 
-The five `BaseNALTRAModel` methods are unchanged. Neural constructors accept
-nested config overrides and optional `taxonomy_path`; Transformer also accepts
-an injected tokenizer/network pair for local fixtures. Existing wrappers work.
+Models implement `BaseNALTRAModel` for training, prediction, batching, saving, and
+loading. Neural constructors accept nested configuration overrides and an optional
+`taxonomy_path`.
 
 `PredictionResult.label_scores` contains probabilities for every supported direct
 label. `labels` in `PredictionResult` contains threshold-selected direct labels and may be empty. `metadata`
-records label space, taxonomy, calibration status and OOD configuration. New
-fields have defaults for compatibility. Probabilities/latencies must be finite;
-duplicate selected labels are rejected. Serialization includes the new fields.
+records label space, taxonomy, calibration status and OOD configuration. Probabilities/latencies must be finite;
+duplicate selected labels are rejected. Serialization preserves these fields.
 Hard ensemble scores are explicitly marked as vote fractions rather than class
 probabilities in metadata.
 
@@ -106,6 +55,11 @@ configuration, label order, taxonomy/label-map hashes, history, OOD threshold an
 provenance. BiLSTM adds weights/vocabulary; Transformer saves Hugging Face model
 and tokenizer files. Loading checks family and taxonomy compatibility and uses
 local files only. The caller's device overrides the producing machine.
+
+Built wheels include the default configs, taxonomy and label map, so model construction,
+artifact loading and the prediction pipeline also work outside the source checkout.
+Dataset preparation and experiment scripts use a source checkout and the
+[runbook](runbook.md).
 
 ```python
 from naltra.models.bilstm import BiLSTMModel
@@ -155,18 +109,38 @@ callables are hooks; absent explainers produce no fabricated attribution.
 A custom calibrator invalidates the original OOD threshold; supply a threshold
 fitted on calibrated validation scores or detection remains disabled.
 
+
 ## Ensembles
+
+To use the published decisions with the exact artifacts that were evaluated, pass the
+offline summary to the classification CLI:
+
+```bash
+python scripts/classify.py --artifacts models/cordis_v1.1.0/cordis_h2020/en_tr_direct --models svm --benchmark-settings results/metrics/cordis_v1.1.0_ensemble/summary.json --text "Laser sensors measure light."
+```
+
+For an ensemble, `--models` must match the summary's voting members exactly; they must
+all be available under `--artifacts`. Choose `--method hard`, `hard_k`, `soft`, or
+`weighted_soft`. The methods `hard_k` and `weighted_soft` require
+`--benchmark-settings`. A mismatched artifact or taxonomy fails before inference.
+Outputs record the settings-file SHA-256 in `threshold_source`. Without the flag,
+the CLI retains the artifact thresholds and the default hard/soft voting behavior.
 
 Soft/weighted-soft voting uses complete probabilities, including values below
 selection thresholds. Legacy results fall back to selected scores. Hard voting
-uses selected-label membership and preserves strict-majority semantics. Declared
+uses selected-label membership and defaults to strict-majority semantics; an explicit
+`vote_count` enables k-of-M voting. Declared
 dataset, track and supported-label spaces must match. Missing required models
 fail explicitly; they are never silently removed from the vote.
 
 ```python
+from naltra.models.bilstm import BiLSTMModel
 from naltra.models.transformer import TransformerModel
+from naltra.pipeline.prediction import PredictionPipeline
 from naltra.pipeline.ensemble import EnsembleConfig
 
+model = BiLSTMModel({"device": "cpu"})
+model.load("models/cordis_v0.5.0/cordis_h2020/en_tr_direct/bilstm")
 transformer = TransformerModel({"device": "cpu"})
 transformer.load("models/cordis_v0.5.0/cordis_h2020/en_tr_direct/transformer")
 config = EnsembleConfig(
@@ -183,6 +157,16 @@ Ensembles have no automatically fitted OOD threshold. Fit a threshold on that
 ensemble's ID validation scores and pass it explicitly; do not reuse a component
 threshold. Hard-vote fractions are not class probabilities, so confidence OOD
 is disabled for hard voting; use a custom detector.
+
+
+For a JSONL batch file containing a non-empty `text` field per line, replace
+`--text` with `--input path/to/input.jsonl`. The CLI prints one JSON result per input.
+
+The CLI accepts one common parent artifact directory for an ensemble. The published
+members originally live under three run directories. To use them together, place
+copies of their complete family folders under a new common parent while preserving
+all file contents; the [model guide](../models/README.md) lists the originals.
+The Python pipeline can load members directly from their individual paths.
 
 ## Kev and Jev service adapters
 
@@ -235,35 +219,25 @@ teammate's eight-record integration check at that default selected too many labe
 verified execution, not accuracy. `train()` deliberately reports unsupported: Laya is
 scored zero-shot.
 
-### Benchmark route: `prepare_laya.py` and `predict_all.py`
 
-The sample protocol scores Laya on the same fixed 80/120-pair samples as Kev and Jev
-([runbook](runbook.md#kev-jev-and-laya-on-fixed-samples)), as a non-voting baseline:
+### Benchmark route
 
-```bash
-python scripts/prepare_laya.py --output-dir models/cordis_laya_v1.1.0/cordis_h2020/en_tr_direct
-python scripts/predict_all.py --artifacts models/cordis_laya_v1.1.0/cordis_h2020/en_tr_direct --models laya --sets en_val_kev=data/samples/val80/en_validation.jsonl tr_val_kev=data/samples/val80/tr_validation.jsonl en_test_kev=data/samples/test120/en_test.jsonl tr_test_kev=data/samples/test120/tr_test.jsonl --device cuda --output-dir results/predictions/cordis_v1.1.0
-```
+Prepare Laya using `scripts/prepare_laya.py`, then score the fixed EN/TR samples
+using the [sample commands](runbook.md#kev-jev-and-laya-on-fixed-samples).
+The prepared folder includes pinned checkpoint files, SHA-256 values, and exact
+topic questions. Reload verifies hashes and uses local files only.
 
-`prepare_laya.py` downloads the pinned checkpoint once (678 MB) and copies its files with
-their SHA-256 values and the 473 exact topic questions into `<output-dir>/laya`; it refuses a
-folder that already holds an artifact. Share the entire folder. Reload uses local files
-only and verifies their hashes, so it needs no API or second download. `predict_all.py`
-loads the artifact like a trained one and records its digest in every dump sidecar.
-Once those dumps exist, `laya` is added to `--baselines` of the sample
-`evaluate_ensemble.py` command (`--baselines naive_bayes laya`): like every member it is
-scored and its threshold is tuned on val-A, but it never votes, so the existing votes do
-not change. On the 120-pair test sample it scores 0.068 English / 0.046 Turkish micro-F1
-(threshold 0.98, tuned on val-A). On the GTX 1650
-one document takes about 145 s (473 questions, 8 per batch), so the 400 sample documents
-take about 16 h.
+Once all sample dumps exist, add `laya` to the sample evaluator's non-voting
+baselines (`--baselines naive_bayes laya`). Its threshold is tuned on val-A, but
+it does not change the voting members. The recorded 120-pair test result is
+0.068 English / 0.046 Turkish micro-F1, using a threshold of 0.98 tuned on val-A.
 
 ### Direct validation route: `evaluate_all.py`
 
 The teammates' `scripts/evaluate_all.py` evaluates BiLSTM, XLM-R and Laya artifacts
 directly, with a resumable prediction cache. It audits the data with the full validator,
 so it needs a release rebuilt from the raw archive and refuses the shipped one
-([why](dataset.md#shipped-turkish-release-110)); no reported number comes from it.
+([release validation](dataset.md#release-validation)); no reported number comes from it.
 Create a portable Laya artifact and check two records from each validation track:
 
 ```powershell

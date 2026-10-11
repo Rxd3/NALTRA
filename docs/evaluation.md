@@ -1,120 +1,95 @@
-# Evaluation plan
+# Evaluation
 
-All model families are evaluated through the same `PredictionResult` schema and fixed dataset splits.
+NALTRA evaluates every model using fixed project splits and complete scores over
+the same 473 direct labels. English, Turkish, code-switch, and noisy variants carry
+their source `pair_id`, enabling paired comparisons.
 
-## Areas
+## Protocol
 
-- Classification: precision, recall, micro-F1, macro-F1, and confusion matrices.
-- Hierarchy: ancestor consistency and hierarchy-aware precision/recall/F1 using the 586-node EuroSciVoc taxonomy.
-- Language: English, Turkish, code-switched, and cross-language transfer slices.
-- Calibration: expected calibration error (ECE), Brier score, and reliability plots.
-- OOD: detection AUROC and false-positive rate at 95% true-positive rate, with the humanities root held out of training (`scripts/run_ood.py`).
-- Robustness: performance deltas on the noisy and code-switched test sets, with paired bootstrap tests across conditions.
-- Efficiency: warmed-up latency distributions under documented hardware and batch sizes.
-- Ensemble comparison: hard, soft, and weighted-soft voting against each voting member (`svm`, `hybrid_knn`, `bilstm`, `transformer`); `naive_bayes` is reported but does not vote, because it uses the same TF-IDF features as `svm` and would give that representation a second vote; Kev and Jev are compared with every other member, and vote with them, on the fixed pair-hash sample (80 validation, 120 test pairs); Laya is scored on the same sample as a non-voting member (0.068 EN / 0.046 TR micro-F1).
+1. Score each model once and save an NPZ matrix plus JSON metadata.
+2. Split clean EN/TR validation by project pair into val-A and val-B.
+3. Tune each member's threshold on val-A for micro-F1.
+4. Tune ensemble vote counts and soft thresholds on val-B. Weighted soft voting
+   uses each member's val-A micro-F1 as its weight.
+5. Apply those decisions to test predictions without further tuning.
+6. Compute paired project bootstrap comparisons and write summaries.
 
-Benchmark scripts must save their configuration, taxonomy version, dataset checksums, random seeds, and environment details. `evaluate_ensemble.py` writes them into `summary.json`: `code_commit` (`git describe --always --dirty`), `environment`, `bootstrap_seed`, the SHA-256 of every input set, dump and artifact, and the voting settings (member thresholds, the val-A micro-F1 used as weights, vote counts `k` and `k_closed`, soft thresholds). `run_ood.py` and `run_benchmark.py` record `code_commit` and `environment` as well, and the OOD summary its bootstrap seeds. Result JSONs store repository-relative paths. Never add invented or manually filled experimental values; generated tables belong under `results/`.
+The full benchmark uses SVM, hybrid kNN, BiLSTM, and Transformer as voters.
+Naive Bayes is a non-voting baseline, avoiding a second vote from the same TF-IDF
+representation as SVM. All five trained models see EN+TR training text.
 
-CORDIS ordinary classification compares `labels_direct` against direct predictions over
-the fixed supported label universe. Hierarchical metrics expand ancestors for both sides.
-English, translated Turkish, and synthetic code-switch records inherit their source project split.
+Kev and Jev are evaluated with the same five models on fixed 80-validation/120-test
+project-pair samples. Their validation sample splits into 32 val-A pairs and 48
+val-B pairs. Kev/Jev join the sample votes. Laya is a non-voting sample baseline with recorded micro-F1 of
+0.068 English / 0.046 Turkish (threshold 0.98, tuned on val-A).
 
-## Benchmark and metric choice
+Member hyperparameters, neural checkpoints, and head-refit candidates were selected
+using the full validation set before this val-A/val-B protocol. This validation
+reuse is a limitation; test sets were only scored.
 
-`configs/benchmark.yaml` fixes the primary metric (micro-F1), the secondary table columns and,
-for every system, its role (course baseline or new method), architecture and model.
-`scripts/evaluate_ensemble.py` copies these into `summary.json["benchmark"]`, refuses any scored
-system without an entry, and opens `summary.md` with a `## Benchmark` section: per test set,
-every system ranked by micro-F1 (leave-one-out rows carry micro-F1 only; `hard_closed` has
-only hierarchical scores and is listed unranked), then the label distribution of the tuning
-set and the first test set.
+## Metrics
 
-### The label distribution
+| Metric | Interpretation |
+| --- | --- |
+| Micro-F1 — primary | Pools correct/missed/extra direct-label assignments across records |
+| Macro-F1 | Gives each of the 473 direct labels equal weight; absent positives count as zero |
+| Hierarchical micro-F1 | Expands targets and predictions to include ancestors |
+| Jaccard | Overlap of the predicted and target label sets |
+| P@1/3/5, R-precision, nDCG@5 | Ranking quality without a selection threshold |
+| Pooled ECE and Brier | Calibration over all document-label cells |
+| Top-1 ECE | Calibration of the highest-scored label |
+| OOD AUROC and FPR@95%TPR | Held-out-root detection ranking and false alarms |
+| p50/p95/p99 latency and throughput | Runtime under recorded hardware and batch settings |
 
-`naltra.evaluation.matrix.label_distribution` over `labels_direct` and the fixed 473-label
-universe (the dumps' label columns), computed from the repository root with:
+Predicting no labels yields 99.32% per-label accuracy because positives are sparse,
+so accuracy is not the primary comparison. The median label occurs in 19 of 4,711
+test projects; 386 labels have prevalence below 1%.
 
-```bash
-python - <<'EOF'
-import json
-from naltra.data.loader import load_jsonl
-from naltra.evaluation.matrix import binarize, label_distribution
-taxonomy = json.load(open("taxonomy/taxonomy.json", encoding="utf-8"))["labels"]
-labels = sorted(item["id"] for item in taxonomy if item.get("is_direct_supported"))
-for split in ("test", "validation"):
-    rows = load_jsonl(f"data/processed/cordis_h2020/en/{split}.jsonl")
-    print(split, label_distribution(binarize([r["labels_direct"] for r in rows], labels)))
-EOF
-```
+Pooled ECE is dominated by near-zero negative cells. Read it alongside top-1 ECE
+and classification quality. Soft votes combine scores on different scales without
+a separate recalibration step.
 
-| statistic | EN test | EN validation |
-|---|---|---|
-| records / labels | 4,711 / 473 | 4,711 / 473 |
-| labels per record, mean / median | 3.216 / 3 | 3.231 / 3 |
-| label prevalence, min / median / max | 0.00127 / 0.00403 / 0.0565 | 0.00127 / 0.00403 / 0.0563 |
-| labels under 1% prevalence | 386 (81.6%) | 386 (81.6%) |
-| positives carried by the most frequent 10% of labels | 36.4% | 36.3% |
-| max / min prevalence (labels with a positive) | 44.3 | 44.2 |
-| labels with no positive | 0 | 0 |
-| per-label accuracy of predicting no label | 0.9932 | 0.9932 |
+The sample test has no positives for 249 labels, and sample validation has none for
+304. Sample macro-F1 therefore cannot exceed 224/473 = 0.474 and should not be
+compared directly to full-set macro-F1.
 
-The median label occurs in 19 of 4,711 test projects. Turkish records are translations of
-the same projects with the same labels, so the TR sets have the same distribution. The
-fixed Kev/Jev samples cover far fewer labels: 249 of the 473 have no positive project in
-the 120-pair test sample and 304 none in the 80-pair validation sample
-(`zero_positive_labels` in `summary.json["benchmark"]["label_distribution"]` of the sample
-run, `results/metrics/cordis_v1.1.0_sample/`), so sample
-macro-F1 cannot exceed 224/473 = 0.474 and is not comparable to these full sets.
+`hard_closed` votes over the 586-node ancestor-expanded universe, so only its
+hierarchical metrics are comparable to ordinary member/ensemble results.
 
-### Why not accuracy
+## Uncertainty and significance
 
-- Per-label (Hamming) accuracy is dominated by true negatives: predicting no label at all
-  scores 0.9932, so real systems differ only in the third decimal, and a system that
-  misses every rare label loses almost nothing.
-- Subset (exact-set) accuracy needs all of about 3.2 labels out of 473 to be exactly right.
-  It gives no credit for two correct labels out of three or for a sibling of the right
-  field, so it cannot separate systems that differ in how much they get right.
+The benchmark uses 10,000 paired bootstrap resamples grouped by `pair_id`,
+95% percentile intervals, and Holm correction within each comparison family.
+It compares ensembles with the best member selected on val-A and each system across
+input conditions. Results are in each summary's `significance` block.
 
-### What each metric adds
+Project pairing keeps language variants together in resampling. Intervals describe
+test-set sampling uncertainty for the recorded training run; they do not measure
+training variance. Sparse sample macro-F1 intervals need care because bootstrap
+samples can omit rare labels while retaining the fixed denominator.
 
-- **Micro-F1 (primary).** Pools true positives, false positives and false negatives over
-  every (project, label) cell and ignores the true negatives that make accuracy
-  uninformative. It weights labels by how often they occur, which matches the task of
-  tagging each project with its fields, and it is the objective every threshold, the
-  vote count k and the soft thresholds are tuned for on validation, so the ranking metric
-  and the tuning objective agree.
-- **Macro-F1.** Each of the 473 labels counts equally, absent labels as zero, so it
-  exposes the 386-label rare tail that micro-F1 underweights. It is noisier (19 test
-  positives for the median label), hence secondary.
-- **Hierarchical micro-F1 (`hmicro_f1`).** Gold and predicted sets are closed upward over
-  the 586-node EuroSciVoc tree before scoring, so a wrong leaf under the right field earns
-  partial credit; it is the only comparable score for the hierarchy-closed vote.
-- **Ranking metrics (P@1/3/5, R-precision, nDCG@5).** Threshold-free: they judge the score
-  order regardless of the tuned threshold. P@1 asks whether the top label is correct.
-- **Calibration (ECE, top-1 ECE, Brier).** Whether probabilities mean what they say,
-  which soft voting and OOD thresholds rely on. Pooled ECE over all cells is dominated by
-  near-zero negatives, so the benchmark table shows top-1 ECE.
-- **OOD AUROC and FPR@95%TPR** (`scripts/run_ood.py`, held-out humanities). AUROC ranks
-  in- versus out-of-distribution inputs without a threshold; FPR@95%TPR is the share of
-  in-distribution projects wrongly flagged when 95% of OOD inputs are caught.
-- **Paired project-grouped bootstrap with Holm.** 10,000 resamples of `pair_id`, so the
-  EN, TR and code-switch variants of one project count once; 95% percentile intervals of
-  the micro- and macro-F1 differences; Holm controls the family-wise error across each
-  family of comparisons (ensembles vs the best member, each system across conditions).
-  The benchmark table reports point estimates; the intervals are in `## Significance`.
-  On sparse-label samples a percentile interval for a macro-F1 difference can sit outside
-  its point estimate, because resamples omit rare labels (the 473-label denominator and the
-  zero-division rule are kept), so read those intervals cautiously.
+## OOD and efficiency
 
-Per-label ROC-AUC is not reported: with a median prevalence of 0.4%, it is driven by the
-many easy negatives, and the ranking metrics above already measure threshold-free quality.
+The near-OOD experiment removes projects touching the humanities root from both
+training and validation, then retrains NB and SVM. Test projects with only
+humanities labels are OOD; projects with no humanities label are in-distribution.
+Mixed projects are excluded.
 
-### Baselines and new methods
+Per language, this gives 4,351 in-distribution, 94 OOD, and 266 excluded projects.
+The score is `1 - max(label probability)`. AUROC uses a stratified 2,000-resample
+bootstrap; FPR@95%TPR is the share of in-distribution projects flagged when 95% of
+OOD projects are caught. This experiment covers one nearby domain shift, rather
+than arbitrary far-OOD text.
 
-Baselines are the course methods in their vanilla form; everything else is new. The
-architecture is the method family, the model the concrete configured instance; for example,
-the Transformer-encoder baseline is `xlm-roberta-base`, and a DeBERTa model would be a new
-method.
+Latency uses 200 English test texts after 10 warm-up calls on an Intel Core
+i5-9300H, with CUDA hidden and four torch threads. Remeasure on an idle machine.
+Stored parameter counts/index entries are not comparable across architectures;
+hybrid kNN artifact size excludes its separately downloaded e5 encoder.
+
+## Model configurations
+
+`configs/benchmark.yaml` defines each system's role, architecture, model, and
+primary/secondary metrics. The baseline/new labels describe the course comparison.
 
 | system | role | architecture | model |
 |---|---|---|---|
@@ -130,15 +105,6 @@ method.
 | `hard_closed` | new | NALTRA hierarchy-closed hard vote | k-of-M over ancestor-closed 586-node label sets |
 | `soft`, `weighted_soft` | new | NALTRA soft vote | mean, or val-A micro-F1-weighted mean, of raw member scores (each on its own scale, not recalibrated); threshold tuned on val-B |
 | `leave_one_out` | new | NALTRA hard vote (ablation) | strict majority of the members left after dropping each one |
-
-`hybrid_knn`, `kev`, `jev` and `laya` are the new single-model methods: `hybrid_knn` is a
-sparse+dense retrieval kNN that fuses the TF-IDF and multilingual-e5 neighbour rankings by
-reciprocal rank fusion (Cormack, Clarke and Buettcher, SIGIR 2009; the standard k = 60),
-`kev` is an open-weights Jev-style decision model queried with one yes/no question per
-label, the `jev` adapter scores the hosted service with the same questions, and `laya` asks
-a pinned local multilingual Laya checkpoint one two-option question per label
-([core ML](core_ml.md#local-multilingual-laya)). NALTRA's votes over all members are the
-project's own new method.
 
 ## How the `cordis_v0.5.0` neural members were built
 
@@ -166,22 +132,26 @@ and `history`). The candidate artifacts are not shipped. Validation was used for
 candidate and threshold selection; the benchmark retunes member thresholds on val-A and
 reports test scores only from `evaluate_ensemble.py`.
 
+
+
 ## Code-switching evaluation
 
-Code-switching is an evaluation-only track built from the audited EN/TR versions of the
-same projects: `sentence_mix` and `chunk_mix`, balanced, 4,711 validation and 4,711 test
-records each ([dataset card](dataset.md#9-code-switch-benchmark-track)). They are synthetic
-mixed-language variants, not collected bilingual documents; no model is trained on them and
-nothing is translated again. The shipped tracks are restored with the rest of the release by
-`scripts/unpack_data.py`.
+The sentence/chunk tracks are synthetic evaluation-only variants built from aligned
+EN/TR versions of the same project. Nothing is tuned on mixed text: member and
+ensemble settings come from clean EN/TR validation.
 
-The reported code-switch scores are produced like every other test set. `predict_all.py`
-dumps each locally trained member's scores on `cs_chunk_test` and `cs_sentence_test`
-(`data/processed/cordis_h2020/code_switch/{chunk,sentence}_mix/balanced/test.jsonl`), and
-`evaluate_ensemble.py` scores the members and the votes on them with the member thresholds,
-vote counts and soft thresholds tuned on clean EN+TR validation (val-A and val-B); nothing is
-tuned on code-switch data. The code-switch rows carry the `pair_id` of their source project,
-so the cross-condition bootstrap in `## Significance` compares each system on the first test
-set with each code-switch set, counting every project once. Kev, Jev and Laya are not scored
-on the code-switch sets; they run only on the fixed 80/120-pair samples. The commands are in the
-[runbook](runbook.md#3-dump-predictions).
+Scores come from `cs_sentence_test` and `cs_chunk_test` dumps. Cross-condition
+bootstrap comparisons use their shared `pair_id`. Kev, Jev, and Laya are not
+evaluated on these tracks in the reported experiment.
+
+## Recorded outputs
+
+`evaluate_ensemble.py` records thresholds, vote settings, label/taxonomy identity,
+input and artifact fingerprints, environment, code commit, and bootstrap seed.
+`run_ood.py` records its filtered counts, model identities, environment, commit,
+and bootstrap seeds. The latency producer records runtime metadata; the archived
+latency summary lacks current top-level code/environment fields.
+
+No values should be inserted manually to stand in for a missing experiment.
+See [result files](../results/README.md), [runbook commands](runbook.md#4-benchmark),
+and [findings](results.md).

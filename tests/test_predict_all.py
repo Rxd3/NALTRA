@@ -11,6 +11,7 @@ from tests.test_classical_models import config, records
 
 from naltra.data.loader import save_jsonl
 from naltra.models.svm import SVMModel
+from naltra.schemas.prediction import LanguageInfo, PredictionResult
 
 
 @pytest.fixture
@@ -68,6 +69,60 @@ def test_only_the_record_text_is_scored(artifact_and_set):
     dump = np.load(tmp_path / "out/svm/fixture_test.npz")
     direct = model.predict(rows[0]["text"]).label_scores
     assert dump["scores"][0] == pytest.approx([direct[x] for x in model.labels], abs=1e-6)
+
+
+@pytest.mark.parametrize(
+    "failure", ["short", "long", "reversed", "wrong-model", "missing-label", "extra-label", "nan"]
+)
+def test_malformed_prediction_batches_fail_before_a_dump_is_written(
+    artifact_and_set, monkeypatch, failure
+):
+    model, artifacts, _, tmp_path = artifact_and_set
+
+    class Broken:
+        labels = model.labels
+        model_name = "svm"
+
+        def predict_batch(self, texts):
+            results = [
+                PredictionResult(
+                    text=text,
+                    model="svm",
+                    language=LanguageInfo("und"),
+                    label_scores=dict.fromkeys(self.labels, 0.3),
+                )
+                for text in texts
+            ]
+            if failure == "short":
+                return results[:-1]
+            if failure == "long":
+                return results + results[:1]
+            if failure == "reversed":
+                return results[::-1]
+            # Mutable score maps can be changed after schema construction.
+            if failure == "wrong-model":
+                results[0] = PredictionResult(
+                    text=texts[0], model="kev", language=LanguageInfo("und")
+                )
+            elif failure == "missing-label":
+                results[0].label_scores.pop(self.labels[0])
+            elif failure == "extra-label":
+                results[0].label_scores["unknown"] = 0.2
+            else:
+                results[0].label_scores[self.labels[0]] = float("nan")
+            return results
+
+    monkeypatch.setattr(predict_all, "load_model", lambda *args: (Broken(), artifacts / "svm"))
+    assert run(artifacts, tmp_path) == 1
+    assert not (tmp_path / "out/svm/fixture_test.npz").exists()
+    assert not (tmp_path / "out/svm/fixture_test.json").exists()
+
+
+def test_prediction_alignment_uses_the_models_normalized_text(artifact_and_set):
+    model, _, _, _ = artifact_and_set
+    scores, _, _ = predict_all.score_set(model, ["  laser   light\n lens photon  "], 1)
+    expected = model.predict("laser light lens photon")
+    assert scores[0] == pytest.approx([expected.label_scores[x] for x in model.labels])
 
 
 def test_existing_dump_requires_overwrite(artifact_and_set):

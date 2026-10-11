@@ -30,6 +30,7 @@ from naltra.data.manifest import compute_file_sha256  # noqa: E402
 from naltra.models.jev import JevModel  # noqa: E402
 from naltra.models.kev import KevModel  # noqa: E402
 from naltra.models.laya import LayaModel  # noqa: E402
+from naltra.pipeline.preprocessing import normalize_text  # noqa: E402
 
 # Inference services are built from their YAML config; they have no trained artifact.
 SERVICE_TYPES = {"kev": KevModel, "jev": JevModel}
@@ -91,13 +92,28 @@ def parser() -> argparse.ArgumentParser:
 
 
 def score_set(model, texts: list[str], batch_size: int) -> tuple[np.ndarray, float, dict]:
-    scores = np.empty((len(texts), len(model.labels)), dtype=np.float32)
+    if batch_size < 1:
+        raise ValueError("Prediction batch size must be positive.")
+    labels = list(model.labels)
+    if not labels or len(set(labels)) != len(labels):
+        raise ValueError("Model labels must be nonempty and unique.")
+    scores = np.full((len(texts), len(labels)), np.nan, dtype=np.float32)
     latency, metadata = 0.0, {}
     for start in range(0, len(texts), batch_size):
-        results = model.predict_batch(texts[start : start + batch_size])
+        batch = texts[start : start + batch_size]
+        results = model.predict_batch(batch)
+        if len(results) != len(batch):
+            raise ValueError("Model returned an incorrect prediction batch length.")
         metadata = metadata or results[0].metadata
-        for offset, result in enumerate(results):
-            scores[start + offset] = [result.label_scores[label] for label in model.labels]
+        for offset, (text, result) in enumerate(zip(batch, results, strict=True)):
+            if result.text != normalize_text(text) or result.model != model.model_name:
+                raise ValueError("Prediction text/order or model identity differs from the input.")
+            if set(result.label_scores) != set(labels):
+                raise ValueError("Prediction scores must cover the exact model label universe.")
+            row = np.asarray([result.label_scores[label] for label in labels], dtype=np.float32)
+            if not (np.isfinite(row).all() and ((row >= 0) & (row <= 1)).all()):
+                raise ValueError("Prediction scores must be finite probabilities in [0, 1].")
+            scores[start + offset] = row
             latency += result.latency_ms
         print(f"  {min(start + batch_size, len(texts))}/{len(texts)}", flush=True)
     return scores, latency / max(1, len(texts)), metadata

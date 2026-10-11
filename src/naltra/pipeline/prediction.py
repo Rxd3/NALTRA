@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from time import perf_counter
 
 from naltra.models.base import BaseNALTRAModel
@@ -16,6 +15,7 @@ from naltra.pipeline.ood import MaxProbabilityOODDetector, OODDetector
 from naltra.pipeline.preprocessing import normalize_text
 from naltra.pipeline.thresholds import apply_thresholds
 from naltra.schemas.prediction import Explanation, LanguageInfo, OODResult, PredictionResult
+from naltra.utils.resources import resource_path
 
 
 @dataclass(slots=True)
@@ -47,7 +47,7 @@ class PredictionPipeline:
                     f"unexpected {sorted(supplied - required)}."
                 )
         if self.parent_by_label is None:
-            path = Path(__file__).resolve().parents[3] / "taxonomy/taxonomy.json"
+            path = resource_path("taxonomy/taxonomy.json")
             taxonomy = json.loads(path.read_text(encoding="utf-8"))
             self.parent_by_label = {item["id"]: item["parent"] for item in taxonomy["labels"]}
         errors = validate_hierarchy(self.parent_by_label)
@@ -146,7 +146,7 @@ class PredictionPipeline:
                 )
             labels = apply_thresholds(scores, threshold, self.per_label_thresholds)
         elif hard and (self.threshold is not None or self.per_label_thresholds):
-            # Only filter strict majorities; never promote ties or negative votes.
+            # Only filter the voter's selected labels; never promote rejected votes.
             labels = apply_thresholds(
                 {item.label: item.score for item in labels},
                 self.threshold if self.threshold is not None else self.ensemble_config.threshold,
