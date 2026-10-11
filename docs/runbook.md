@@ -20,8 +20,9 @@ python scripts/unpack_data.py      # or: make data
 python scripts/validate_datasets.py --prebuilt-release
 ```
 
-This restores the NALTRA CORDIS EN-TR benchmark, release 1.1.0, under
-`data/processed/cordis_h2020/` (`en/`, `tr/`, `code_switch/`) and audits it record by record. The plain validator refuses
+This restores EN, TR and code-switch files of the NALTRA CORDIS EN-TR benchmark, release 1.1.0,
+under `data/processed/cordis_h2020/` (`en/`, `tr/`, `code_switch/`); the following prebuilt
+audit checks EN/TR records. The plain validator refuses
 the shipped release ([why](dataset.md#shipped-turkish-release-110)), so training and noisy
 generation also take `--prebuilt-release`, which records tolerated translation issues in each
 artifact's provenance.
@@ -161,7 +162,7 @@ python scripts/predict_all.py --artifacts models/cordis_v0.5.0/cordis_h2020/en_t
 python scripts/prepare_laya.py --output-dir models/cordis_laya_v1.1.0/cordis_h2020/en_tr_direct
 python scripts/predict_all.py --artifacts models/cordis_laya_v1.1.0/cordis_h2020/en_tr_direct --models laya --sets en_val_kev=data/samples/val80/en_validation.jsonl tr_val_kev=data/samples/val80/tr_validation.jsonl en_test_kev=data/samples/test120/en_test.jsonl tr_test_kev=data/samples/test120/tr_test.jsonl --device cuda --output-dir results/predictions/cordis_v1.1.0
 python scripts/evaluate_ensemble.py --predictions results/predictions/cordis_v1.1.0 --members svm hybrid_knn bilstm transformer kev jev --baselines naive_bayes laya --tune-sets en_val_kev=data/samples/val80/en_validation.jsonl tr_val_kev=data/samples/val80/tr_validation.jsonl --test-sets en_test_kev=data/samples/test120/en_test.jsonl tr_test_kev=data/samples/test120/tr_test.jsonl --output-dir results/metrics/cordis_v1.1.0_sample
-python scripts/extra_analyses.py   # label coverage, sample member pairs, error analysis (CPU, both summaries' dumps)
+python scripts/extra_analyses.py   # label coverage, sample member pairs, error analysis, drop differences, TR translation screens (CPU, both summaries' dumps)
 ```
 
 ## 5. Kev server (WSL2, Ubuntu)

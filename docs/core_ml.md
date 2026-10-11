@@ -155,7 +155,7 @@ fitted on calibrated validation scores or detection remains disabled.
 
 ## Ensembles
 
-Soft/weighted-soft voting uses complete probabilities, including values below
+Soft/weighted-soft voting uses complete per-label scores, including values below
 selection thresholds; a result without `label_scores` falls back to the scores of its
 selected labels. Hard voting
 uses selected-label membership and preserves strict-majority semantics. Declared

@@ -14,7 +14,9 @@ Run from the repository root; inputs, outputs and options are in the root README
 - `classify.py`: artifacts + text -> labels, taxonomy closure, language and OOD decision
 - `evaluate_ensemble.py`: dumps -> tuned thresholds, member/ensemble metrics, bootstrap tests
 - `evaluate_all.py`: direct, resumable BiLSTM/XLM-R/Laya evaluator (no reported number uses it)
-- `extra_analyses.py`: label coverage, zero-shot member pairs on the 120-pair sample, errors
+- `extra_analyses.py`: label coverage, zero-shot member pairs on the 120-pair sample, errors,
+  SVM's input-shift drop vs each other member's (`drops`), TR truncation and repetition
+  screens (`translation`)
 - `translation_exceptions.py`: scores with and without the projects the prebuilt audit flagged
 - `make_figures.py`: summary + dumps -> paper figures
 - `run_benchmark.py`: artifacts -> latency, throughput and size

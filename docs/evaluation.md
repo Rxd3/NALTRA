@@ -6,10 +6,10 @@ All model families are evaluated through the same `PredictionResult` schema and 
 
 - Classification: precision, recall, micro-F1, macro-F1, and confusion matrices.
 - Hierarchy: ancestor consistency and hierarchy-aware precision/recall/F1 using the 586-node EuroSciVoc taxonomy.
-- Language: English, Turkish, code-switched, and cross-language transfer slices.
+- Language: English, machine-translated Turkish and code-switched test sets of the same projects; every trained member sees EN+TR in training, so none is a cross-lingual transfer slice.
 - Calibration: expected calibration error (ECE), Brier score, and reliability plots.
 - OOD: detection AUROC and false-positive rate at 95% true-positive rate, with the humanities root held out of training (`scripts/run_ood.py`).
-- Robustness: performance deltas on the noisy and code-switched test sets, with paired bootstrap tests across conditions.
+- Robustness: performance deltas on the noisy and code-switched test sets, with paired bootstrap tests across conditions and of SVM's drop against each other member's.
 - Efficiency: warmed-up latency distributions under documented hardware and batch sizes.
 - Ensemble comparison: hard, soft, and weighted-soft voting against each voting member (`svm`, `hybrid_knn`, `bilstm`, `transformer`); `naive_bayes` is reported but does not vote, because it uses the same TF-IDF features as `svm` and would give that representation a second vote; Kev and Jev are compared with every other member, and vote with them, on the fixed pair-hash sample (80 validation, 120 test pairs); Laya is scored on the same sample as a non-voting member (0.068 EN / 0.046 TR micro-F1).
 
@@ -18,10 +18,10 @@ Benchmark scripts must save their configuration, taxonomy version, dataset check
 CORDIS ordinary classification compares `labels_direct` against direct predictions over
 the fixed supported label universe. Hierarchical metrics expand ancestors for both sides.
 Gold closures start from the 473 retained labels only: CORDIS codes with fewer than 50
-supporting projects are dropped, not rolled up to a supported ancestor, so 1,039 of the 4,711
-test projects miss 2,375 CORDIS-implied nodes. Scored against the complete CORDIS closure,
-hierarchical F1 changes by at most 0.007 and no ranking changes
-(`results/metrics/label_coverage.json`).
+supporting projects are dropped, not rolled up to a supported ancestor. Within the active
+586-node taxonomy, 1,039 of the 4,711 test projects lack 2,375 CORDIS-implied nodes.
+Restoring those active nodes changes hierarchical F1 by at most 0.007 and no ranking; full
+unpruned-tree performance was not evaluated (`results/metrics/label_coverage.json`).
 English, translated Turkish, and synthetic code-switch records inherit their source project split.
 
 ## Benchmark and metric choice
@@ -125,12 +125,20 @@ Holm adjusts each family separately, per metric:
 | votes vs best member, per test set | the 4 votes (`hard_majority`, `hard_k`, `soft`, `weighted_soft`) minus the member with the best val-A micro-F1 (`svm`) | `summary.json["significance"]["vs_best_member"]` |
 | each system across conditions | first test set minus each other test set: 5 on the full sets (TR, both code-switch, both noisy), 1 on the sample (TR), where Holm therefore changes nothing | `summary.json["significance"]["cross_condition"]` |
 | zero-shot vs trained members, per sample language | Kev, Jev and Laya each minus each of the 5 trained members (15 tests) | `results/metrics/cordis_v1.1.0_sample/pairwise.json` (`scripts/extra_analyses.py`) |
+| SVM's drop vs each other member's, per condition (micro-F1 only) | SVM's EN-minus-condition drop minus that of `hybrid_knn`, `bilstm`, `transformer` and `naive_bayes` (4 tests) on `tr_test`, `cs_sentence_test`, `cs_chunk_test` and `en_test_noisy`; one shared resample of `pair_id` for both sets and all members; `tr_test_noisy` is not in this family | `results/metrics/cordis_v1.1.0_ensemble/robustness.json` (`scripts/extra_analyses.py drops`) |
+
+All 16 SVM differences are above 0, each with a 95% interval excluding 0 and Holm p 0.0008,
+the smallest that four tests over 10,000 resamples can give; they range from 0.030 [0.023,
+0.038] (BiLSTM, noisy EN) to 0.067 [0.061, 0.074] (Naive Bayes, TR). The per-member drops in
+the same file are the `cross_condition` ones (the script stops if a point estimate differs by
+more than 1e-6).
 
 The near-OOD AUROCs carry bootstrap intervals (`results/ood/cordis_v1.1.0/summary.json`)
 but no test between models. Not tested at all, so only descriptive: differences between two
-members on the full sets (for example XLM-R vs Naive Bayes), differences between two
-systems' drops (for example SVM's EN -> TR drop vs `hybrid_knn`'s), relative drops,
-`hard_closed`, leave-one-out, calibration and latency.
+members on the full sets (for example XLM-R vs Naive Bayes), differences between two systems'
+drops outside the SVM-minus-member family (for example `hybrid_knn`'s EN -> TR drop, 0.011, vs
+Naive Bayes's, 0.002, any drop difference on noisy TR, or a vote's drop vs a member's),
+relative drops, `hard_closed`, leave-one-out, calibration and latency.
 
 ### Baselines and new methods
 
@@ -242,7 +250,9 @@ Every other member is rescored on the same files, and the run
   vs 0.16).
 - Kev, Jev and Laya ask English questions about English label names for Turkish input too,
   so their EN -> TR drop mixes the input shift with cross-lingual prompting.
-- 120 pairs resolve differences of about 0.045 micro-F1. On English, Jev and Kev cannot be
+- Observed pairwise micro-F1 intervals have average half-widths of about 0.043 EN and 0.041
+  TR (`pairwise.json`, `micro_f1_ci_half_width`); small differences remain uncertain, and an
+  interval that includes 0 does not establish equivalence. On English, Jev and Kev cannot be
   separated from XLM-R, BiLSTM or Naive Bayes (Jev - XLM-R +0.012 [-0.033, +0.058], Jev -
   Naive Bayes -0.020 [-0.062, +0.022], Kev - XLM-R +0.000 [-0.046, +0.048]). On Turkish,
   Jev - XLM-R is +0.037 [-0.006, +0.080], but Kev is below Naive Bayes (-0.078 [-0.115,

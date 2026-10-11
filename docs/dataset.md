@@ -83,7 +83,7 @@ ancestor nodes enlarge the tree: total active labels = retained direct labels + 
 ancestor nodes (473 + 113 = 586).
 
 **Rationale for Threshold 50**:
-- Every retained direct category contains at least 50 positive examples across the dataset, guaranteeing meaningful support across `train` (70% = ~35 examples), `validation` (15% = ~7 examples), and `test` (15% = ~7 examples).
+- Every retained direct category has at least 50 positive projects across the dataset. The support threshold improves label coverage; the shipped full splits have minima of 34/6/6 examples per retained direct label in train/validation/test.
 - Retains **97.51%** of all labeled projects (31,407 out of 32,210), discarding only 803 projects that possessed exclusively rare tail categories.
 - Retains the full depth of the EuroSciVoc ontology (depths 1 through 7) across all 6 OECD root domains.
 - Required ancestors are **never** discarded; an ancestor is retained regardless of its direct frequency.
@@ -91,11 +91,13 @@ ancestor nodes (473 + 113 = 586).
 **Rare codes are dropped, not rolled up.** In a retained project, codes below the threshold
 are removed from `labels_direct` (and from `source_label_ids`) instead of being mapped to
 their nearest supported ancestor (`src/naltra/data/preprocessing.py`). 8,128 of the 31,407
-retained projects lose at least one directly assigned code (9,909 codes in total); 1,039 of
-the 4,711 test projects' label closures miss 2,375 CORDIS-implied nodes, and 327 test
-projects miss a whole root. Scored against the complete CORDIS closure, hierarchical F1
-changes by at most 0.007 (SVM 0.668 -> 0.662) and no model ranking changes
-(`results/metrics/label_coverage.json`, from `scripts/extra_analyses.py`). A rolled-up
+retained projects lose at least one directly assigned code (9,909 codes in total). Within
+the active 586-node taxonomy, 1,039 of the 4,711 test projects lack 2,375 CORDIS-implied
+nodes, and 327 test projects miss a whole root. Restoring those active nodes changes
+hierarchical F1 by at most 0.007 (SVM 0.668 -> 0.662) and no model ranking; full
+unpruned-tree performance was not evaluated. Counting the code paths the taxonomy pruned as
+well, 1,231 test projects lack 3,744 (counted, not scored;
+`results/metrics/label_coverage.json`, from `scripts/extra_analyses.py`). A rolled-up
 release would need a new release version and every member retrained.
 
 ---
@@ -305,6 +307,12 @@ Partitioning applies grouped multi-label iterative stratification (`grouped_mult
    - One translation provenance across all records: backend `huggingface_local` (no mock output) and, for a rebuilt release, the locked model and revision
 
    Nothing checks for Turkish characters, replacement characters (U+FFFD) or that the output is Turkish at all: a Turkish text containing U+FFFD, or unrelated English text of a plausible length, passes. A one-off screen of the shipped 1.1.0 TR splits ([snippet](../data/README.md#at-a-glance)) finds Turkish-specific letters (`çğıöşüÇĞİÖŞÜ`) in all 31,407 records, U+FFFD in none, and no record equal to its English source; this is a screen, not a quality judgement.
+
+   Because the length ratio is checked per document, a truncated sentence inside a long document passes. Two further screens of the shipped TR splits (`python scripts/extra_analyses.py translation`, which refuses a split whose SHA-256 differs from its manifest; `results/metrics/translation_checks.json`) flag candidates, not confirmed errors:
+   - *Possible truncation*: at least one `sentence_alignment` pair whose English sentence is longer than 80 characters and whose Turkish sentence has fewer than 40% of its characters. 180 of 31,407 TR records (0.57%): 117 train (0.53%), 32 validation (0.68%), 31 test (0.66%), e.g. test projects 640771 and 723833.
+   - *Possible repetition*: the TR text, lowercased and split into `\w+` words, holds a word n-gram ($n \ge 4$) immediately followed by itself, and that doubled $2n$-word sequence does not occur in the paired English text split the same way. 48 records (0.15%): 37 train (0.17%), 5 validation (0.11%), 6 test (0.13%).
+
+   The released text is unchanged (it is hash-locked), and the effect of these records on the scores is not measured ([dataset card](../data/README.md#known-issues), item 7).
 5. **Stratified Human Review Sample**:
    - Location: `data/review/translation_review_sample.csv`
    - Size: 100 validation projects. Their direct labels reach all 6 OECD root domains (natural sciences 94 projects, engineering and technology 70, social sciences 45, medical and health sciences 37, agricultural sciences 20, humanities 7). `hierarchy_depth`, the depth of the deepest direct label, covers depths 4–7 only (4: 12, 5: 56, 6: 30, 7: 2), and every project is multi-label (5 direct labels: 93, 4: 5, 3: 2); there are no single-label records.
@@ -317,7 +325,7 @@ Partitioning applies grouped multi-label iterative stratification (`grouped_mult
    - Sample Definition: `data/review/translation_review_sample.csv` (the 100 validation projects described above).
    - Methodology: AI-assisted semantic and terminological rating of the English CORDIS source against the Turkish neural MT output, one row per sampled project, after pipeline hardening. The model, prompt and date used were not recorded; the CSV has no column for them.
    - Ratings in the file (100 projects): meaning preserved `yes` 83, `partial` 17, `no` 0; terminology quality (1–5) mean 4.52, median 5, $\le 2$: 5; Turkish fluency (1–5) mean 3.84, median 4, $\le 2$: 0.
-   - Historical figures without a tracked source: a before-hardening pass reported meaning `yes` 73, `partial` 24, `no` 3; terminology mean 4.34 ($\le 2$: 11); fluency mean 3.71 ($\le 2$: 3); and 1 repetition loop, 6 severe truncations or omissions and 18 important omissions, reduced after hardening (`no_repeat_ngram_size=4`, period normalization, list/bullet segmentation and chunking) to 0, 0 and 4. None of these can be recomputed from the repository.
+   - Historical figures without a tracked source: a before-hardening pass reported meaning `yes` 73, `partial` 24, `no` 3; terminology mean 4.34 ($\le 2$: 11); fluency mean 3.71 ($\le 2$: 3); and 1 repetition loop, 6 severe truncations or omissions and 18 important omissions, reduced after hardening (`no_repeat_ngram_size=4`, period normalization, list/bullet segmentation and chunking) to 0, 0 and 4. None of these can be recomputed from the repository. They describe the 100-project sample only: on the whole shipped release, the screens in item 4 still flag possible truncations and repetitions.
    - Known Remaining Limitations:
      - Pretrained model lexical polysemy in specialized sub-disciplines (*harvesters* $\rightarrow$ *biçerdöverler*, *technology adoption* $\rightarrow$ *evlat edinme*, *stemness* $\rightarrow$ *saplık*, *crickets* $\rightarrow$ *kriketler*, *knockout* $\rightarrow$ *nakavt*).
      - Calque phrasing in complex multi-clause sentences.
@@ -417,9 +425,9 @@ the clean record.
 ## 11. Limitations & Ethical Considerations
 
 All known issues of release 1.1.0 (silver labels, rare codes dropped rather than rolled up,
-unreviewed machine translation, the missing repair script, cleaning loss, the generated
-noisy track, synthetic code-switching, domain skew and more) are listed in one place in the
-dataset card: [Known issues](../data/README.md#known-issues).
+unreviewed machine translation, possible MT truncations and repetitions, the missing repair
+script, cleaning loss, the generated noisy track, synthetic code-switching, domain skew and
+more) are listed in one place in the dataset card: [Known issues](../data/README.md#known-issues).
 
 ## Integrated release commands and model target contract
 

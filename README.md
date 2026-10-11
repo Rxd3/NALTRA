@@ -27,6 +27,15 @@ produced: [experiment runbook](docs/runbook.md).
 - **Why Turkish.** It is agglutinative and morphologically rich (one stem takes many suffixed
   word forms), a hard case for word-level features; and we are not aware of any
   EuroSciVoc-labelled Turkish corpus.
+- **Closest prior work.** EURLEX57K (Chalkidis et al. 2019: 57k English EU laws, about 4.3k
+  EuroVoc labels) and MultiEURLEX (Chalkidis et al. 2021: 65k EU laws officially translated
+  into 23 EU languages, EuroVoc labels, zero-shot cross-lingual transfer) are the closest
+  resources we know of. NALTRA does not replace them; it differs in scope: research-project
+  objectives labelled with the EuroSciVoc science taxonomy; Turkish, not an EU language,
+  machine-translated rather than officially translated; synthetic code-switch and noisy
+  copies paired with the same projects; near-OOD rejection; and zero-shot decision models
+  against trained ones. Its trained members see Turkish in training, so EN -> TR is not
+  zero-shot cross-lingual transfer.
 
 Research questions:
 
@@ -34,15 +43,20 @@ Research questions:
    linear SVM: 0.558 EN / 0.489 TR micro-F1, 0.668 hierarchical F1; no vote beats it (best:
    weighted soft vote, 0.523 / 0.472) ([Results](#results)).
 2. *How much is lost on translated, code-switched and noisy input?* SVM loses 0.070 (-> TR),
-   0.050 (-> sentence-level code-switch) and 0.078 (-> noisy EN); the multilingual hybrid kNN 0.011, 0.009
-   and 0.019 ([Results](#results)).
-3. *Can a model flag projects from a field it never saw?* With humanities held out, a
-   retrained SVM reaches AUROC 0.927 EN / 0.924 TR (94 OOD vs 4,351 in-domain projects)
-   ([Findings](#findings)).
-4. *Do zero-shot decision models match trained ones?* On the 120-pair sample Jev is
-   statistically indistinguishable from XLM-R, BiLSTM and Naive Bayes, and Kev from XLM-R
-   (the sample resolves about 0.045 micro-F1), all far below SVM (0.556); Laya scores 0.068
-   EN, a negative result ([Zero-shot sample](#zero-shot-sample)).
+   0.050 (-> sentence-level code-switch) and 0.078 (-> noisy EN), the multilingual hybrid kNN
+   0.011, 0.009 and 0.019; SVM's drop is larger than every other member's in each tested
+   condition (Holm p 0.0008), though Naive Bayes and XLM-R drop less than kNN on TR (point
+   estimates, not tested) ([Findings](#findings)).
+3. *Can confidence identify humanities-only projects after training excludes projects
+   carrying retained humanities labels?* A retrained SVM reaches AUROC 0.927 EN / 0.924 TR
+   (94 OOD vs 4,351 in-domain projects). Sub-threshold humanities codes remain in 165
+   training, 19 validation and 34 nominally in-domain test projects, so this holds out
+   retained labels, not the whole field ([Findings](#findings)).
+4. *Do zero-shot decision models match trained ones?* On the 120-pair sample Jev cannot be
+   separated from XLM-R, BiLSTM or Naive Bayes, nor Kev from XLM-R, all far below SVM
+   (0.556); Laya scores 0.068 EN, a negative result. Observed pairwise micro-F1 intervals have
+   average half-widths of about 0.043 EN and 0.041 TR; small differences remain uncertain
+   ([Zero-shot sample](#zero-shot-sample)).
 
 ## Task
 
@@ -60,8 +74,10 @@ belongs to. The task requires:
   machine-translated Turkish, synthetic EN/TR code-switched text and noisy copies; each drop
   is a paired bootstrap difference. Locally trained members see EN+TR training text, so
   EN -> TR measures the gap on translated input.
-- **Near-OOD rejection.** With the humanities root held out of training, a model must flag
-  those projects by low confidence (AUROC, FPR@95%TPR).
+- **Near-OOD rejection.** Training excludes every project carrying a retained humanities
+  label, and a model must flag the humanities-only test projects by low confidence (AUROC,
+  FPR@95%TPR). Sub-threshold humanities codes remain in 165 training, 19 validation and 34
+  nominally in-domain test projects, so this holds out retained labels, not the whole field.
 - **Calibration.** Whether the scores can be read as probabilities (ECE, Brier).
 - **Zero-shot vs trained.** Jev, Kev (one yes/no question per label) and Laya (one
   two-option question per label) are not trained or fine-tuned on CORDIS by the team
@@ -176,10 +192,12 @@ in a `configs/models/hybrid_knn.yaml` comment refers only to the RRF constant k 
 Validation is split by `pair_id`: one half tunes member thresholds, the other the ensemble
 settings; test sets are only scored. Differences use a paired project-grouped bootstrap
 (10,000 resamples, 95% percentile intervals; two-sided sign p-value with add-one correction,
-floor 2/10,001). Holm families: each vote vs the best member (4 per test set) and each
-system's drops from English (5 on the full sets; 1 on the sample, so Holm changes nothing).
-Zero-shot vs trained members are tested on the sample ([below](#zero-shot-sample)); other
-member-vs-member comparisons are point estimates.
+floor 2/10,001). Holm families: each vote vs the best member (4 per test set), each
+system's drops from English (5 on the full sets; 1 on the sample, so Holm changes nothing) and
+SVM's drop minus each other member's (4 per condition). Zero-shot vs trained members are
+tested on the sample ([below](#zero-shot-sample)); other member-vs-member comparisons,
+including drop differences outside the SVM-minus-member family (two members other than SVM,
+noisy TR, votes), are point estimates.
 
 ## Results
 
@@ -212,6 +230,14 @@ Micro-F1 lost from English test (paired bootstrap, 95% interval, Holm):
 | `svm` | 0.070 [0.064, 0.075] | 0.050 [0.046, 0.055] | 0.078 [0.072, 0.084] | 0.126 [0.119, 0.133] |
 | `hybrid_knn` | 0.011 [0.007, 0.016] | 0.009 [0.005, 0.014] | 0.019 [0.015, 0.023] | 0.026 [0.021, 0.031] |
 | `transformer` | 0.008 [0.003, 0.013] | 0.003 [-0.001, 0.007], not significant | 0.044 [0.039, 0.049] | 0.053 [0.047, 0.059] |
+| `bilstm` | 0.018 [0.012, 0.024] | 0.005 [0.001, 0.010] | 0.048 [0.042, 0.054] | 0.070 [0.063, 0.077] |
+| `naive_bayes` | 0.002 [-0.002, 0.007], not significant | -0.002 [-0.005, 0.000], not significant | 0.016 [0.011, 0.021] | 0.027 [0.021, 0.034] |
+
+SVM's drop minus each other member's drop is above 0 on TR, both code-switch tracks and noisy
+EN: 16 differences from 0.030 [0.023, 0.038] (BiLSTM, noisy EN) to 0.067 [0.061, 0.074]
+(Naive Bayes, TR), each with Holm p 0.0008, the smallest that four tests over 10,000 resamples
+can give (`results/metrics/cordis_v1.1.0_ensemble/robustness.json`; noisy TR is not in this
+test).
 
 ### Zero-shot sample
 
@@ -242,17 +268,23 @@ sample, so sample macro-F1 (at most 224/473 = 0.474) is not comparable to the fu
 - A calibrated linear SVM is the most accurate member on every set, and none of the tested
   votes beats it: the best ensemble (weighted soft) is 0.036 [0.031, 0.040] micro-F1 below
   it on English.
-- Among the members, the most accurate loses the most micro-F1 (point estimates; differences
-  between systems' drops are not tested): SVM drops 0.070 on Turkish and 0.078 on noisy
-  English, while the multilingual retrieval member (`hybrid_knn`) drops 0.011 and 0.019, and
-  XLM-R's code-switch drop is not significant. Relative to its English score,
-  SVM's noisy-English drop (14.0%) is smaller than BiLSTM's (16.6%) and XLM-R's (17.9%).
+- SVM, the most accurate member, also loses the most micro-F1: its drop exceeds each other
+  member's on TR, both code-switch tracks and noisy EN (tested, Holm p 0.0008 each). On
+  Turkish it drops 0.070 and the multilingual retrieval member (`hybrid_knn`) 0.011, a
+  difference of 0.059 [0.052, 0.065]. `hybrid_knn` does not drop least: on Turkish, Naive
+  Bayes (0.002 [-0.002, 0.007], not significant) and XLM-R (0.008 [0.003, 0.013]) drop less,
+  as do BiLSTM, XLM-R and Naive Bayes on both code-switch tracks and Naive Bayes on noisy
+  English, all from much lower English scores; these differences are not tested. Relative to
+  its English score, SVM's noisy-English drop (14.0%) is smaller than BiLSTM's (16.6%) and
+  XLM-R's (17.9%).
 - Jev (not fine-tuned on CORDIS by the team; whether the provider's training data included
-  CORDIS is unknown) is statistically indistinguishable on the English sample from XLM-R
-  (+0.012 [-0.033, +0.058]), Naive Bayes (-0.020 [-0.062, +0.022]) and BiLSTM (-0.021
-  [-0.066, +0.025]), and Kev-0.8B ties XLM-R (+0.000 [-0.046, +0.048]); on Turkish, Jev -
-  XLM-R is +0.037 [-0.006, +0.080] (`results/metrics/cordis_v1.1.0_sample/pairwise.json`).
-  Jev shows no detectable EN -> TR drop (Holm p 0.85); Kev drops 0.045 on Turkish.
+  CORDIS is unknown) cannot be separated on the English sample from XLM-R (+0.012 [-0.033,
+  +0.058]), Naive Bayes (-0.020 [-0.062, +0.022]) or BiLSTM (-0.021 [-0.066, +0.025]). No
+  statistically detectable micro-F1 difference was found between Kev and XLM-R on this sample
+  (+0.000 [-0.046, +0.048]); on Turkish, Jev - XLM-R is +0.037 [-0.006, +0.080]
+  (`results/metrics/cordis_v1.1.0_sample/pairwise.json`); these results do not establish
+  equivalence. Jev shows no detectable EN -> TR drop (Holm p 0.85), which does not prove
+  invariance; Kev drops 0.045 on Turkish.
 - Laya, used without CORDIS fine-tuning, scores only 0.068 English / 0.046 Turkish on the
   sample (non-voting; its threshold 0.98, tuned on 32 val-A pairs, is the top of the
   0.02-0.98 grid in `src/naltra/evaluation/offline.py`): a negative result for this
@@ -291,13 +323,21 @@ Full test sets, tuned thresholds, point estimates without intervals
   and an AI-assisted rating of 100 sampled projects (meaning preserved: 83 yes, 17 partial, 0
   no; reviewer model and prompt not recorded; 18 rows show Turkish that no release ships)
   ([dataset specification section 8](docs/dataset.md#8-translation-pipeline--turkish-derivation)).
+- **MT truncation and repetition.** Automatic screens flag 180 of the 31,407 TR records
+  (0.57%; 31 in test) with a possibly truncated sentence (an aligned English sentence over 80
+  characters whose Turkish keeps under 40% of its characters) and 48 (0.15%; 6 in test) with a
+  possible repetition (a word n-gram, n >= 4, immediately repeated, the doubled sequence absent
+  from the English); they are candidates, not confirmed errors, and their effect on scores is
+  not measured (`results/metrics/translation_checks.json`,
+  [dataset card](data/README.md#known-issues), item 7).
 - **Label roll-up.** `labels_direct` keeps only codes with >= 50 supporting projects;
   sub-threshold codes are dropped, not rolled up to their nearest supported ancestor. 8,128
-  of 31,407 retained projects lose at least one directly assigned code (9,909 codes), and
-  1,039 of 4,711 test projects' label closures miss 2,375 CORDIS-implied nodes (327 miss a
-  whole root). Scored against the complete CORDIS closure, hierarchical F1 changes by at most
-  0.007 (SVM 0.668 -> 0.662) and no model ranking changes
-  (`results/metrics/label_coverage.json`).
+  of 31,407 retained projects lose at least one directly assigned code (9,909 codes). Within
+  the active 586-node taxonomy, 1,039 of 4,711 test projects lack 2,375 CORDIS-implied nodes
+  (327 miss a whole root). Restoring those active nodes changes hierarchical F1 by at most
+  0.007 (SVM 0.668 -> 0.662) and no model ranking; full unpruned-tree performance was not
+  evaluated. Counting the code paths the taxonomy pruned as well, 1,231 test projects lack
+  3,744 (counted, not scored; `results/metrics/label_coverage.json`).
 - **OOD scope.** One held-out root (humanities: 94 OOD vs 4,351 in-domain test projects),
   only `naive_bayes` and `svm` retrained, no far-OOD set; the 266 test projects with both
   humanities and other labels are excluded as ambiguous, so mixed-domain projects are untested.
@@ -326,9 +366,10 @@ Full test sets, tuned thresholds, point estimates without intervals
   loss still falling (0.0382 to 0.0345), and BiLSTM learns its embeddings from scratch. The
   neural-vs-classical gap is therefore about budget, not architecture. The `xlm-roberta-base`
   revision was not recorded; the fine-tuned weights are in the artifact.
-- **Sample-only members.** Kev, Jev and Laya run only on the 80 validation and 120 test pairs,
-  which resolve micro-F1 differences of about 0.045: in English, Jev and Kev cannot be
-  separated from XLM-R, BiLSTM or Naive Bayes, while on Turkish Kev is below Naive Bayes
+- **Sample-only members.** Kev, Jev and Laya run only on the 80 validation and 120 test pairs.
+  Observed pairwise micro-F1 intervals have average half-widths of about 0.043 EN and 0.041
+  TR; small differences remain uncertain. In English, Jev and Kev cannot be separated from
+  XLM-R, BiLSTM or Naive Bayes, while on Turkish Kev is below Naive Bayes
   (-0.078 [-0.115, -0.041], Holm p 0.003) and BiLSTM (-0.058 [-0.099, -0.015], Holm p 0.045),
   and Laya is below every trained member in both languages
   (`results/metrics/cordis_v1.1.0_sample/pairwise.json`). Jev's `jev-latest` is a hosted
@@ -366,7 +407,8 @@ The NB/SVM equality below was checked with the tested pins.
 `ood/cordis_v1.1.0/summary.json`, `benchmarks/cordis_v1.1.0/benchmark_summary.{json,md}` and
 `metrics/translation_exceptions.json` (`evaluate_ensemble.py` records the code commit,
 environment and bootstrap seed in each `summary.json`), plus the `label_coverage.json`,
-sample `pairwise.json` and `error_analysis.json` of `scripts/extra_analyses.py`. Prediction
+sample `pairwise.json`, `error_analysis.json`, `robustness.json` and
+`translation_checks.json` of `scripts/extra_analyses.py`. Prediction
 dumps and models stay local (too large). From a clone, the NB and SVM rows, their intervals
 and the NB/SVM near-OOD results can be regenerated on CPU (about 1.5 GB of data, models and
 results besides the virtual environment); every other table can be checked against the
@@ -416,7 +458,7 @@ summary, the results page and the extra analyses:
 ```bash
 python scripts/evaluate_ensemble.py --predictions results/predictions/cordis_v1.1.0 --members svm hybrid_knn bilstm transformer --baselines naive_bayes --tune-sets en_validation tr_validation --test-sets en_test tr_test cs_chunk_test cs_sentence_test en_test_noisy=data/noisy/combined/medium/cordis_h2020/en/test.jsonl tr_test_noisy=data/noisy/combined/medium/cordis_h2020/tr/test.jsonl --output-dir results/metrics/cordis_v1.1.0_ensemble
 python scripts/build_dashboard.py --summary results/metrics/cordis_v1.1.0_ensemble/summary.json --sample-summary results/metrics/cordis_v1.1.0_sample/summary.json --predictions results/predictions/cordis_v1.1.0 --test-sets en_test tr_test cs_chunk_test cs_sentence_test en_test_noisy=data/noisy/combined/medium/cordis_h2020/en/test.jsonl tr_test_noisy=data/noisy/combined/medium/cordis_h2020/tr/test.jsonl --latency results/benchmarks/cordis_v1.1.0/benchmark_summary.json --ood results/ood/cordis_v1.1.0/summary.json --output docs/results/index.html
-python scripts/extra_analyses.py   # label_coverage.json, sample pairwise.json, error_analysis.json
+python scripts/extra_analyses.py   # all five analyses; outputs in the Scripts table below
 ```
 
 | Member or step | Needs beyond a CPU clone |
@@ -456,7 +498,7 @@ python scripts/extra_analyses.py   # label_coverage.json, sample pairwise.json, 
 | `scripts/` | Command-line entry points (next section) |
 | `tests/` | Pytest suite on small fixtures (41 files: data and audits, models, evaluation and votes, scripts, results page) |
 | `models/` | Trained artifacts, `<run>/<dataset>/<track>/<family>/` (ignored) |
-| `results/` | Committed metric, OOD, benchmark and translation-exception summaries (see [Reproduce](#reproduce)); prediction dumps, plots and OOD models are generated locally (ignored) |
+| `results/` | Committed metric, OOD, benchmark, translation-exception and translation-check summaries (see [Reproduce](#reproduce)); prediction dumps, plots and OOD models are generated locally (ignored) |
 | `docs/` | [Runbook](docs/runbook.md) (commands, hardware, Kev server), [dataset specification](docs/dataset.md) (the dataset card is [data/README.md](data/README.md)), [taxonomy](docs/taxonomy.md), [architecture](docs/architecture.md) (prediction contract, pipeline), [core ML](docs/core_ml.md) (training, artifacts, service adapters, local Laya), [evaluation](docs/evaluation.md) (metric choice, baselines vs new methods, code-switch evaluation), [team ownership](docs/team_ownership.md) |
 | `docs/results/` | The built interactive results page (`index.html`) |
 
@@ -484,7 +526,7 @@ All 17 scripts in `scripts/`, run from the repository root:
 | `evaluate_ensemble.py` | Score matrices -> tuned thresholds, member and ensemble metrics, bootstrap tests in `results/metrics/<run>/summary.{json,md}` |
 | `evaluate_all.py` | The teammates' direct BiLSTM/XLM-R/Laya evaluator with `--resume`; it runs the full validator, so it needs a release rebuilt from the raw archive, and no reported number comes from it |
 | `translation_exceptions.py` | Summary + dumps + a `--prebuilt-release` artifact -> the projects the prebuilt audit flagged (0 on 1.1.0) and scores with and without them, `results/metrics/translation_exceptions.json` |
-| `extra_analyses.py` | Committed data + local prediction dumps (`coverage`, `pairwise`, `errors`; default all) -> label coverage against the full CORDIS closure (`results/metrics/label_coverage.json`), sample member pairs (`results/metrics/cordis_v1.1.0_sample/pairwise.json`) and `results/metrics/cordis_v1.1.0_ensemble/error_analysis.json` |
+| `extra_analyses.py` | Committed data + local prediction dumps (`coverage`, `pairwise`, `errors`, `drops`, `translation`; default all) -> label coverage against the CORDIS closure within the active 586-node taxonomy, plus unpruned code-path counts (`results/metrics/label_coverage.json`), sample member pairs (`results/metrics/cordis_v1.1.0_sample/pairwise.json`), `results/metrics/cordis_v1.1.0_ensemble/error_analysis.json`, each member's EN micro-F1 drop on TR, code-switch and noisy EN with SVM's drop minus each other member's (paired bootstrap, Holm; `results/metrics/cordis_v1.1.0_ensemble/robustness.json`) and, from the TR splits alone, the truncation and repetition screens (`results/metrics/translation_checks.json`) |
 | `make_figures.py` | Summary + score matrices -> paper figures `results/plots/<run>/*.png` |
 | `run_benchmark.py` | Artifacts -> latency, throughput and size in `results/benchmarks/<run>/benchmark_summary.*` |
 | `run_ood.py` | Splits -> retrains NB/SVM without one root (default humanities), near-OOD AUROC and FPR@95%TPR in `<output-dir>/summary.json` (reported: `results/ood/cordis_v1.1.0`); refuses an existing `--output-dir` unless it holds an earlier `run_ood.py` output or `--overwrite` is given, and always refuses one that overlaps `--data-dir` or the repository root |
@@ -506,6 +548,8 @@ models are downloaded at their pinned revisions, not redistributed:
 | `jaredpalmer/kev-0.8b` @ `bf75a6a8` on `Qwen/Qwen3.5-0.8B-Base` | `kev` | Apache-2.0 |
 | TypeSafe `jev-latest` (hosted API) | `jev` | the provider's terms of service |
 
+- Chalkidis, I. et al. (2019). Large-scale multi-label text classification on EU legislation. ACL.
+- Chalkidis, I., Fergadiotis, M. and Androutsopoulos, I. (2021). MultiEURLEX - A multi-lingual and multi-label legal document classification dataset for zero-shot cross-lingual transfer. EMNLP.
 - Conneau, A. et al. (2020). Unsupervised cross-lingual representation learning at scale. ACL.
 - Cormack, G. V., Clarke, C. L. A. and Buettcher, S. (2009). Reciprocal rank fusion outperforms Condorcet and individual rank learning methods. SIGIR.
 - Holm, S. (1979). A simple sequentially rejective multiple test procedure. Scandinavian Journal of Statistics 6(2), 65-70.

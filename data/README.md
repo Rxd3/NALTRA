@@ -74,11 +74,13 @@ print(sum(len(r["sentence_alignment"]) for r in tr),  # aligned sentence pairs
 2. **Rare codes dropped, not rolled up.** `labels_direct` keeps only codes with >= 50
    supporting projects (so does `source_label_ids`); sub-threshold codes are dropped, not
    rolled up to their nearest supported ancestor. 8,128 of the 31,407 retained projects lose
-   at least one directly assigned code (9,909 codes in total); 1,039 of the 4,711 test
-   projects' label closures miss 2,375 CORDIS-implied nodes, and 327 test projects miss a
-   whole root. Scored against the complete CORDIS closure, hierarchical F1 changes by at most
-   0.007 (SVM 0.668 -> 0.662) and no model ranking changes
-   (`results/metrics/label_coverage.json`, from `scripts/extra_analyses.py`).
+   at least one directly assigned code (9,909 codes in total). Within the active 586-node
+   taxonomy, 1,039 of the 4,711 test projects lack 2,375 CORDIS-implied nodes, and 327 test
+   projects miss a whole root. Restoring those active nodes changes hierarchical F1 by at most
+   0.007 (SVM 0.668 -> 0.662) and no model ranking; full unpruned-tree performance was not
+   evaluated. Counting the code paths the taxonomy pruned as well, 1,231 test projects lack
+   3,744 (counted, not scored; `results/metrics/label_coverage.json`, from
+   `scripts/extra_analyses.py`).
 3. **Label universe uses test projects.** The >= 50 threshold counts every project in the
    archive, test projects included ([README](../README.md#limitations)).
 4. **Near-OOD and dropped codes.** The held-out-root split looks at supported labels only, so
@@ -96,26 +98,37 @@ print(sum(len(r["sentence_alignment"]) for r in tr),  # aligned sentence pairs
    whether the output is Turkish. A one-off screen (snippet above) finds Turkish-specific
    letters in all 31,407 TR records, U+FFFD in none, and no record equal to its English
    source. TR titles stay English; the models read only `text`.
-7. **TR 1.1.0 cannot be rebuilt.** It is the 1.0.0 import with 598 records re-translated in
+7. **Possible truncations and repetitions in TR.** Two automatic screens of the TR splits
+   (`python scripts/extra_analyses.py translation`, `results/metrics/translation_checks.json`)
+   flag candidates the structural QA (item 6; its length ratio is per document) does not
+   catch. *Possible truncation*: at least one
+   `sentence_alignment` pair whose English sentence is longer than 80 characters and whose
+   Turkish sentence has fewer than 40% of its characters; 180 of 31,407 records (0.57%: 117
+   train, 32 validation, 31 test, e.g. test project 640771). *Possible repetition*: the
+   lowercased `\w+` words of the TR text hold a word n-gram (n >= 4) immediately followed by
+   itself, and that doubled sequence does not occur in the paired English text; 48 records
+   (0.15%: 37 train, 5 validation, 6 test). Flags are candidates, not confirmed errors; the
+   released text is unchanged, and their effect on scores is not measured.
+8. **TR 1.1.0 cannot be rebuilt.** It is the 1.0.0 import with 598 records re-translated in
    128-token chunks by a repair script that is not in the repository; the committed scripts
    build a different TR release. The prebuilt audit tolerates 15,434 segmenter-drift records
    ([details](../docs/dataset.md#shipped-turkish-release-110)).
-8. **Cleaning loss.** The HTML-tag pattern also deletes `<…>` comparison spans in 62 retained
+9. **Cleaning loss.** The HTML-tag pattern also deletes `<…>` comparison spans in 62 retained
    projects (17,290 characters); labels are unaffected
    ([details](../docs/dataset.md#known-limitation-angle-bracket-comparisons)).
-9. **Noisy track is generated, not shipped.** `scripts/prepare_data.py --dataset noisy`
-   (`combined`, severity medium = 0.10, seed 42) gives each document one main edit type, so
-   corruption is bimodal: a mean of 32.5% (EN) and 37.3% (TR) of space-separated tokens
-   change, but about 31% of documents have under 15% changed
-   ([parameters](../docs/dataset.md#10-noisy-test-track-generated-not-shipped)).
-10. **Synthetic, inter-sentential code-switching.** Both tracks switch at sentence
+10. **Noisy track is generated, not shipped.** `scripts/prepare_data.py --dataset noisy`
+    (`combined`, severity medium = 0.10, seed 42) gives each document one main edit type, so
+    corruption is bimodal: a mean of 32.5% (EN) and 37.3% (TR) of space-separated tokens
+    change, but about 31% of documents have under 15% changed
+    ([parameters](../docs/dataset.md#10-noisy-test-track-generated-not-shipped)).
+11. **Synthetic, inter-sentential code-switching.** Both tracks switch at sentence
     boundaries or document halves; switching inside a sentence occurs only in the 11
     single-sentence documents per track, so it is not covered.
-11. **Near-duplicates.** Split grouping catches only identical objectives; near-identical
+12. **Near-duplicates.** Split grouping catches only identical objectives; near-identical
     ones can cross splits ([README](../README.md#limitations)).
-12. **Domain skew.** 67.8% of projects carry a natural-sciences label and 41.2% an
+13. **Domain skew.** 67.8% of projects carry a natural-sciences label and 41.2% an
     engineering one, against 7.6% humanities and 6.6% agricultural sciences.
-13. **Historical figures.** The 1.0.0 translation runtime, sentence statistics and
+14. **Historical figures.** The 1.0.0 translation runtime, sentence statistics and
     before-hardening audit come from runs whose logs were not kept; they cannot be recomputed.
 
 ## What Git tracks
@@ -211,7 +224,7 @@ silently.
 
 A rebuild reproduces EN from the raw archive with the committed scripts, and the derived
 tracks from the EN/TR release they are built on; it does not reproduce TR 1.1.0 (Known
-issues, item 7), so a rebuilt TR needs a new release version. Do not commit decompressed
+issues, item 8), so a rebuilt TR needs a new release version. Do not commit decompressed
 `.jsonl` files, extracted CSVs, translation caches, or model weights.
 
 ## Versioning and maintenance

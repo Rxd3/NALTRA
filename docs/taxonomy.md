@@ -36,7 +36,8 @@ The six top-level scientific root domains (Depth 1) are:
 
 The Horizon 2020 release assigns 1,053 distinct EuroSciVoc categories directly to 32,210 projects, with a long tail of rare categories (88 of them have fewer than 5 projects).
 
-To ensure statistical significance and balanced stratified partitioning across splits:
+The support threshold improves label coverage; the shipped full splits have minima of 34/6/6 examples per retained direct label in train/validation/test.
+
 - A minimum direct-label support threshold of **50 projects** is applied.
 - 473 directly supported categories satisfy this threshold.
 - All **225 required ancestors** are propagated upward to the OECD roots; 112 of them are direct labels already, so 113 are added.
