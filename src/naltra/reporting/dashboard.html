@@ -85,7 +85,7 @@ footer { color: var(--ink-3); font-size: 12px; }
   <header>
     <div class="eyebrow">NLP course research project</div>
     <h1>NALTRA Results</h1>
-    <p id="lede">Multilingual hierarchical multi-label classification of EU research projects (CORDIS Horizon 2020) into the EuroSciVoc science taxonomy under cross-lingual, code-switched and noisy input shift, with near-OOD rejection.</p>
+    <p id="lede">Multilingual hierarchical multi-label classification of EU research projects (CORDIS Horizon 2020) into the EuroSciVoc science taxonomy under machine-translated (EN→TR), code-switched and noisy input shift, with near-OOD rejection.</p>
     <div class="facts" id="facts"></div>
   </header>
   <div class="notice" id="pending" hidden></div>
@@ -480,7 +480,7 @@ function staticSections() {
   if (DATA.significance) document.getElementById("sig-sub").textContent =
     `Paired project bootstrap, ${DATA.significance.resamples.toLocaleString()} resamples, 95% intervals. A dot is red for a significant drop and green for a significant gain (Holm-corrected p < ${ALPHA}), grey when the corrected difference is not significant. Left: how much a system changes from ${setName(ref)} on each other condition. Right: each ensemble against the best single member, ${sysName(best)}.`;
   if (DATA.ood) {
-    document.getElementById("ood-sub").textContent = `Projects whose only root is ${DATA.ood.heldout_root} were removed from training; they are scored against ${DATA.ood.counts.en_test_id ?? ""} in-domain test projects. Score: 1 − max label probability.`;
+    document.getElementById("ood-sub").textContent = `Every project with a supported ${DATA.ood.heldout_root} label was removed from training and validation; the ${DATA.ood.counts.en_test_ood ?? ""} ${DATA.ood.heldout_root}-only test projects per language are scored against ${DATA.ood.counts.en_test_id ?? ""} in-domain ones (${DATA.ood.counts.en_test_mixed_excluded ?? ""} mixed projects excluded). Score: 1 − max label probability.`;
     const rows = Object.entries(DATA.ood.results).flatMap(([s, r]) => Object.entries(r).filter(([k]) => k !== "trained_labels").map(([lang, v]) => ({s, lang, ...v})));
     const interval = r => r.auroc_ci_low == null || r.auroc_ci_high == null ? "–" : `[${fmt(r.auroc_ci_low)}, ${fmt(r.auroc_ci_high)}]`;
     table(document.getElementById("ood-table"), [{label: "System", value: r => sysName(r.s)}, {label: "Language", value: r => r.lang.toUpperCase()},

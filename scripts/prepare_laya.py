@@ -1,7 +1,7 @@
 """Build the portable local Laya artifact from the pinned checkpoint in configs/models/laya.yaml.
 
 Laya is scored zero-shot, so there is nothing to train: the artifact holds the pinned
-checkpoint files, the 473 topic questions and their SHA-256 values, and `predict_all.py`
+checkpoint files, the 473 label questions and their SHA-256 values, and `predict_all.py`
 loads it like any trained member. Downloads the checkpoint once (about 680 MB).
 """
 

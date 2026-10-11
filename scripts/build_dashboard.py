@@ -53,8 +53,8 @@ NOTES = [
     "Intervals come from a paired bootstrap over projects with Holm correction per family of "
     "comparisons; p-values use an add-one correction, so the smallest reportable p is "
     "2 / (resamples + 1).",
-    "Labels are CORDIS's semi-automatic assignments (silver standard) and the Turkish text is "
-    "machine-translated without human validation.",
+    "Labels are silver labels (CORDIS does not document how they are assigned) and the "
+    "Turkish text is machine-translated without human validation.",
 ]
 
 
