@@ -1,14 +1,21 @@
 """Label coverage, zero-shot member pairs and error analysis behind the README results.
 
 coverage  results/metrics/label_coverage.json: CORDIS codes the >= 50-project support filter
-          drops without roll-up, and hierarchical F1 against the complete CORDIS closure.
+          drops without roll-up, and hierarchical F1 against the CORDIS closure within the
+          active 586-node taxonomy (full unpruned-tree performance is not evaluated).
 pairwise  results/metrics/cordis_v1.1.0_sample/pairwise.json: zero-shot vs trained members on
           the 120-pair sample (paired project bootstrap, Holm-adjusted within each language).
 errors    results/metrics/cordis_v1.1.0_ensemble/error_analysis.json: micro-F1 by EuroSciVoc
           root, training label frequency and gold labels per project, plus the top errors.
+drops     results/metrics/cordis_v1.1.0_ensemble/robustness.json: each member's EN micro-F1
+          drop under TR, code-switch and noisy EN input, and SVM's drop minus each other
+          member's (paired project bootstrap, Holm-adjusted within each condition).
+translation  results/metrics/translation_checks.json: TR records with a possibly truncated
+          aligned sentence or a repeated word n-gram the EN source lacks (data only).
 
 CPU only. Reads the committed archive (in memory), taxonomy and splits, and the local dumps of
 scripts/predict_all.py, which must be the ones whose hashes the committed summaries recorded.
+Every output of one run records the code commit taken before the first file is written.
 """
 
 from __future__ import annotations
@@ -18,10 +25,12 @@ import csv
 import hashlib
 import io
 import json
+import math
+import re
 import sys
 import zipfile
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -42,22 +51,28 @@ from naltra.data.manifest import (  # noqa: E402
     get_environment_metadata,
     get_source_config,
 )
-from naltra.evaluation.bootstrap import SEED, paired_bootstrap  # noqa: E402
+from naltra.evaluation.bootstrap import (  # noqa: E402
+    SEED,
+    f1_scores,
+    holm,
+    paired_bootstrap,
+    resample_counts,
+)
 from naltra.evaluation.matrix import binarize, flat_metrics  # noqa: E402
 from naltra.utils.provenance import commit, repo_path  # noqa: E402
 
 ARCHIVE = REPO_ROOT / "data/raw/cordis_h2020/cordis-h2020projects-csv.zip"
 TAXONOMY = REPO_ROOT / "taxonomy/taxonomy.json"
-SPLITS = {
-    split: REPO_ROOT / f"data/processed/cordis_h2020/en/{split}.jsonl"
-    for split in ("train", "validation", "test")
-}
+PROCESSED = REPO_ROOT / "data/processed/cordis_h2020"
+SPLITS = {split: PROCESSED / f"en/{split}.jsonl" for split in ("train", "validation", "test")}
 ENSEMBLE = REPO_ROOT / "results/metrics/cordis_v1.1.0_ensemble"
 SAMPLE = REPO_ROOT / "results/metrics/cordis_v1.1.0_sample"
 OUTPUTS = {
     "coverage": REPO_ROOT / "results/metrics/label_coverage.json",
     "pairwise": SAMPLE / "pairwise.json",
     "errors": ENSEMBLE / "error_analysis.json",
+    "drops": ENSEMBLE / "robustness.json",
+    "translation": REPO_ROOT / "results/metrics/translation_checks.json",
 }
 FULL_TEST = ("en_test", "tr_test")
 ZERO_SHOT = ("jev", "kev", "laya")
@@ -67,6 +82,16 @@ ERROR_SYSTEMS = ("svm", "hybrid_knn")
 FREQUENCY_EDGES = (70, 200)
 FREQUENCY_BUCKETS = ("tail_lt70", "mid_70_199", "head_ge200")
 TOP_ERRORS = 10
+REFERENCE_SET = "en_test"
+DROP_CONDITIONS = ("tr_test", "cs_sentence_test", "cs_chunk_test", "en_test_noisy")
+DROP_MEMBERS = ("svm", "hybrid_knn", "bilstm", "transformer", "naive_bayes")  # svm first
+# The point drops recompute the committed cross_condition differences with the same code.
+TOLERANCE = 1e-6
+TRUNCATION_MIN_EN = 80  # characters
+TRUNCATION_RATIO = 0.4
+REPEAT_MIN_N = 4  # words
+EXAMPLES = 5
+WORD = re.compile(r"\w+")
 DECIMALS = 4
 
 
@@ -124,7 +149,7 @@ def code_prefixes(code: str) -> list[str]:
 
 
 def implied_nodes(codes: Iterable[str], tree: Tree) -> set[str]:
-    """The complete CORDIS closure: every tree node on the code path of an assigned code."""
+    """The CORDIS closure within the active tree: its nodes on assigned code paths."""
     return {
         tree.node_by_code[prefix]
         for code in codes
@@ -142,12 +167,20 @@ def nearest_supported(code: str, tree: Tree) -> str | None:
 
 
 def coverage_counts(records: Iterable[dict], codes: Mapping[str, set[str]], tree: Tree) -> dict:
-    """How far the stored labels of retained projects fall short of what CORDIS assigns."""
+    """How far the stored labels of retained projects fall short of what CORDIS assigns.
+
+    The node counts stay within the active tree; the unpruned path counts also include code
+    paths the tree pruned (counted only, never scored).
+    """
+    code_of = {node: code for code, node in tree.node_by_code.items()}
     counts: Counter[str] = Counter()
     for record in records:
         assigned = codes.get(record["project_id"], set())
         dropped = assigned - tree.supported
         missing = implied_nodes(assigned, tree) - set(record["labels"])
+        unpruned = {prefix for code in assigned for prefix in code_prefixes(code)} - {
+            code_of[node] for node in record["labels"]
+        }
         roots = {node for node in missing if tree.parents[node] is None}
         rolled = {nearest_supported(code, tree) for code in dropped}
         counts["projects"] += 1
@@ -160,6 +193,8 @@ def coverage_counts(records: Iterable[dict], codes: Mapping[str, set[str]], tree
         counts["nodes_missing"] += len(missing)
         counts["projects_missing_root"] += bool(roots)
         counts["roots_missing"] += len(roots)
+        counts["closures_missing_unpruned_paths"] += bool(unpruned)
+        counts["unpruned_paths_missing"] += len(unpruned)
     return dict(counts)
 
 
@@ -198,7 +233,8 @@ def hierarchical(gold: np.ndarray, closed: np.ndarray, which: str) -> dict[str, 
 def closure_effect(
     predictions: Path, summary: dict, codes: Mapping[str, set[str]], tree: Tree
 ) -> dict:
-    """Hierarchical micro-F1 of each member against the stored and the complete gold closure.
+    """Hierarchical micro-F1 of each member against the stored gold closure and the CORDIS
+    closure within the active tree.
 
     Needs every member's dumps, so a run without them fails instead of writing nulls.
     """
@@ -242,8 +278,8 @@ def closure_summary(systems: Mapping[str, Mapping[str, float]]) -> dict[str, Any
 
 
 def provenance(inputs: Iterable[Path]) -> dict[str, Any]:
+    """Environment and input hashes; main puts the run's code_commit in front."""
     return {
-        "code_commit": commit(),
         "environment": get_environment_metadata(),
         "inputs": {repo_path(path): compute_file_sha256(path) for path in inputs},
     }
@@ -265,8 +301,12 @@ def label_coverage(predictions: Path) -> dict[str, Any]:
             "codes_lost": "assigned codes below the 50-project support, dropped, not rolled up",
             "projects_rollup_would_add_label": "a dropped code's nearest supported ancestor "
             "is not in labels_direct",
-            "nodes_missing": "tree nodes on assigned code paths that the stored closure lacks",
-            "complete": "gold closure of every assigned code, as CORDIS implies it",
+            "nodes_missing": "nodes of the active 586-node taxonomy on assigned code paths "
+            "that the stored closure lacks",
+            "unpruned_paths_missing": "code paths of assigned codes, in the active taxonomy or "
+            "pruned from it, that the stored closure lacks (counted, not scored)",
+            "complete": "gold closure of every assigned code within the active 586-node "
+            "taxonomy, as CORDIS implies it; full unpruned-tree performance was not evaluated",
         },
         "counts": per_split,
         "hierarchical_micro_f1": effect,
@@ -404,6 +444,179 @@ def error_analysis(predictions: Path) -> dict[str, Any]:
     }
 
 
+def interval(point: float, resampled: np.ndarray, resamples: int) -> dict[str, float]:
+    """A difference with its 95% percentile interval and p-value, as paired_bootstrap gives."""
+    low, high = np.percentile(resampled, [2.5, 97.5])
+    tail = min(np.sum(resampled <= 0), np.sum(resampled >= 0))
+    return {
+        "difference": point,
+        "ci_low": float(low),
+        "ci_high": float(high),
+        "p_value": float(min(1.0, 2 * (1 + tail) / (1 + resamples))),
+        "p_resolution": 2 / (1 + resamples),
+    }
+
+
+def drop_tests(reference: dict, condition: dict, resamples: int) -> dict[str, Any]:
+    """Each member's micro-F1 drop from ``reference`` to ``condition`` and drop(svm) - drop(x).
+
+    Rows are paired by pair_id. Like the committed cross_condition tests, whole projects are
+    resampled with the bootstrap seed, and one set of weights serves both sets and all members.
+    """
+    pairs = [row["pair_id"] for row in condition["rows"]]
+    index = {row["pair_id"]: i for i, row in enumerate(reference["rows"])}
+    if not (len(index) == len(reference["rows"]) == len(pairs) and set(pairs) == set(index)):
+        raise ValueError("The reference and condition sets must hold the same projects once.")
+    order = [index[pair] for pair in pairs]
+    _, member = np.unique(np.asarray(pairs), return_inverse=True)
+    weights = resample_counts(len(pairs), resamples, SEED)[:, member.ravel()]
+    unit = np.ones((1, len(pairs)), dtype=np.float32)
+    member_drops, resampled = {}, {}
+    for family in DROP_MEMBERS:
+        sides = (
+            (reference["truth"][order], reference["selected"][family][order]),
+            (condition["truth"], condition["selected"][family]),
+        )
+        (point_a, point_b), (boot_a, boot_b) = (
+            [f1_scores(w, truth, chosen)[0] for truth, chosen in sides] for w in (unit, weights)
+        )
+        resampled[family] = boot_a - boot_b
+        member_drops[family] = {"reference": float(point_a[0]), "condition": float(point_b[0])}
+        member_drops[family] |= interval(
+            float(point_a[0] - point_b[0]), resampled[family], resamples
+        )
+    first, *others = DROP_MEMBERS
+    tests = {
+        f"{first}-{other}": interval(
+            member_drops[first]["difference"] - member_drops[other]["difference"],
+            resampled[first] - resampled[other],
+            resamples,
+        )
+        for other in others
+    }
+    adjusted = holm({name: test["p_value"] for name, test in tests.items()})
+    for name, test in tests.items():
+        test["p_holm"] = adjusted[name]
+    return {"projects": len(pairs), "drops": member_drops, "drop_differences": tests}
+
+
+def drops(predictions: Path, resamples: int) -> dict[str, Any]:
+    summary = read_summary(ENSEMBLE)
+    cross = summary["significance"]["cross_condition"]
+    base = load_checked(predictions, ENSEMBLE, summary, DROP_MEMBERS, REFERENCE_SET)
+    conditions = {}
+    for name in DROP_CONDITIONS:
+        data = load_checked(predictions, ENSEMBLE, summary, DROP_MEMBERS, name)
+        result = drop_tests(base, data, resamples)
+        key = f"{REFERENCE_SET}->{name}"
+        for family, drop in result["drops"].items():
+            committed = cross[family][key]["micro_f1"]["difference"]
+            if not math.isclose(drop["difference"], committed, rel_tol=0, abs_tol=TOLERANCE):
+                raise ValueError(
+                    f"{family} {key}: drop {drop['difference']} is not the committed {committed}."
+                )
+        conditions[name] = result
+    return {
+        **provenance([ENSEMBLE / "summary.json"]),
+        "resamples": resamples,
+        "bootstrap_seed": SEED,
+        "reference_set": REFERENCE_SET,
+        "thresholds": {family: summary["thresholds"][family] for family in DROP_MEMBERS},
+        "definitions": {
+            "drops": f"micro-F1 on {REFERENCE_SET} minus micro-F1 on the condition, same "
+            "projects and thresholds; equals the summary's cross_condition difference",
+            "drop_differences": "svm-x: drop(svm) - drop(x); above 0 means SVM loses more",
+            "intervals": "paired project bootstrap over pair_id (the EN and condition copies "
+            "of a project are resampled together, one draw for all members), 95% percentile "
+            "interval, two-sided p with the add-one correction; p_holm is Holm-adjusted across "
+            "the four drop_differences of one condition",
+        },
+        "conditions": conditions,
+    }
+
+
+def checked_split(language: str, split: str) -> Path:
+    """A processed split, refused unless it is the file its committed manifest locks."""
+    path = PROCESSED / language / f"{split}.jsonl"
+    manifest = json.loads((path.parent / "manifest.json").read_text(encoding="utf-8"))
+    if compute_file_sha256(path) != manifest["output_files"][path.name]["sha256"]:
+        raise ValueError(f"{language}/{path.name} differs from its manifest.")
+    return path
+
+
+def truncated(alignment: Iterable[Mapping[str, str]]) -> bool:
+    """An aligned EN sentence over 80 characters whose TR side keeps under 40% of them."""
+    return any(
+        len(pair["en"]) > TRUNCATION_MIN_EN and len(pair["tr"]) < TRUNCATION_RATIO * len(pair["en"])
+        for pair in alignment
+    )
+
+
+def words(text: str) -> list[str]:
+    return WORD.findall(text.lower())
+
+
+def repeated_spans(tokens: Sequence[str]) -> Iterator[str]:
+    """Every word n-gram (n >= 4) immediately followed by itself, as its 2n words joined."""
+    for n in range(REPEAT_MIN_N, len(tokens) // 2 + 1):
+        run = 0  # consecutive positions j with tokens[j] == tokens[j + n]
+        for j in range(len(tokens) - n):
+            run = run + 1 if tokens[j] == tokens[j + n] else 0
+            if run >= n:
+                yield " ".join(tokens[j - n + 1 : j + n + 1])
+
+
+def mt_repetition(text: str, source: str) -> bool:
+    """A repeated n-gram of the TR text whose doubled form the EN source does not contain."""
+    padded = f" {' '.join(words(source))} "
+    return any(f" {span} " not in padded for span in repeated_spans(words(text)))
+
+
+def flag_rates(flagged: Mapping[str, list[str]], records: int) -> dict[str, Any]:
+    return {"records": records} | {
+        check: {"records": len(ids), "rate": len(ids) / records, "examples": ids[:EXAMPLES]}
+        for check, ids in flagged.items()
+    }
+
+
+def translation_checks() -> dict[str, Any]:
+    splits, inputs, totals = {}, [], Counter()
+    for split in SPLITS:
+        en, tr = checked_split("en", split), checked_split("tr", split)
+        sources = {record["pair_id"]: record["text"] for record in load_jsonl(en)}
+        records = load_jsonl(tr)
+        flagged = {
+            "truncation": [r["id"] for r in records if truncated(r["sentence_alignment"])],
+            "repetition": [
+                r["id"] for r in records if mt_repetition(r["text"], sources[r["pair_id"]])
+            ],
+        }
+        splits[split] = flag_rates(flagged, len(records))
+        totals.update({"records": len(records)} | {k: len(v) for k, v in flagged.items()})
+        inputs += [en, tr]
+    splits["all"] = {"records": totals["records"]} | {
+        check: {"records": totals[check], "rate": totals[check] / totals["records"]}
+        for check in ("truncation", "repetition")
+    }
+    return {
+        **provenance(inputs),
+        "definitions": {
+            "truncation": "a TR record with at least one sentence_alignment pair whose EN "
+            f"sentence is longer than {TRUNCATION_MIN_EN} characters and whose TR sentence has "
+            f"fewer than {TRUNCATION_RATIO:.0%} of its characters (possible truncation)",
+            "repetition": "a TR record whose text, lowercased and split into \\w+ words, holds "
+            f"a word n-gram (n >= {REPEAT_MIN_N}) immediately followed by itself, where that "
+            "doubled 2n-word sequence does not occur in the paired EN split text split the "
+            "same way (possible MT repetition)",
+            "rate": "flagged TR records / TR records in the split",
+            "examples": f"the first {EXAMPLES} flagged TR record ids in file order",
+            "scope": "automatic screens: flagged records are candidates, not confirmed errors, "
+            "and the released text is unchanged",
+        },
+        "splits": splits,
+    }
+
+
 def rounded(value: Any) -> Any:
     if isinstance(value, float):
         return round(value, DECIMALS)
@@ -433,10 +646,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "coverage": lambda: label_coverage(predictions),
         "pairwise": lambda: pairwise(predictions, args.resamples),
         "errors": lambda: error_analysis(predictions),
+        "drops": lambda: drops(predictions, args.resamples),
+        "translation": lambda: translation_checks(),
     }
+    # Once, before any write: a written result would make later outputs record a dirty tree.
+    code_commit = commit()
     for name in dict.fromkeys(args.analyses or sorted(OUTPUTS)):
         try:
-            payload = builders[name]()
+            payload = {"code_commit": code_commit, **builders[name]()}
         except (OSError, ValueError, KeyError) as exc:
             print(json.dumps({"status": "failed", "analysis": name, "error": str(exc)}), flush=True)
             return 1

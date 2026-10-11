@@ -1,5 +1,5 @@
 {
-  "code_commit": "e5ff3df",
+  "code_commit": "bfed360-dirty",
   "environment": {
     "python_version": "3.13.1",
     "platform": "win32",
@@ -24,8 +24,9 @@
   "definitions": {
     "codes_lost": "assigned codes below the 50-project support, dropped, not rolled up",
     "projects_rollup_would_add_label": "a dropped code's nearest supported ancestor is not in labels_direct",
-    "nodes_missing": "tree nodes on assigned code paths that the stored closure lacks",
-    "complete": "gold closure of every assigned code, as CORDIS implies it"
+    "nodes_missing": "nodes of the active 586-node taxonomy on assigned code paths that the stored closure lacks",
+    "unpruned_paths_missing": "code paths of assigned codes, in the active taxonomy or pruned from it, that the stored closure lacks (counted, not scored)",
+    "complete": "gold closure of every assigned code within the active 586-node taxonomy, as CORDIS implies it; full unpruned-tree performance was not evaluated"
   },
   "counts": {
     "train": {
@@ -36,7 +37,9 @@
       "closures_missing_nodes": 4876,
       "nodes_missing": 11399,
       "projects_missing_root": 1560,
-      "roots_missing": 1621
+      "roots_missing": 1621,
+      "closures_missing_unpruned_paths": 5681,
+      "unpruned_paths_missing": 17704
     },
     "validation": {
       "projects": 4711,
@@ -46,7 +49,9 @@
       "closures_missing_nodes": 1026,
       "nodes_missing": 2424,
       "projects_missing_root": 340,
-      "roots_missing": 355
+      "roots_missing": 355,
+      "closures_missing_unpruned_paths": 1201,
+      "unpruned_paths_missing": 3764
     },
     "test": {
       "projects": 4711,
@@ -56,7 +61,9 @@
       "closures_missing_nodes": 1039,
       "nodes_missing": 2375,
       "projects_missing_root": 327,
-      "roots_missing": 337
+      "roots_missing": 337,
+      "closures_missing_unpruned_paths": 1231,
+      "unpruned_paths_missing": 3744
     },
     "all": {
       "projects": 31407,
@@ -66,7 +73,9 @@
       "closures_missing_nodes": 6941,
       "nodes_missing": 16198,
       "projects_missing_root": 2227,
-      "roots_missing": 2313
+      "roots_missing": 2313,
+      "closures_missing_unpruned_paths": 8113,
+      "unpruned_paths_missing": 25212
     }
   },
   "hierarchical_micro_f1": {

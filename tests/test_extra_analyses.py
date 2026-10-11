@@ -1,4 +1,4 @@
-"""Label coverage counting, member-pair bootstrap and error bucketing on tiny fixtures."""
+"""Label coverage, member-pair and drop bootstraps, errors and TR screens on tiny fixtures."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from tests.test_evaluate_ensemble import write_dump, write_set
 
 from naltra.data.loader import save_jsonl
 from naltra.data.manifest import compute_file_sha256
+from naltra.evaluation.bootstrap import paired_bootstrap
 
 # nat (/1) > phys (/1/2) > optics (/1/2/3); soc (/5) > econ (/5/6); roots are unsupported.
 NODES = [
@@ -66,6 +67,8 @@ def test_coverage_counts_dropped_codes_missing_nodes_roots_and_rollups(tmp_path:
 
     counts = extra_analyses.coverage_counts(records, codes, tree)
 
+    # Unpruned: /1/2/9 (project 1) and /5, /5/6, /5/6/7 (project 2) are missing; the two codes
+    # outside the active tree count there only.
     assert counts == {
         "projects": 3,
         "projects_losing_codes": 3,
@@ -75,6 +78,8 @@ def test_coverage_counts_dropped_codes_missing_nodes_roots_and_rollups(tmp_path:
         "nodes_missing": 2,
         "projects_missing_root": 1,
         "roots_missing": 1,
+        "closures_missing_unpruned_paths": 2,
+        "unpruned_paths_missing": 4,
     }
     assert extra_analyses.implied_nodes({"/5/6/7"}, tree) == {"soc", "econ"}
     assert extra_analyses.nearest_supported("/5", tree) is None
@@ -254,3 +259,189 @@ def test_error_analysis_reads_label_support_in_each_sets_own_column_order(
         buckets = result["sets"][name]["label_frequency"]
         assert buckets["tail_lt70"]["gold_positives"] == 3, name
         assert buckets["mid_70_199"]["gold_positives"] == 4, name
+
+
+def test_every_output_records_the_commit_taken_before_the_first_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outputs = {name: tmp_path / f"{name}.json" for name in extra_analyses.OUTPUTS}
+    calls = []
+
+    def described() -> str:
+        calls.append(None)
+        # Like git describe: once a result file is written, the tree is dirty.
+        return "abc1234-dirty" if any(path.exists() for path in outputs.values()) else "abc1234"
+
+    monkeypatch.setattr(extra_analyses, "commit", described)
+    monkeypatch.setattr(extra_analyses, "OUTPUTS", outputs)
+    for builder in ("label_coverage", "pairwise", "error_analysis", "drops", "translation_checks"):
+        monkeypatch.setattr(extra_analyses, builder, lambda *args: {"value": 1})
+
+    assert extra_analyses.main([]) == 0
+
+    assert len(calls) == 1
+    recorded = [json.loads(path.read_text(encoding="utf-8")) for path in outputs.values()]
+    assert [payload["code_commit"] for payload in recorded] == ["abc1234"] * len(outputs)
+
+
+def drop_sets(rng: np.random.Generator) -> tuple[dict, dict]:
+    """EN and condition selections of every drop member on 40 projects, paired by pair_id.
+
+    SVM gets the most condition noise; bilstm repeats SVM exactly; the condition lists the
+    projects in reverse order.
+    """
+    pairs = [f"cordis:{index}" for index in range(40)]
+    truth = rng.random((40, 3)) < 0.4
+    en = {f: truth ^ (rng.random(truth.shape) < 0.1) for f in extra_analyses.DROP_MEMBERS}
+    shifted = {f: truth ^ (rng.random(truth.shape) < 0.3) for f in extra_analyses.DROP_MEMBERS}
+    shifted["svm"] = truth ^ (rng.random(truth.shape) < 0.5)
+    en["bilstm"], shifted["bilstm"] = en["svm"], shifted["svm"]
+    order = np.arange(40)[::-1]
+    reference = {"rows": [{"pair_id": p} for p in pairs], "truth": truth, "selected": en}
+    condition = {
+        "rows": [{"pair_id": pairs[i]} for i in order],
+        "truth": truth[order],
+        "selected": {family: chosen[order] for family, chosen in shifted.items()},
+    }
+    return reference, condition
+
+
+def test_drop_tests_resample_projects_jointly_across_sets_and_members() -> None:
+    reference, condition = drop_sets(np.random.default_rng(0))
+    truth, pairs = reference["truth"], [row["pair_id"] for row in reference["rows"]]
+    shifted = {f: chosen[::-1] for f, chosen in condition["selected"].items()}  # EN row order
+
+    result = extra_analyses.drop_tests(reference, condition, resamples=500)
+
+    for family in extra_analyses.DROP_MEMBERS:
+        alone = paired_bootstrap(
+            truth, reference["selected"][family], truth, shifted[family], 500, groups=pairs
+        )["micro_f1"]
+        drop = result["drops"][family]
+        for key in ("difference", "ci_low", "ci_high", "p_value"):
+            assert drop[key] == pytest.approx(alone[key]), (family, key)
+    tests = result["drop_differences"]
+    assert list(tests) == [f"svm-{f}" for f in extra_analyses.DROP_MEMBERS if f != "svm"]
+    same = tests["svm-bilstm"]
+    assert same["difference"] == same["ci_low"] == same["ci_high"] == 0
+    assert same["p_value"] == same["p_holm"] == 1
+    knn = result["drops"]["svm"]["difference"] - result["drops"]["hybrid_knn"]["difference"]
+    assert tests["svm-hybrid_knn"]["difference"] == pytest.approx(knn)
+    assert all(t["p_holm"] >= t["p_value"] for t in tests.values())
+
+
+def test_drop_tests_refuse_conditions_that_hold_other_projects() -> None:
+    reference, condition = drop_sets(np.random.default_rng(0))
+    condition["rows"][0] = {"pair_id": "cordis:elsewhere"}
+
+    with pytest.raises(ValueError, match="same projects"):
+        extra_analyses.drop_tests(reference, condition, resamples=10)
+
+
+def test_drops_must_reproduce_the_committed_cross_condition_differences(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reference, condition = drop_sets(np.random.default_rng(0))
+    sets = {"en_test": reference} | dict.fromkeys(extra_analyses.DROP_CONDITIONS, condition)
+
+    def drop(family: str) -> float:
+        en, shifted = reference["selected"][family], condition["selected"][family]
+        return extra_analyses.micro_f1(reference["truth"], en) - extra_analyses.micro_f1(
+            condition["truth"], shifted
+        )
+
+    cross = {
+        f: {f"en_test->{c}": {"micro_f1": {"difference": drop(f)}} for c in sets if c != "en_test"}
+        for f in extra_analyses.DROP_MEMBERS
+    }
+    summary = {
+        "thresholds": dict.fromkeys(extra_analyses.DROP_MEMBERS, 0.5),
+        "significance": {"cross_condition": cross},
+    }
+    monkeypatch.setattr(extra_analyses, "ENSEMBLE", write_summary(tmp_path / "ensemble", summary))
+    monkeypatch.setattr(extra_analyses, "load_checked", lambda *args: sets[args[-1]])
+
+    result = extra_analyses.drops(tmp_path, resamples=100)
+
+    assert list(result["conditions"]) == list(extra_analyses.DROP_CONDITIONS)
+    cross["svm"]["en_test->tr_test"]["micro_f1"]["difference"] += 0.001
+    write_summary(tmp_path / "ensemble", summary)
+    with pytest.raises(ValueError, match="svm en_test->tr_test"):
+        extra_analyses.drops(tmp_path, resamples=100)
+
+
+def test_truncation_needs_an_en_sentence_over_80_characters_kept_under_40_percent() -> None:
+    def pair(en: int, tr: int) -> dict[str, str]:
+        return {"en": "e" * en, "tr": "t" * tr}
+
+    assert extra_analyses.truncated([pair(20, 1), pair(81, 32)])  # 32 < 0.4 * 81
+    assert not extra_analyses.truncated([pair(81, 33)])
+    assert not extra_analyses.truncated([pair(80, 1)])
+
+
+def test_repetition_needs_a_doubled_4gram_that_the_en_source_does_not_double() -> None:
+    en = "Design and production of the distributed system of scientific collections."
+    copied = "distributed system of scientific collections"
+
+    assert extra_analyses.mt_repetition("Tasarim ve uretim sureci tasarim ve uretim sureci.", en)
+    assert extra_analyses.mt_repetition(f"{copied}, {copied.upper()} kurulur.", en)
+    assert not extra_analyses.mt_repetition("veri veri analiz analiz bir iki uc bir iki uc", en)
+    assert not extra_analyses.mt_repetition(f"{copied} {copied}", f"See {copied} {copied}.")
+
+
+def write_processed(directory: Path, language: str, split: str, records: list[dict]) -> None:
+    path = directory / language / f"{split}.jsonl"
+    save_jsonl(records, path)
+    manifest = path.parent / "manifest.json"
+    files = (
+        json.loads(manifest.read_text(encoding="utf-8"))["output_files"]
+        if manifest.exists()
+        else {}
+    )
+    files[path.name] = {"sha256": compute_file_sha256(path)}
+    manifest.write_text(json.dumps({"output_files": files}), encoding="utf-8")
+
+
+def test_translation_checks_count_flags_per_split_on_manifest_locked_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sentence = "x" * 90
+    for split, count in (("train", 6), ("validation", 1), ("test", 1)):
+        kept = "y" if split == "train" else sentence
+        en = [{"pair_id": f"{split}:{i}", "text": sentence} for i in range(count)]
+        tr = [
+            {
+                "id": f"{split}:{i}:tr",
+                "pair_id": f"{split}:{i}",
+                "text": "a b c d a b c d" if i == 1 else "tamam",
+                "sentence_alignment": [{"en": sentence, "tr": kept}],
+            }
+            for i in range(count)
+        ]
+        write_processed(tmp_path, "en", split, en)
+        write_processed(tmp_path, "tr", split, tr)
+    monkeypatch.setattr(extra_analyses, "PROCESSED", tmp_path)
+
+    result = extra_analyses.translation_checks()
+
+    train = result["splits"]["train"]
+    assert train["records"] == 6
+    assert train["truncation"] == {
+        "records": 6,
+        "rate": 1.0,
+        "examples": [f"train:{i}:tr" for i in range(5)],
+    }
+    assert train["repetition"] == {
+        "records": 1,
+        "rate": pytest.approx(1 / 6),
+        "examples": ["train:1:tr"],
+    }
+    assert result["splits"]["test"]["truncation"]["records"] == 0
+    assert result["splits"]["all"] == {
+        "records": 8,
+        "truncation": {"records": 6, "rate": 0.75},
+        "repetition": {"records": 1, "rate": 0.125},
+    }
+    save_jsonl([{"pair_id": "test:0", "text": "changed"}], tmp_path / "en/test.jsonl")
+    with pytest.raises(ValueError, match="en/test.jsonl"):
+        extra_analyses.translation_checks()

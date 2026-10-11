@@ -1,0 +1,372 @@
+{
+  "code_commit": "bfed360-dirty",
+  "environment": {
+    "python_version": "3.13.1",
+    "platform": "win32",
+    "package_versions": {
+      "numpy": "2.5.3",
+      "torch": "2.14.1+cu126",
+      "transformers": "5.19.0",
+      "scikit-learn": "1.9.1",
+      "pyyaml": "6.0.3",
+      "huggingface-hub": "1.33.0",
+      "httpx": "0.28.1"
+    }
+  },
+  "inputs": {
+    "results/metrics/cordis_v1.1.0_ensemble/summary.json": "36b985401373d4fb2c2aabbd9c841fb9006354ecb8863dce1e6d37baaf5e7ce4"
+  },
+  "resamples": 10000,
+  "bootstrap_seed": 42,
+  "reference_set": "en_test",
+  "thresholds": {
+    "svm": 0.16,
+    "hybrid_knn": 0.14,
+    "bilstm": 0.14,
+    "transformer": 0.14,
+    "naive_bayes": 0.22
+  },
+  "definitions": {
+    "drops": "micro-F1 on en_test minus micro-F1 on the condition, same projects and thresholds; equals the summary's cross_condition difference",
+    "drop_differences": "svm-x: drop(svm) - drop(x); above 0 means SVM loses more",
+    "intervals": "paired project bootstrap over pair_id (the EN and condition copies of a project are resampled together, one draw for all members), 95% percentile interval, two-sided p with the add-one correction; p_holm is Holm-adjusted across the four drop_differences of one condition"
+  },
+  "conditions": {
+    "tr_test": {
+      "projects": 4711,
+      "drops": {
+        "svm": {
+          "reference": 0.5584,
+          "condition": 0.4886,
+          "difference": 0.0698,
+          "ci_low": 0.0642,
+          "ci_high": 0.0754,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        },
+        "hybrid_knn": {
+          "reference": 0.3929,
+          "condition": 0.3817,
+          "difference": 0.0112,
+          "ci_low": 0.0068,
+          "ci_high": 0.0157,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        },
+        "bilstm": {
+          "reference": 0.2891,
+          "condition": 0.2708,
+          "difference": 0.0183,
+          "ci_low": 0.0123,
+          "ci_high": 0.0244,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        },
+        "transformer": {
+          "reference": 0.2476,
+          "condition": 0.2398,
+          "difference": 0.0079,
+          "ci_low": 0.003,
+          "ci_high": 0.0127,
+          "p_value": 0.0018,
+          "p_resolution": 0.0002
+        },
+        "naive_bayes": {
+          "reference": 0.2777,
+          "condition": 0.2753,
+          "difference": 0.0024,
+          "ci_low": -0.0018,
+          "ci_high": 0.0067,
+          "p_value": 0.2708,
+          "p_resolution": 0.0002
+        }
+      },
+      "drop_differences": {
+        "svm-hybrid_knn": {
+          "difference": 0.0585,
+          "ci_low": 0.052,
+          "ci_high": 0.0652,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-bilstm": {
+          "difference": 0.0515,
+          "ci_low": 0.0433,
+          "ci_high": 0.0593,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-transformer": {
+          "difference": 0.0619,
+          "ci_low": 0.0544,
+          "ci_high": 0.0692,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-naive_bayes": {
+          "difference": 0.0674,
+          "ci_low": 0.0608,
+          "ci_high": 0.074,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        }
+      }
+    },
+    "cs_sentence_test": {
+      "projects": 4711,
+      "drops": {
+        "svm": {
+          "reference": 0.5584,
+          "condition": 0.508,
+          "difference": 0.0504,
+          "ci_low": 0.0458,
+          "ci_high": 0.0548,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        },
+        "hybrid_knn": {
+          "reference": 0.3929,
+          "condition": 0.3834,
+          "difference": 0.0095,
+          "ci_low": 0.0054,
+          "ci_high": 0.0135,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        },
+        "bilstm": {
+          "reference": 0.2891,
+          "condition": 0.2836,
+          "difference": 0.0054,
+          "ci_low": 0.0008,
+          "ci_high": 0.0103,
+          "p_value": 0.0236,
+          "p_resolution": 0.0002
+        },
+        "transformer": {
+          "reference": 0.2476,
+          "condition": 0.2445,
+          "difference": 0.0032,
+          "ci_low": -0.0008,
+          "ci_high": 0.0071,
+          "p_value": 0.1192,
+          "p_resolution": 0.0002
+        },
+        "naive_bayes": {
+          "reference": 0.2777,
+          "condition": 0.28,
+          "difference": -0.0023,
+          "ci_low": -0.0051,
+          "ci_high": 0.0004,
+          "p_value": 0.0996,
+          "p_resolution": 0.0002
+        }
+      },
+      "drop_differences": {
+        "svm-hybrid_knn": {
+          "difference": 0.0409,
+          "ci_low": 0.035,
+          "ci_high": 0.0468,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-bilstm": {
+          "difference": 0.0449,
+          "ci_low": 0.0386,
+          "ci_high": 0.0513,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-transformer": {
+          "difference": 0.0472,
+          "ci_low": 0.0413,
+          "ci_high": 0.0531,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-naive_bayes": {
+          "difference": 0.0527,
+          "ci_low": 0.0476,
+          "ci_high": 0.0577,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        }
+      }
+    },
+    "cs_chunk_test": {
+      "projects": 4711,
+      "drops": {
+        "svm": {
+          "reference": 0.5584,
+          "condition": 0.5124,
+          "difference": 0.046,
+          "ci_low": 0.0416,
+          "ci_high": 0.0503,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        },
+        "hybrid_knn": {
+          "reference": 0.3929,
+          "condition": 0.3847,
+          "difference": 0.0083,
+          "ci_low": 0.0042,
+          "ci_high": 0.0124,
+          "p_value": 0.0004,
+          "p_resolution": 0.0002
+        },
+        "bilstm": {
+          "reference": 0.2891,
+          "condition": 0.2818,
+          "difference": 0.0073,
+          "ci_low": 0.0024,
+          "ci_high": 0.0121,
+          "p_value": 0.0038,
+          "p_resolution": 0.0002
+        },
+        "transformer": {
+          "reference": 0.2476,
+          "condition": 0.2467,
+          "difference": 0.0009,
+          "ci_low": -0.0031,
+          "ci_high": 0.0049,
+          "p_value": 0.6493,
+          "p_resolution": 0.0002
+        },
+        "naive_bayes": {
+          "reference": 0.2777,
+          "condition": 0.2788,
+          "difference": -0.0011,
+          "ci_low": -0.0039,
+          "ci_high": 0.0017,
+          "p_value": 0.436,
+          "p_resolution": 0.0002
+        }
+      },
+      "drop_differences": {
+        "svm-hybrid_knn": {
+          "difference": 0.0377,
+          "ci_low": 0.032,
+          "ci_high": 0.0435,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-bilstm": {
+          "difference": 0.0387,
+          "ci_low": 0.0323,
+          "ci_high": 0.0451,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-transformer": {
+          "difference": 0.0451,
+          "ci_low": 0.0392,
+          "ci_high": 0.0508,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-naive_bayes": {
+          "difference": 0.0471,
+          "ci_low": 0.0422,
+          "ci_high": 0.052,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        }
+      }
+    },
+    "en_test_noisy": {
+      "projects": 4711,
+      "drops": {
+        "svm": {
+          "reference": 0.5584,
+          "condition": 0.4801,
+          "difference": 0.0783,
+          "ci_low": 0.0723,
+          "ci_high": 0.0843,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        },
+        "hybrid_knn": {
+          "reference": 0.3929,
+          "condition": 0.374,
+          "difference": 0.0189,
+          "ci_low": 0.0148,
+          "ci_high": 0.0233,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        },
+        "bilstm": {
+          "reference": 0.2891,
+          "condition": 0.241,
+          "difference": 0.0481,
+          "ci_low": 0.0425,
+          "ci_high": 0.0536,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        },
+        "transformer": {
+          "reference": 0.2476,
+          "condition": 0.2034,
+          "difference": 0.0442,
+          "ci_low": 0.039,
+          "ci_high": 0.0495,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        },
+        "naive_bayes": {
+          "reference": 0.2777,
+          "condition": 0.2617,
+          "difference": 0.0159,
+          "ci_low": 0.011,
+          "ci_high": 0.021,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002
+        }
+      },
+      "drop_differences": {
+        "svm-hybrid_knn": {
+          "difference": 0.0594,
+          "ci_low": 0.0526,
+          "ci_high": 0.0661,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-bilstm": {
+          "difference": 0.0302,
+          "ci_low": 0.0229,
+          "ci_high": 0.0376,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-transformer": {
+          "difference": 0.034,
+          "ci_low": 0.0265,
+          "ci_high": 0.0415,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        },
+        "svm-naive_bayes": {
+          "difference": 0.0623,
+          "ci_low": 0.0555,
+          "ci_high": 0.0692,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.0008
+        }
+      }
+    }
+  }
+}
