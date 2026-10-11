@@ -1,6 +1,7 @@
 # Student Contribution Report
 
-**Student Name:** Abdullah  
+**Student Name:** Abdullah 
+**Student id:**2309015819 
 **Role:** Evaluation & Benchmarking Lead  
 **Project:** NALTRA (EuroSciVoc Multi-Label Classification)  
 
@@ -12,7 +13,6 @@ As the Evaluation & Benchmarking Lead for the NALTRA project, my primary respons
 ---
 
 ## Technical Deliverables & Key Contributions
-
 ### 1. Core Evaluation Engine (`src/naltra/evaluation/`)
 * **`metrics.py` (Metric Framework & Sparsity Resolution)**:
   * Researched and implemented global **Micro-F1**, **Macro-F1**, and standard accuracy metrics for extreme multi-label classification across 473 leaf categories.
