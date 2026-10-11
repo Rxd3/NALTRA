@@ -3,7 +3,7 @@
 **Student Name:** Abdullah 
 **Student id:**2309015819 
 **Role:** Evaluation & Benchmarking Lead  
-**Project:** NALTRA (EuroSciVoc Multi-Label Classification)  
+**Github username:**abdu3061
 
 ---
 
