@@ -1,6 +1,6 @@
 # Team Member Contribution Report
 
-- **Name**: Almutesim Alakili
+- **Name**: ALMUTESİM ALAKİLİ
 - **Student ID**: 220911336
 - **GitHub Username**: Sam-Ali23
 - **Role**: Multilingual & Shift Data Lead
