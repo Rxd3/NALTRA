@@ -253,7 +253,8 @@ loads the artifact like a trained one and records its digest in every dump sidec
 Once those dumps exist, `laya` is added to `--baselines` of the sample
 `evaluate_ensemble.py` command (`--baselines naive_bayes laya`): like every member it is
 scored and its threshold is tuned on val-A, but it never votes, so the existing votes do
-not change. Its sample results are pending; no Laya score is reported yet. On the GTX 1650
+not change. On the 120-pair test sample it scores 0.068 English / 0.046 Turkish micro-F1
+(threshold 0.98, tuned on val-A). On the GTX 1650
 one document takes about 145 s (473 questions, 8 per batch), so the 400 sample documents
 take about 16 h.
 

@@ -10,6 +10,6 @@ Generated evaluation outputs are grouped into `metrics/`, `plots/`, `predictions
 | `ood/cordis_v1.1.0/summary.json` | `scripts/run_ood.py` (humanities held out) |
 | `benchmarks/cordis_v1.1.0/benchmark_summary.json`, `benchmark_summary.md` | `scripts/run_benchmark.py` |
 
-The two `evaluate_ensemble.py` `summary.json` files record `code_commit` (`git describe --always --dirty`), `environment` and `bootstrap_seed`; the OOD summary records `code_commit`, `environment` and `bootstrap_seeds`, and `benchmark_summary.json` records `code_commit` and `environment`. Result JSONs store repository-relative paths. The commands that write them are in [docs/runbook.md](../docs/runbook.md).
+The two `evaluate_ensemble.py` `summary.json` files record `code_commit` (`git describe --always --dirty`), `environment` and `bootstrap_seed`; the OOD summary records `code_commit`, `environment` and `bootstrap_seeds`, and `benchmark_summary.json`, measured before that field existed, records the runtime and hardware but no `code_commit`. The sample summary includes Laya as a non-voting member. Result JSONs store repository-relative paths. The commands that write them are in [docs/runbook.md](../docs/runbook.md).
 
 Not tracked: the prediction dumps (`predictions/<run>/<family>/<set>.npz` and their `.json` sidecars), plots, the OOD run's retrained models (`ood/<run>/models/`), and every other run directory. The README's [Reproduce](../README.md#reproduce) section lists what a fresh clone can regenerate on CPU and what needs shared artifacts, a GPU or service access.

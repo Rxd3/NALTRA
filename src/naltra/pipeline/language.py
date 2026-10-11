@@ -16,15 +16,6 @@ class LanguageDetector(Protocol):
         ...
 
 
-class UndeterminedLanguageDetector:
-    """Detector that always reports an undetermined language (und)."""
-
-    def detect(self, text: str) -> LanguageInfo:
-        if not text.strip():
-            raise ValueError("Cannot detect the language of empty text.")
-        return LanguageInfo(primary="und", is_code_switched=False)
-
-
 class LinguaLanguageDetector:
     """Offline EN/TR detector; mixed-language decisions are experimental."""
 
