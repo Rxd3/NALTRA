@@ -15,7 +15,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 
-from naltra.data.manifest import REPO_ROOT, compute_file_sha256, get_environment_metadata
+from naltra.data.manifest import compute_file_sha256, get_environment_metadata
 from naltra.data.preprocessing import validate_record
 from naltra.data.validation import check_disjoint_partitions
 from naltra.models.base import BaseNALTRAModel
@@ -23,6 +23,7 @@ from naltra.pipeline.preprocessing import normalize_text
 from naltra.pipeline.thresholds import apply_thresholds
 from naltra.schemas.prediction import LanguageInfo, PredictionResult
 from naltra.utils.config import load_yaml, merge_config
+from naltra.utils.resources import resource_path
 
 
 def select_device(name: str) -> torch.device:
@@ -105,7 +106,7 @@ class NeuralModel(BaseNALTRAModel):
     def __init__(
         self, config: Mapping[str, Any] | None = None, *, taxonomy_path: str | Path | None = None
     ) -> None:
-        defaults = load_yaml(REPO_ROOT / "configs/models" / f"{self.model_name}.yaml")
+        defaults = load_yaml(resource_path(f"configs/models/{self.model_name}.yaml"))
         defaults = merge_config(
             {
                 "device": "auto",
@@ -130,7 +131,7 @@ class NeuralModel(BaseNALTRAModel):
         for key in ("mixed_precision", "gradient_checkpointing"):
             if key in self.config["training"] and type(self.config["training"][key]) is not bool:
                 raise ValueError(f"training.{key} must be a boolean.")
-        self.taxonomy_path = Path(taxonomy_path or REPO_ROOT / "taxonomy/taxonomy.json")
+        self.taxonomy_path = Path(taxonomy_path or resource_path("taxonomy/taxonomy.json"))
         self.taxonomy = json.loads(self.taxonomy_path.read_text(encoding="utf-8"))
         self.taxonomy_identity = self._taxonomy_checksums()
         self.parents = {item["id"]: item["parent"] for item in self.taxonomy["labels"]}

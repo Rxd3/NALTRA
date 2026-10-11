@@ -88,3 +88,6 @@ huggingface/
 transformers_cache/
 wandb/
 runs/
+
+# Temporary presentation/chart workspaces
+.chart-data-*/

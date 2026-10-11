@@ -33,6 +33,7 @@ class EnsembleConfig:
     weights: Mapping[str, float] = field(default_factory=dict)
     per_label_thresholds: Mapping[str, float] = field(default_factory=dict)
     required_models: frozenset[str] | Iterable[str] = ENSEMBLE_MODEL_NAMES
+    vote_count: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "method", EnsembleMethod(self.method))
@@ -48,6 +49,12 @@ class EnsembleConfig:
             raise ValueError("Per-label thresholds must be between 0.0 and 1.0.")
         if not self.required_models:
             raise ValueError("At least one required ensemble model must be configured.")
+        if self.vote_count is not None and (
+            self.method is not EnsembleMethod.HARD
+            or type(self.vote_count) is not int
+            or not 1 <= self.vote_count <= len(self.required_models)
+        ):
+            raise ValueError("vote_count requires hard voting and an integer between 1 and M.")
 
 
 class EnsembleVoter:
@@ -116,6 +123,7 @@ class EnsembleVoter:
                 important_tokens=self._merge_important_tokens(predictions),
                 details={
                     "method": self.config.method.value,
+                    "vote_count": self.config.vote_count,
                     "models": sorted(predictions_by_model),
                     "weights": dict(self.config.weights),
                     "label_scores": scores,
@@ -213,10 +221,12 @@ class EnsembleVoter:
         }
 
     def _select_hard_majorities(self, scores: Mapping[str, float]) -> list[LabelScore]:
+        count = len(self.config.required_models)
+        minimum = self.config.vote_count or (count // 2 + 1)
         selected = [
             LabelScore(label=label, score=score)
             for label, score in scores.items()
-            if score > 0.5
+            if score + 1e-9 >= minimum / count
             and score >= self.config.per_label_thresholds.get(label, self.config.threshold)
         ]
         return sorted(selected, key=lambda item: item.score, reverse=True)

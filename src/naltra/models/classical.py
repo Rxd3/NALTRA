@@ -24,7 +24,6 @@ from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import MultiLabelBinarizer
 
 from naltra.data.manifest import (
-    REPO_ROOT,
     compute_file_sha256,
     get_environment_metadata,
     get_taxonomy_checksums,
@@ -36,6 +35,7 @@ from naltra.pipeline.preprocessing import normalize_text
 from naltra.pipeline.thresholds import apply_thresholds
 from naltra.schemas.prediction import LanguageInfo, PredictionResult
 from naltra.utils.config import load_yaml, merge_config
+from naltra.utils.resources import resource_path
 
 ESTIMATOR_FILE = "estimator.joblib"
 SELF_CHECK_ROWS = 64
@@ -68,10 +68,10 @@ class ClassicalModel(BaseNALTRAModel):
     ) -> None:
         defaults = merge_config(
             {"target_field": "labels", "seed": 42, "n_jobs": -1, "multilabel": {"per_label": {}}},
-            load_yaml(REPO_ROOT / "configs/models" / f"{self.model_name}.yaml"),
+            load_yaml(resource_path(f"configs/models/{self.model_name}.yaml")),
         )
         self.config = merge_config(defaults, config or {})
-        taxonomy_file = Path(taxonomy_path or REPO_ROOT / "taxonomy/taxonomy.json")
+        taxonomy_file = Path(taxonomy_path or resource_path("taxonomy/taxonomy.json"))
         self.taxonomy_dir = taxonomy_file.parent
         self.taxonomy = json.loads(taxonomy_file.read_text(encoding="utf-8"))
         self.taxonomy_identity = get_taxonomy_checksums(self.taxonomy_dir)

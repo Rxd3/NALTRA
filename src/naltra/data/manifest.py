@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from naltra.data.loader import load_jsonl
+from naltra.utils.resources import resource_path
 
 MANIFEST_SCHEMA_VERSION = "1.1.0"
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -44,7 +45,7 @@ def get_source_config(name: str) -> dict[str, str]:
     """Read the versioned source lock used by every preparation entry point."""
     import yaml
 
-    with (REPO_ROOT / "configs/data.yaml").open(encoding="utf-8") as handle:
+    with resource_path("configs/data.yaml").open(encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
         return config["translation"] if name == "translation" else config["sources"][name]
 
@@ -59,9 +60,9 @@ def compute_file_sha256(path: str | Path) -> str:
     return h.hexdigest()
 
 
-def get_taxonomy_checksums(taxonomy_dir: str | Path = "taxonomy") -> dict[str, str]:
+def get_taxonomy_checksums(taxonomy_dir: str | Path | None = None) -> dict[str, str]:
     """Retrieve canonical taxonomy version and file checksums."""
-    tax_path = Path(taxonomy_dir)
+    tax_path = Path(taxonomy_dir) if taxonomy_dir is not None else resource_path("taxonomy")
     taxonomy_file = tax_path / "taxonomy.json"
     label_map_file = tax_path / "label_map.json"
 

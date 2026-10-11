@@ -1,74 +1,20 @@
 # Team ownership
 
-Ownership identifies the primary reviewer and the contributor responsible for keeping an area coherent. It does not prevent collaboration. Contributors should coordinate before changing another member's area and avoid overlapping edits whenever possible.
+Owners identify the primary reviewers for each area. Contributors can work across
+areas; coordinate changes to shared interfaces before implementation.
 
-## General Support - almutesim alakili
+| Contributor | Area | Main paths |
+| --- | --- | --- |
+| Almutesim Alakili | General support | Supports all areas |
+| Rasit Isaoglu | Technical lead and core ML | Neural models, Jev/Laya, pipeline, schemas, configurations, training, direct evaluation |
+| Mohamed Kamaleldin | UI and slides | `scripts/build_dashboard.py`, `src/naltra/reporting/`, `docs/results/` |
+| Omar | Data and taxonomy | `data/`, `taxonomy/`, `src/naltra/data/`, dataset and taxonomy guides |
+| Raouf | Classical ML and voting | Naive Bayes, SVM, their configurations, `src/naltra/pipeline/ensemble.py` |
+| Abdullah Gamal | Evaluation and benchmarking | `src/naltra/evaluation/`, `results/`, evaluation guide, `scripts/run_benchmark.py` |
 
-Supports all areas; no primary file ownership.
+Raouf owns the ensemble implementation within the broader pipeline area coordinated
+by the technical lead. Changes to the prediction contract, taxonomy IDs, split
+definitions, or evaluation semantics need review across the affected areas.
 
-## Technical Lead / Core ML - Rasit Isaoglu
-
-Owns:
-
-```text
-src/naltra/models/bilstm/
-src/naltra/models/transformer/
-src/naltra/models/jev/
-src/naltra/models/laya/
-src/naltra/pipeline/
-src/naltra/schemas/
-configs/
-scripts/train_all.py
-scripts/evaluate_all.py
-```
-
-The Technical Lead also coordinates architecture, shared prediction interfaces, integration, and final experiments.
-
-## UI Member and Slides - Mohmed kamaledin
-
-Owns:
-
-```text
-scripts/build_dashboard.py
-src/naltra/reporting/
-docs/results/
-```
-
-## Data & Taxonomy Member - omar
-
-Owns:
-
-```text
-data/
-taxonomy/
-src/naltra/data/
-docs/dataset.md
-docs/taxonomy.md
-```
-
-## Classical ML Member - raouf
-
-Owns:
-
-```text
-src/naltra/models/naive_bayes/
-src/naltra/models/svm/
-configs/models/naive_bayes.yaml
-configs/models/svm.yaml
-src/naltra/pipeline/ensemble.py
-```
-
-Raouf is responsible for the ensemble voting implementation and configuration. This file-specific ownership is an exception to the Technical Lead's general ownership of `src/naltra/pipeline/`; shared pipeline contract changes still require coordination with the Technical Lead.
-
-## Evaluation Member - Abdullah jamal
-
-Owns:
-
-```text
-src/naltra/evaluation/
-results/
-docs/evaluation.md
-scripts/run_benchmark.py
-```
-
-Changes to `BaseNALTRAModel`, `PredictionResult`, taxonomy identifiers, split definitions, or evaluation semantics affect multiple owners and require explicit coordination in the pull request.
+Individual work is documented in the [contribution records](../contributions/).
+See [Contributing](../CONTRIBUTING.md) for development and pull request instructions.

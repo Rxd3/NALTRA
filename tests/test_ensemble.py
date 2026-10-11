@@ -46,6 +46,20 @@ def test_hard_voting_requires_a_strict_per_label_majority() -> None:
     assert result.latency_ms == pytest.approx(8.0)
 
 
+def test_tuned_k_vote_can_select_a_label_below_majority():
+    predictions = [make_prediction("svm", {"optics": 0.7}), make_prediction("bilstm", {})]
+    config = EnsembleConfig(
+        method="hard", threshold=0.0, required_models={"svm", "bilstm"}, vote_count=1
+    )
+    assert EnsembleVoter(config).combine(predictions).labels == [LabelScore("optics", 0.5)]
+
+
+@pytest.mark.parametrize("count", [0, 3, True, 1.5])
+def test_invalid_vote_counts_are_rejected(count):
+    with pytest.raises(ValueError, match="vote_count"):
+        EnsembleConfig(method="hard", required_models={"svm", "bilstm"}, vote_count=count)
+
+
 def test_soft_voting_averages_each_label_and_supports_per_label_thresholds() -> None:
     predictions = [
         make_prediction(model, {"Technology": 0.6, "Hardware": 0.4}) for model in MODEL_NAMES
