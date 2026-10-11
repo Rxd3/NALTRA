@@ -29,7 +29,8 @@ Canonical scientific taxonomy for NALTRA based on the official European Science 
 ## Hierarchy Semantics
 
 EuroSciVoc is a hierarchical ontology. The active NALTRA benchmark uses:
-- **Direct Labels**: Specific EuroSciVoc categories directly assigned to each project.
+- **Direct Labels**: The EuroSciVoc categories directly assigned to each project that pass the
+  support threshold; sub-threshold codes are dropped, not rolled up to an ancestor.
 - **Hierarchy-Closed Labels**: Direct labels expanded along parent paths to root domains.
 - **Strict Tree Hierarchy**: Each category node has exactly one parent or is root.
 

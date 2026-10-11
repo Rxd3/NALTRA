@@ -56,17 +56,15 @@ flowchart LR
 - `evaluation/` reads predictions without depending on model internals.
 - `scripts/build_dashboard.py` builds the results page (`docs/results/index.html`) from saved summaries and score matrices; it contains no model or training logic.
 
-The initial scaffold deliberately avoids dependency injection frameworks, service layers, and deployment infrastructure. Add abstractions only when two or more implementations need them.
-
 For ensemble mode, all configured members return a `PredictionResult`.
-Soft voting uses complete `label_scores`; legacy results fall back to selected
-label scores and treat omissions as zero. Hard voting uses selected `labels` and
+Soft voting uses complete `label_scores`; a result without them falls back to the scores of
+its selected labels and treats omissions as zero. Hard voting uses selected `labels` and
 treats omissions as negative votes. Declared dataset, track, and label spaces must
 match across components. The ensemble follows shared hierarchy and OOD stages.
 
-All members and the shared pipeline are implemented. Kev answers through a local
-server and Jev through TypeSafe's hosted API, with the same questions; Laya runs a
-pinned multilingual checkpoint locally, one two-option question per label. See
+Kev answers through a local server and Jev through TypeSafe's hosted API, with the same
+questions; Laya runs a pinned multilingual checkpoint locally, one two-option question per
+label. See
 [core ML operation](core_ml.md) for artifacts, training commands, OOD semantics,
 extension hooks and integrations. The near-OOD benchmark (humanities root held out of
 training) is `scripts/run_ood.py`.

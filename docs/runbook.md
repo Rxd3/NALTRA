@@ -20,31 +20,27 @@ python scripts/unpack_data.py      # or: make data
 python scripts/validate_datasets.py --prebuilt-release
 ```
 
-This restores the committed release under `data/processed/cordis_h2020/` (`en/`, `tr/`,
-`code_switch/`), release 1.1.0, and audits it record by record. The plain validator refuses
+This restores the NALTRA CORDIS EN-TR benchmark, release 1.1.0, under
+`data/processed/cordis_h2020/` (`en/`, `tr/`, `code_switch/`) and audits it record by record. The plain validator refuses
 the shipped release ([why](dataset.md#shipped-turkish-release-110)), so training and noisy
 generation also take `--prebuilt-release`, which records tolerated translation issues in each
 artifact's provenance.
 
-EN can be rebuilt from the raw archive with the committed scripts, and so can the derived
-tracks (noisy copies, code-switch) from the EN/TR release they are built on. TR 1.1.0
-cannot: it is a frozen imported release. Its targeted repair of 598 records in 128-token
-source chunks (recorded in the TR manifest's `generation_parameters`) was run by a
-teammate, and the repair script is not in the repository, so a standard translation run
-builds a different TR release that needs a new release version.
+EN and the derived tracks rebuild with the committed scripts; TR 1.1.0 is a frozen imported
+release that a rebuild does not reproduce ([details](dataset.md#shipped-turkish-release-110)).
 
 ## 1. Members
 
 | Family | Where | Notes |
 |---|---|---|
 | `naive_bayes` | CPU | baseline row, does not vote |
-| `svm` | CPU, ~7 min | calibrated (3-fold Platt) |
+| `svm` | CPU, ~7-13 min | calibrated (3-fold Platt) |
 | `hybrid_knn` | GPU for the e5 encoder | TF-IDF + multilingual-e5 neighbours, reciprocal rank fusion (Cormack et al. 2009, k = 60); own run `cordis_v1.1.0_knn` |
 | `bilstm` | GPU | release `cordis_v0.5.0`: head refit on the frozen encoder |
 | `transformer` | GPU | `xlm-roberta-base`; release `cordis_v0.5.0`: head refit on the frozen encoder |
 | `kev` | Kev server (WSL2) | zero-shot, 473 yes/no questions per document; scored on 80 validation and 120 test pairs (section 4) |
 | `jev` | TypeSafe API | hosted System One model, same questions as Kev; `JEV_API_KEY`, `JEV_API_BASE_URL=https://api.typesafe.ai` in `.env` |
-| `laya` | GPU in practice | zero-shot, pinned local checkpoint (`requirements-laya.txt`, `scripts/prepare_laya.py`), 473 two-option questions per document, 8 per batch: about 145 s per document on the GTX 1650, about 7 s on a teammate's RTX 4050; scored on the same samples as Kev (section 4) |
+| `laya` | GPU in practice | zero-shot, pinned local checkpoint (`requirements-laya.txt`, `scripts/prepare_laya.py`), 473 two-option questions per document, 8 per batch: about 145 s (EN) to 200 s (TR) per document on the GTX 1650, about 7 s on a teammate's RTX 4050; scored on the same samples as Kev (section 4), never votes |
 
 Every locally trained member is fit on EN+TR training data, so EN -> TR measures the gap on
 translated input, not zero-shot transfer; Kev, Jev and Laya are the zero-shot members.
@@ -53,10 +49,10 @@ Hardware of the reported runs:
 
 | Step | Hardware |
 |---|---|
-| EN -> TR translation (README step 8, about 3.9 h) | NVIDIA GeForce RTX 3060, 12 GB ([dataset card](dataset.md#gpu-compute-environment)) |
+| EN -> TR translation (README step 8, about 3.9 h) | NVIDIA GeForce RTX 3060, 12 GB ([dataset specification](dataset.md#gpu-compute-environment)) |
 | `bilstm`, `transformer` (`cordis_v0.5.0`) | NVIDIA GeForce RTX 4050 Laptop GPU (the `hardware` field of their `naltra.json`) |
 | `hybrid_knn` e5 encoding, GPU prediction dumps, Kev server | NVIDIA GeForce GTX 1650, 4 GB |
-| `naive_bayes`/`svm` training, OOD, latency | Intel Core i5-9300H CPU (latency with CUDA hidden, 4 torch threads) |
+| `naive_bayes`/`svm` training, OOD, latency | Intel Core i5-9300H CPU, recorded as `Intel64 Family 6 Model 158 Stepping 10` (latency with CUDA hidden, 4 torch threads) |
 
 The `hybrid_knn` artifact records the GPU run only as `config.device: cuda`, which its e5
 encoder follows. Its `metadata.device` and `metadata.hardware` read `cpu` and `CPU` because
@@ -66,7 +62,11 @@ TF-IDF family; the GPU model is not recorded in that artifact.
 ## 2. Train
 
 ```bash
-python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models naive_bayes svm --device cpu --output-dir models/cordis_v1.1.0
+export LOKY_MAX_CPU_COUNT=4        # PowerShell: $env:LOKY_MAX_CPU_COUNT = "4"
+python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models naive_bayes --device cpu --output-dir models/cordis_v1.1.0
+python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models svm --device cpu --output-dir models/cordis_v1.1.0
+# On Windows a run can end with 0xC0000005 (exit 139 or -1073741819) and no traceback; if
+# models/cordis_v1.1.0/cordis_h2020/en_tr_direct/<family>/naltra.json is missing, re-run that family.
 python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models bilstm --device cuda --output-dir models/cordis_v0.4.0
 python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models transformer --device cuda --batch-size 16 --accumulation 1 --output-dir models/cordis_v0.4.0
 python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models bilstm transformer --device cuda --refit-head-from models/cordis_v0.4.0/cordis_h2020/en_tr_direct --max-length 512 --loss-weighting none --output-dir models/cordis_v0.5.0
@@ -78,9 +78,10 @@ the next run overwrites it. The `--refit-head-from` command builds the `cordis_v
 release; the teammate's run used this same TR 1.1.0 release. `hybrid_knn` gets its own run
 directory; its dense e5 encoder needs a GPU in practice.
 
-If `naive_bayes` or `svm` training fails with joblib's "A task has failed to un-serialize"
-(seen under memory pressure, since both train with `n_jobs: -1`), set
-`LOKY_MAX_CPU_COUNT=4` and re-run that family.
+`LOKY_MAX_CPU_COUNT=4` caps the joblib workers of `naive_bayes` and `svm` (both train with
+`n_jobs: -1`); without it, joblib's "A task has failed to un-serialize" was seen under memory
+pressure. A native crash can also come after the model is saved, while the workers shut
+down: if `naltra.json` exists and the status says `"success"`, the model is usable.
 
 ## 3. Dump predictions
 
@@ -122,7 +123,9 @@ tuning sets that share records, projects, pairs or text with a test set.
 `summary.json["significance"]` holds paired project bootstrap results (10,000 resamples by default, grouped by `pair_id`,
 95% percentile intervals, Holm-corrected within each family): each ensemble against the
 best member chosen on val-A, and every system across conditions (the first test set vs
-TR, code-switch and noisy sets, paired by `pair_id`). Run latency only on an idle machine.
+TR, code-switch and noisy sets, paired by `pair_id`); the families and what is not tested
+are in [evaluation](evaluation.md#what-is-significance-tested). Run latency only on an idle
+machine.
 
 The `run_benchmark.py` command above takes all three run directories and writes one
 summary for the five trained families. The summary's `runtime` block records the package
@@ -143,9 +146,11 @@ comparable to the full sets. `data/samples/` is ignored by Git. Jev (TypeSafe's 
 System One model) is scored on the same files; it needs `JEV_API_KEY` and
 `JEV_API_BASE_URL=https://api.typesafe.ai` in `.env`. Laya (`pip install -r
 requirements-laya.txt`) scores the same files from an artifact that `prepare_laya.py` builds
-from the pinned checkpoint (a 678 MB download); at about 145 s per document on the GTX 1650
-its 400 sample documents take about 16 h. `laya` is in `--baselines` of the
-sample `evaluate_ensemble.py` command, so it is scored without changing the votes. With the server of section 5 running:
+from the pinned checkpoint (a 678 MB download); at about 145 s (EN) to 200 s (TR) per
+document on the GTX 1650 (the dump sidecars' `mean_latency_ms`) its 400 sample documents take
+about 19 h. `laya` is in `--baselines` of the sample `evaluate_ensemble.py` command, which
+means scored but never voting (its role stays `new`), so the votes do not change. With the
+server of section 5 running:
 
 ```bash
 python scripts/sample_sets.py --sets en_validation tr_validation --pairs 80 --output-dir data/samples/val80
@@ -156,6 +161,7 @@ python scripts/predict_all.py --artifacts models/cordis_v0.5.0/cordis_h2020/en_t
 python scripts/prepare_laya.py --output-dir models/cordis_laya_v1.1.0/cordis_h2020/en_tr_direct
 python scripts/predict_all.py --artifacts models/cordis_laya_v1.1.0/cordis_h2020/en_tr_direct --models laya --sets en_val_kev=data/samples/val80/en_validation.jsonl tr_val_kev=data/samples/val80/tr_validation.jsonl en_test_kev=data/samples/test120/en_test.jsonl tr_test_kev=data/samples/test120/tr_test.jsonl --device cuda --output-dir results/predictions/cordis_v1.1.0
 python scripts/evaluate_ensemble.py --predictions results/predictions/cordis_v1.1.0 --members svm hybrid_knn bilstm transformer kev jev --baselines naive_bayes laya --tune-sets en_val_kev=data/samples/val80/en_validation.jsonl tr_val_kev=data/samples/val80/tr_validation.jsonl --test-sets en_test_kev=data/samples/test120/en_test.jsonl tr_test_kev=data/samples/test120/tr_test.jsonl --output-dir results/metrics/cordis_v1.1.0_sample
+python scripts/extra_analyses.py   # label coverage, sample member pairs, error analysis (CPU, both summaries' dumps)
 ```
 
 ## 5. Kev server (WSL2, Ubuntu)
@@ -182,7 +188,7 @@ Kev-0.8B ran on a GTX 1650 (4 GB). Its adapter is English-only, so its Turkish r
 zero-shot cross-lingual transfer; the questions stay English. Kev (like Jev) is scored only on
 the EN and TR sample sets of section 4, not on the code-switch or noisy sets.
 
-## Known limitations to state in the paper
+## Known limitations
 
 - Kev and Jev dumps bind the service configuration, not the served weights: Kev ran
   `jaredpalmer/kev-0.8b` at `bf75a6a8848ea6960ff2ed108d9ed44c2941174f`, while Jev's
@@ -198,7 +204,8 @@ the EN and TR sample sets of section 4, not on the code-switch or noisy sets.
   1.0.0 audit flagged were re-translated, and the prebuilt audit now finds no alignment
   mismatch or QA failure. On 1.0.0 those projects moved any member's micro-F1 by at most
   0.0011 (a historical figure; that run's output is not tracked).
-- CORDIS labels are semi-automatic (silver), not human gold.
+- CORDIS labels are silver labels (CORDIS does not document how they are assigned), not
+  human gold.
 - `transformer` truncates at 512 subword tokens in `cordis_v0.5.0` (256 in the base run);
   Turkish documents are longer.
 - The `xlm-roberta-base` revision was not pinned at training, and the `cordis_v0.5.0`

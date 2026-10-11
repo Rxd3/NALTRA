@@ -3,13 +3,46 @@
 **Natural Language Analysis & Taxonomy Robust Architecture** studies multilingual
 hierarchical multi-label classification of EU research-project objectives into EuroSciVoc
 under translated (EN -> TR), code-switched and noisy input, with near-OOD rejection,
-calibration and latency. Every model family returns the same prediction contract, and
-ensembles are computed offline from saved score matrices.
+calibration and latency.
 
 Results: [interactive results page](docs/results/index.html) (one self-contained HTML file;
 download and open it, or serve `docs/` with GitHub Pages as in
 [runbook section 6](docs/runbook.md#6-interactive-results-page)). How the numbers are
 produced: [experiment runbook](docs/runbook.md).
+
+## What is new
+
+- **Data: the NALTRA CORDIS EN-TR benchmark, release 1.1.0** (CC BY 4.0,
+  [data/LICENSE](data/LICENSE)). All 31,407 labelled CORDIS Horizon 2020 project objectives
+  in English and in machine-translated Turkish (283,002 aligned sentence pairs), two
+  synthetic EN-TR code-switch tracks (sentence- and chunk-level; validation and test) and a
+  seeded noisy EN/TR test track (generated locally, not shipped). All tracks share one
+  project-grouped, duplicate-aware split (21,985 / 4,711 / 4,711) and the same labels, and
+  every shipped split is locked by the SHA-256 in its manifest ([Data](#data)).
+- **Task: hierarchical multi-label classification under input shift, with rejection**
+  ([Task](#task)): 473 direct labels in a 586-node tree, the same projects in four input
+  conditions, near-OOD rejection, and course baselines vs new methods (sparse+dense RRF kNN,
+  zero-shot Kev/Jev/Laya, NALTRA votes). Unlike flat, single-label categorisation, 84.3% of
+  projects carry several labels and 59.8% span several roots.
+- **Why Turkish.** It is agglutinative and morphologically rich (one stem takes many suffixed
+  word forms), a hard case for word-level features; and we are not aware of any
+  EuroSciVoc-labelled Turkish corpus.
+
+Research questions:
+
+1. *Which trained model fits 473 hierarchical labels best, and do votes help?* A calibrated
+   linear SVM: 0.558 EN / 0.489 TR micro-F1, 0.668 hierarchical F1; no vote beats it (best:
+   weighted soft vote, 0.523 / 0.472) ([Results](#results)).
+2. *How much is lost on translated, code-switched and noisy input?* SVM loses 0.070 (-> TR),
+   0.050 (-> sentence-level code-switch) and 0.078 (-> noisy EN); the multilingual hybrid kNN 0.011, 0.009
+   and 0.019 ([Results](#results)).
+3. *Can a model flag projects from a field it never saw?* With humanities held out, a
+   retrained SVM reaches AUROC 0.927 EN / 0.924 TR (94 OOD vs 4,351 in-domain projects)
+   ([Findings](#findings)).
+4. *Do zero-shot decision models match trained ones?* On the 120-pair sample Jev is
+   statistically indistinguishable from XLM-R, BiLSTM and Naive Bayes, and Kev from XLM-R
+   (the sample resolves about 0.045 micro-F1), all far below SVM (0.556); Laya scores 0.068
+   EN, a negative result ([Zero-shot sample](#zero-shot-sample)).
 
 ## Task
 
@@ -26,24 +59,28 @@ belongs to. The task requires:
 - **Paired language and input shift.** The same test projects are scored in English,
   machine-translated Turkish, synthetic EN/TR code-switched text and noisy copies; each drop
   is a paired bootstrap difference. Locally trained members see EN+TR training text, so
-  EN -> TR measures the gap on translated input; only Kev, Jev and Laya are zero-shot.
+  EN -> TR measures the gap on translated input.
 - **Near-OOD rejection.** With the humanities root held out of training, a model must flag
   those projects by low confidence (AUROC, FPR@95%TPR).
 - **Calibration.** Whether the scores can be read as probabilities (ECE, Brier).
+- **Zero-shot vs trained.** Jev, Kev (one yes/no question per label) and Laya (one
+  two-option question per label) are not trained or fine-tuned on CORDIS by the team
+  (provider pretraining data unknown) and face every trained member on 120 test pairs.
 
 ## Data
 
-One source: **CORDIS - EU research projects under Horizon 2020 (2014-2020)**, CC BY 4.0,
-<https://cordis.europa.eu/data/cordis-h2020projects-csv.zip>. Of 35,389 project records,
-31,407 have an objective and at least one supported label; they are split by project into
-**21,985 / 4,711 / 4,711** train / validation / test, identical in every track.
+Derived from one public source: **CORDIS - EU research projects under Horizon 2020
+(2014-2020)**, CC BY 4.0, <https://cordis.europa.eu/data/cordis-h2020projects-csv.zip>. Of
+35,389 project records, 31,407 have an objective and at least one supported label; they are
+split by project into **21,985 / 4,711 / 4,711** train / validation / test, identical in
+every track.
 
 | Track | Location | Splits | Derivation |
 | --- | --- | --- | --- |
 | EN | `data/processed/cordis_h2020/en/` | train, validation, test | cleaned CORDIS objectives |
 | TR | `data/processed/cordis_h2020/tr/` | train, validation, test | EN machine-translated by `Helsinki-NLP/opus-mt-tc-big-en-tr` @ `e539fc16` (pinned in `configs/data.yaml`); release 1.1.0 |
 | Code-switch | `data/processed/cordis_h2020/code_switch/{sentence_mix,chunk_mix}/balanced/` | validation, test | aligned EN/TR sentences of the same project: alternating (`sentence_mix`) or first half / second half (`chunk_mix`) |
-| Noisy | `data/noisy/combined/medium/cordis_h2020/{en,tr}/` (generated by `prepare_data.py --dataset noisy`, ignored) | test | character swap/duplicate/delete plus casing and punctuation noise (`combined`, medium, seed 42) |
+| Noisy | `data/noisy/combined/medium/cordis_h2020/{en,tr}/` (generated by `prepare_data.py --dataset noisy`, ignored) | test | one primary edit per document, drawn at random: adjacent-letter swap in 10% of words (35%), or duplication (35%) / deletion (30%) of 10% of letters and digits; plus occasional casing and punctuation changes (`combined`, `medium` = 0.10, seed 42; `src/naltra/data/noise.py` `_perturb_combined`) |
 
 **Committed:** `data/raw/cordis_h2020/cordis-h2020projects-csv.zip` (the unmodified,
 checksum-locked 55.2 MB archive), `data/processed/cordis_h2020/**/{*.jsonl.gz,manifest.json}`
@@ -56,12 +93,13 @@ python scripts/unpack_data.py      # or: make data
 
 Each split must match the SHA-256 and size in its `manifest.json` before it replaces the
 `.jsonl`; any mismatch fails without leaving a partial file. Details:
-[dataset card](docs/dataset.md), [data workspace](data/README.md). TR and both code-switch
-tracks are release 1.1.0: the 1.0.0 import with the 598 records its audit flagged (text not
-matching the stored sentence alignment) re-translated in 128-token chunks by the same
-checkpoint, labels unchanged. Every member is evaluated on 1.1.0, and every locally trained
-one is trained on it: the teammate-trained `cordis_v0.5.0` `bilstm` and `transformer` refit
-their heads on it, on encoders from run v0.4.0 (XLM-R's fine-tuning data is not recorded).
+[dataset card](data/README.md) (intended use, known issues) and the full
+[dataset specification](docs/dataset.md) (statistics in
+[section 4](docs/dataset.md#4-multi-label--hierarchy-semantics)). TR and both code-switch
+tracks are release 1.1.0: the 1.0.0 import with the 598 records its audit flagged
+re-translated in 128-token chunks by the same checkpoint, labels unchanged. Every member is evaluated on 1.1.0 and every locally
+trained one trained on it (`cordis_v0.5.0` `bilstm` and `transformer` refit their heads on
+encoders from run v0.4.0, whose XLM-R fine-tuning data is not recorded).
 
 ## Preprocessing pipeline
 
@@ -70,7 +108,7 @@ their heads on it, on encoders from run v0.4.0 (XLM-R's fine-tuning data is not 
 | 1. Archive check and extract | Reuses the committed archive (downloads only if absent), checks its SHA-256 against `configs/data.yaml`, extracts and checks `project.csv` and `euroSciVoc.csv` | `preprocessing.py` `download_cordis_h2020` |
 | 2. Parse | Reads EuroSciVoc assignments; repairs project rows whose objective contains unescaped `;`, drops malformed rows | `preprocessing.py` `process_cordis_h2020` |
 | 3. Clean objectives | Strips HTML tags with the pattern `<[^>]+>`, unescapes entities, collapses whitespace, keeps casing, drops empty objectives; the pattern also deletes `<…>` comparison spans that are not tags, in 62 retained projects ([details](docs/dataset.md#known-limitation-angle-bracket-comparisons), [Limitations](#limitations)) | `preprocessing.py` `preprocess_record_text` |
-| 4. Label-support filter | Keeps codes marked direct-supported (>= 50 projects) in `taxonomy/taxonomy.json`, maps them through `taxonomy/label_map.json`, drops projects left without a label; `scripts/build_taxonomy.py` rebuilds both files from the archive | `preprocessing.py` |
+| 4. Label-support filter | Keeps codes marked direct-supported (>= 50 projects) in `taxonomy/taxonomy.json`, maps them through `taxonomy/label_map.json`, drops projects left without a label; sub-threshold codes are dropped, not rolled up to a supported ancestor ([Limitations](#limitations)); `scripts/build_taxonomy.py` rebuilds both files from the archive | `preprocessing.py` |
 | 5. Hierarchy closure | `labels` = `labels_direct` plus every ancestor | `preprocessing.py` `hierarchy_closure` |
 | 6. Duplicate-text grouping | SHA-256 fingerprint of the normalised, lowercased text; identical objectives form one group | `preprocessing.py` `compute_content_fingerprint` |
 | 7. Stratified split | Multi-label stratification over fingerprint groups, so each project and each duplicate text sits in one split; 70/15/15, seed 42; writes the splits, `data/splits/cordis_h2020/project_splits.json` and a manifest | `splits.py`, `manifest.py` |
@@ -93,16 +131,13 @@ python scripts/validate_datasets.py --derived                       # step 10
 ```
 
 **Shipped release.** Its 1.1.0 manifests lock the data-code hashes of the generating commit
-(`ea00e6b`), and that code has changed since, so plain `validate_datasets.py` refuses it and
-points to `validate_datasets.py --prebuilt-release`: a record-level audit (identity,
-hierarchy closure, fingerprints, leakage, EN/TR alignment) that needs the EN and TR manifests
-with a SHA-256 per split, finds 0 alignment mismatches and 0 QA failures (both reported, not
-enforced) and reports segmenter drift. Training and noisy generation run the same
-audit and store the tolerated issues in each artifact's provenance. A rebuild rewrites the
-tracked manifests, split map and review sample, locked to the current code; train it
-without `--prebuilt-release`, naming the families with `--models`. EN and the derived tracks
-rebuild with the committed scripts; TR 1.1.0 does not, as its targeted repair script is not
-in this repository. Details: [dataset card](docs/dataset.md#shipped-turkish-release-110).
+(`ea00e6b`); that code has changed since, so plain `validate_datasets.py` refuses it and
+points to `--prebuilt-release`: a record-level audit (identity, hierarchy closure,
+fingerprints, leakage, EN/TR alignment, split SHA-256s) that finds 0 alignment mismatches and
+0 QA failures (reported, not enforced) and reports segmenter drift; training and noisy
+generation run it too. A rebuild rewrites the tracked manifests, split map and review sample
+(train it without `--prebuilt-release`); TR 1.1.0 cannot be rebuilt, as its targeted repair
+script is not in this repository ([details](docs/dataset.md#shipped-turkish-release-110)).
 
 ## Models
 
@@ -111,18 +146,20 @@ in this repository. Details: [dataset card](docs/dataset.md#shipped-turkish-rele
 | `naive_bayes` | baseline | multinomial Naive Bayes over TF-IDF, one-vs-rest | TF-IDF word 1-2-grams (50k), one MultinomialNB per label, alpha 0.03 | Trained and scored; reported row, does not vote |
 | `svm` | baseline | linear SVM over TF-IDF, one-vs-rest | same TF-IDF, one LinearSVC (C 1.0) per label, 3-fold project-grouped Platt calibration | Trained and scored |
 | `bilstm` | baseline | bidirectional LSTM | 1 layer, 300-d embeddings and 50k vocabulary learned from training only, 256 hidden per direction; early stopping ended training after epoch 9 and kept the epoch-7 weights (lowest validation loss), then head refit on the frozen encoder; 512 tokens | Trained and scored (`cordis_v0.5.0`) |
-| `transformer` | baseline | Transformer encoder (RoBERTa family) | `xlm-roberta-base` fine-tuned 3 epochs, then head refit on the frozen encoder; 512 tokens | Trained and scored (`cordis_v0.5.0`) |
+| `transformer` | baseline | Transformer encoder (RoBERTa family) | `xlm-roberta-base` encoder fine-tuned 3 epochs on 256-token inputs (run v0.4.0), then head refit on the frozen encoder; 512 tokens | Trained and scored (`cordis_v0.5.0`) |
 | `hybrid_knn` | new | sparse + dense retrieval kNN with reciprocal rank fusion (Cormack et al. 2009, k = 60) | TF-IDF cosine and `intfloat/multilingual-e5-base` neighbours (50 each), RRF k 60, then a label vote | Trained and scored (`cordis_v1.1.0_knn`) |
 | `kev` | new | zero-shot yes/no decision model (open Jev alternative) | Kev-0.8B (`jaredpalmer/kev-0.8b` @ `bf75a6a8`), one yes/no question per label to a local server | Scored on 80 validation and 120 test project pairs (about 75 s per project on a GTX 1650); needs its server ([runbook](docs/runbook.md#5-kev-server-wsl2-ubuntu)) |
 | `jev` | new | hosted System One decision model, zero-shot yes/no per label | TypeSafe `jev-latest`, the same 473 questions as Kev | Scored on the same project-pair samples as Kev; needs `JEV_API_KEY` and `JEV_API_BASE_URL=https://api.typesafe.ai` in `.env` |
-| `laya` | new | local pretrained multilingual choice-question model, zero-shot | `convaiinnovations/laya` multilingual checkpoint @ `7b928d82` (laya SDK 0.4.1), one two-option question per label (the topic or other research topics), P(topic) | Scored on the project-pair samples as a non-voting member (0.068 EN / 0.046 TR micro-F1), from an artifact built by `scripts/prepare_laya.py` (about 145 s per document on a GTX 1650) |
+| `laya` | new | local pretrained multilingual choice-question model, zero-shot | `convaiinnovations/laya` multilingual checkpoint @ `7b928d82` (laya SDK 0.4.1), one two-option question per label (A = the label's field name, B = a fixed "other" option), score P(A) | Scored on the project-pair samples as a non-voting member (0.068 EN / 0.046 TR micro-F1), from an artifact built by `scripts/prepare_laya.py` (about 145 s (EN) to 200 s (TR) per document on a GTX 1650, about 19 h for the 400 sample documents) |
 | votes | new | NALTRA hard and soft votes | strict majority, tuned k-of-M, hierarchy-closed k-of-M; mean or val-A micro-F1-weighted mean of member scores; leave-one-out majority per member | Computed offline from the dumps, so no model is re-run to try another vote |
 
-In `cordis_v0.5.0` (teammate-trained) the fully trained `bilstm` and `transformer` encoders
-are frozen and their heads refit on EN+TR with 512-token inputs. Every locally trained model
-is fit on the 473 `labels_direct` targets of the EN+TR training data (track `en_tr_direct`).
-Roles, architectures and models are fixed in `configs/benchmark.yaml` and explained in
-[docs/evaluation.md](docs/evaluation.md#baselines-and-new-methods).
+Every model family returns the same prediction contract, so votes are computed offline from
+saved score matrices. In `cordis_v0.5.0` (teammate-trained) the fully trained `bilstm` and
+`transformer` encoders are frozen and their heads refit on EN+TR with 512-token inputs. Every
+locally trained model is fit on the 473 `labels_direct` targets of the EN+TR training data
+(track `en_tr_direct`). Roles, architectures and models are fixed in `configs/benchmark.yaml`
+and explained in [docs/evaluation.md](docs/evaluation.md#baselines-and-new-methods). "Laya"
+in a `configs/models/hybrid_knn.yaml` comment refers only to the RRF constant k = 60.
 
 ## Evaluation
 
@@ -138,7 +175,11 @@ Roles, architectures and models are fixed in `configs/benchmark.yaml` and explai
 
 Validation is split by `pair_id`: one half tunes member thresholds, the other the ensemble
 settings; test sets are only scored. Differences use a paired project-grouped bootstrap
-(10,000 resamples, 95% percentile intervals) with Holm correction.
+(10,000 resamples, 95% percentile intervals; two-sided sign p-value with add-one correction,
+floor 2/10,001). Holm families: each vote vs the best member (4 per test set) and each
+system's drops from English (5 on the full sets; 1 on the sample, so Holm changes nothing).
+Zero-shot vs trained members are tested on the sample ([below](#zero-shot-sample)); other
+member-vs-member comparisons are point estimates.
 
 ## Results
 
@@ -160,10 +201,9 @@ The table shows the two best of the four votes on test; the hard votes `hard_k` 
 | `transformer` | baseline | 0.248 | 0.240 | 0.244 | 0.203 | 0.119 | 0.438 | 376 ms |
 
 p50 CPU is single-text latency over 200 EN test texts after 10 warm-up calls on an Intel
-Core i5-9300H (CUDA hidden, 4 torch threads). Size and parameter counts in
-`benchmark_summary.md` are not comparable across families: the classical and kNN counts are
-stored values (all three SVM calibration folds; kNN index entries), and neither count
-includes the 1.1 GB e5 encoder of `hybrid_knn`.
+Core i5-9300H (CUDA hidden, 4 torch threads). Sizes and parameter counts in
+`benchmark_summary.md` are not comparable across families (stored values: all three SVM
+calibration folds, kNN index entries, without the 1.1 GB e5 encoder of `hybrid_knn`).
 
 Micro-F1 lost from English test (paired bootstrap, 95% interval, Holm):
 
@@ -173,11 +213,17 @@ Micro-F1 lost from English test (paired bootstrap, 95% interval, Holm):
 | `hybrid_knn` | 0.011 [0.007, 0.016] | 0.009 [0.005, 0.014] | 0.019 [0.015, 0.023] | 0.026 [0.021, 0.031] |
 | `transformer` | 0.008 [0.003, 0.013] | 0.003 [-0.001, 0.007], not significant | 0.044 [0.039, 0.049] | 0.053 [0.047, 0.059] |
 
+### Zero-shot sample
+
 Zero-shot decision models on the fixed pair-hash sample (120 test project pairs, the same
 projects for every system; thresholds and weights from 32 val-A pairs, ensemble settings
-from 48 val-B pairs of an 80-pair validation sample). 249 of the 473 direct labels have no
-positive project in the test sample and 304 none in the validation sample, so sample
-macro-F1 (at most 224/473 = 0.474) is not comparable to the full test sets:
+from 48 val-B pairs of an 80-pair validation sample). Six members vote here (Naive Bayes and
+Laya are scored, never vote), so this weighted soft vote is not the full-set one, and
+trained members' thresholds are re-tuned (SVM 0.12 vs 0.16 on the full sets). Kev, Jev and
+Laya ask English questions (Kev and Jev: "Is this project about {name}?") of Turkish text
+too, so their EN -> TR drop mixes input shift with cross-lingual prompting. 249 of the 473
+direct labels have no positive project in the test sample and 304 none in the validation
+sample, so sample macro-F1 (at most 224/473 = 0.474) is not comparable to the full test sets:
 
 | System | Role | EN micro-F1 | TR micro-F1 | EN -> TR drop |
 | --- | --- | --- | --- | --- |
@@ -191,49 +237,83 @@ macro-F1 (at most 224/473 = 0.474) is not comparable to the full test sets:
 | `transformer` | baseline | 0.265 | 0.241 | 0.024 [-0.010, 0.057], not significant |
 | `laya` | new | 0.068 | 0.046 | 0.021 [-0.005, 0.048], not significant |
 
+### Findings
+
 - A calibrated linear SVM is the most accurate member on every set, and none of the tested
   votes beats it: the best ensemble (weighted soft) is 0.036 [0.031, 0.040] micro-F1 below
   it on English.
-- Among the members, the most accurate loses the most micro-F1: SVM drops 0.070 on Turkish and
-  0.078 on noisy English, while the multilingual retrieval member (`hybrid_knn`) drops 0.011
-  and 0.019, and XLM-R's code-switch drop is not significant. Relative to its English score,
+- Among the members, the most accurate loses the most micro-F1 (point estimates; differences
+  between systems' drops are not tested): SVM drops 0.070 on Turkish and 0.078 on noisy
+  English, while the multilingual retrieval member (`hybrid_knn`) drops 0.011 and 0.019, and
+  XLM-R's code-switch drop is not significant. Relative to its English score,
   SVM's noisy-English drop (14.0%) is smaller than BiLSTM's (16.6%) and XLM-R's (17.9%).
-- Jev, not fine-tuned on CORDIS by the team (whether the provider's training data included
-  CORDIS is unknown), comes within about 0.02 micro-F1 of the trained BiLSTM and Naive Bayes
-  on English, scores above XLM-R (0.277 vs 0.265, untested), and shows no detectable EN -> TR
-  drop (-0.002 [-0.018, 0.014], Holm p 0.85); the open Kev-0.8B is level with XLM-R on
-  English but drops 0.045 on Turkish.
-- Laya, a pretrained multilingual choice-question model used without CORDIS fine-tuning,
-  scores only 0.068 English / 0.046 Turkish on the sample (non-voting; threshold 0.98 tuned
-  on val-A): a negative result for this zero-shot setup. Fine-tuning was not evaluated.
+- Jev (not fine-tuned on CORDIS by the team; whether the provider's training data included
+  CORDIS is unknown) is statistically indistinguishable on the English sample from XLM-R
+  (+0.012 [-0.033, +0.058]), Naive Bayes (-0.020 [-0.062, +0.022]) and BiLSTM (-0.021
+  [-0.066, +0.025]), and Kev-0.8B ties XLM-R (+0.000 [-0.046, +0.048]); on Turkish, Jev -
+  XLM-R is +0.037 [-0.006, +0.080] (`results/metrics/cordis_v1.1.0_sample/pairwise.json`).
+  Jev shows no detectable EN -> TR drop (Holm p 0.85); Kev drops 0.045 on Turkish.
+- Laya, used without CORDIS fine-tuning, scores only 0.068 English / 0.046 Turkish on the
+  sample (non-voting; its threshold 0.98, tuned on 32 val-A pairs, is the top of the
+  0.02-0.98 grid in `src/naltra/evaluation/offline.py`): a negative result for this
+  zero-shot setup. Fine-tuning was not evaluated.
 - The neural members are weak (macro-F1 0.16 BiLSTM, 0.12 XLM-R), and XLM-R scores below
-  Naive Bayes on English (0.248 vs 0.278 micro-F1). This is a compute-budget result: XLM-R
-  was fine-tuned for 3 epochs with validation loss still falling (0.0382 to 0.0345), and the
-  scores match the teammate's own validation selection; no longer run was tried.
+  Naive Bayes on English (0.248 vs 0.278 micro-F1): a training-budget result, not an
+  architecture ranking (see [Limitations](#limitations)); the scores match the teammate's
+  own validation selection, and no longer run was tried.
 - Near-OOD (held-out humanities, 4,351 in-domain vs 94 OOD test projects): SVM AUROC 0.927
   [0.905, 0.946] EN and 0.924 [0.902, 0.945] TR; Naive Bayes 0.749 and 0.782.
 - The prebuilt audit flagged 598 translation projects in the former TR 1.0.0 release; 1.1.0
   repairs them, and the audit flags 0 (`results/metrics/translation_exceptions.json`).
 
+## Error analysis
+
+Full test sets, tuned thresholds, point estimates without intervals
+([results/metrics/cordis_v1.1.0_ensemble/error_analysis.json](results/metrics/cordis_v1.1.0_ensemble/error_analysis.json)):
+
+- **Rare labels.** SVM's English micro-F1 grows with a label's EN-train support: 0.441 on tail
+  labels (< 70 projects), 0.530 on mid (70-199) and 0.597 on head labels (>= 200).
+- **XLM-R on rare labels.** 0.107 / 0.158 / 0.303 in the same buckets; only on head labels
+  does it reach Naive Bayes (0.303 vs 0.299).
+- **Single-label projects are hardest.** SVM English micro-F1 is 0.429 on the 730 projects
+  with one gold label, against 0.564, 0.596 and 0.563 with 2, 3 and 4+.
+- **Turkish hurts social sciences most.** SVM's EN -> TR drop is largest on social-sciences
+  labels (0.529 -> 0.412); medical and health sciences is the best root (0.619 -> 0.541).
+- **Over-predicted labels.** SVM's most frequent English false positive is "business
+  models": 216 of its 375 predictions of that label are wrong.
+
 ## Limitations
 
-- **Labels and text.** CORDIS labels are semi-automatic (silver). The Turkish text is machine
-  translation without human review; the code-switched and noisy sets are synthetic.
+- **Labels and text.** CORDIS labels are silver labels (CORDIS does not document how they
+  are assigned); code-switched and noisy sets are synthetic. No human has rated the Turkish
+  MT. Its evidence is structural QA on every record (non-empty, not a copy of the English,
+  TR/EN length ratio 0.35-3.0, no control characters, aligned sentences; 0 failures on 1.1.0)
+  and an AI-assisted rating of 100 sampled projects (meaning preserved: 83 yes, 17 partial, 0
+  no; reviewer model and prompt not recorded; 18 rows show Turkish that no release ships)
+  ([dataset specification section 8](docs/dataset.md#8-translation-pipeline--turkish-derivation)).
+- **Label roll-up.** `labels_direct` keeps only codes with >= 50 supporting projects;
+  sub-threshold codes are dropped, not rolled up to their nearest supported ancestor. 8,128
+  of 31,407 retained projects lose at least one directly assigned code (9,909 codes), and
+  1,039 of 4,711 test projects' label closures miss 2,375 CORDIS-implied nodes (327 miss a
+  whole root). Scored against the complete CORDIS closure, hierarchical F1 changes by at most
+  0.007 (SVM 0.668 -> 0.662) and no model ranking changes
+  (`results/metrics/label_coverage.json`).
 - **OOD scope.** One held-out root (humanities: 94 OOD vs 4,351 in-domain test projects),
   only `naive_bayes` and `svm` retrained, no far-OOD set; the 266 test projects with both
   humanities and other labels are excluded as ambiguous, so mixed-domain projects are untested.
 - **Cleaning loss.** The step-3 tag pattern also deletes `<…>` spans that are comparisons,
   not HTML (`after (z<3) and before (z>3)` becomes `after (z 3)`): 62 retained projects (48
   train, 5 validation, 9 test) lose 17,290 characters. Labels are unaffected; dropping the 9
-  test projects moves each member's full-set EN micro-F1 by at most 0.0002 (at most 0.003 on
-  the 120-pair sample, which holds 2 of them), and the effect of the lost
-  training text is not measured. The 1.1.0 text is hash-locked, so a corrected cleaner needs
-  a new release version and a re-evaluation of every member.
+  test projects moves each member's full-set EN micro-F1 by at most 0.0002 (0.003 on the
+  sample, which holds 2), and the effect on training is not measured. The 1.1.0 text is
+  hash-locked, so a corrected cleaner needs a new release and a re-evaluation.
 - **Single training run.** Every trained member is one run with seed 42, so the bootstrap
   intervals cover test-set sampling only, not training variance.
 - **Label universe.** The >= 50-project support filter that defines the 473 labels counts
   all projects in the archive, test projects included (`scripts/build_taxonomy.py`), so the
-  test split influenced which labels exist, though no model trains on it.
+  test split influenced which labels exist, though no model trains on it. Counted on the
+  committed train and validation splits only, with the threshold scaled to their 85% share
+  (>= 43 projects), 5 of the 473 labels would fall out (54 with an unscaled >= 50).
 - **Validation reuse.** Member hyperparameters (NB alpha, neural checkpoints, head-refit
   candidates) were chosen on the full validation set, including the val-B half that tunes
   the ensembles, so ensemble settings may be slightly optimistic. Test sets were only scored.
@@ -241,12 +321,19 @@ macro-F1 (at most 224/473 = 0.474) is not comparable to the full test sets:
   neighbour-vote fractions, sigmoid outputs, p(yes)); tuned thresholds are 0.12-0.16 for
   the voting trained members and 0.88 for Kev and Jev (the non-voting Naive Bayes: 0.22 on
   the full sets, 0.16 on the sample).
-- **Neural training budget.** XLM-R's row measures a 3-epoch budget, not the architecture's
-  ceiling. The `xlm-roberta-base` revision was not recorded; the fine-tuned weights are in
-  the artifact.
-- **Sample-only members.** Kev, Jev and Laya run only on the 80 validation and 120 test pairs;
-  Jev's `jev-latest` is a hosted alias whose weights can change, and the Kev dumps record the
-  service configuration, not the served weights.
+- **Neural training budget.** The XLM-R and BiLSTM rows measure training budgets, not the
+  architectures' ceilings: XLM-R's encoder had 3 epochs on 256-token inputs with validation
+  loss still falling (0.0382 to 0.0345), and BiLSTM learns its embeddings from scratch. The
+  neural-vs-classical gap is therefore about budget, not architecture. The `xlm-roberta-base`
+  revision was not recorded; the fine-tuned weights are in the artifact.
+- **Sample-only members.** Kev, Jev and Laya run only on the 80 validation and 120 test pairs,
+  which resolve micro-F1 differences of about 0.045: in English, Jev and Kev cannot be
+  separated from XLM-R, BiLSTM or Naive Bayes, while on Turkish Kev is below Naive Bayes
+  (-0.078 [-0.115, -0.041], Holm p 0.003) and BiLSTM (-0.058 [-0.099, -0.015], Holm p 0.045),
+  and Laya is below every trained member in both languages
+  (`results/metrics/cordis_v1.1.0_sample/pairwise.json`). Jev's `jev-latest` is a hosted
+  alias whose weights can change, and the Kev dumps record the service configuration, not
+  the served weights.
 - **Near-duplicates.** Grouping catches only identical texts: 6, 15 and 25 of the 4,711 EN
   test projects have a training project at TF-IDF cosine of at least 0.95, 0.9 and 0.8
   (EN-train word 1-2-grams, min_df 2, sublinear tf; 7, 16 and 25 with the 50k vocabulary).
@@ -256,34 +343,58 @@ macro-F1 (at most 224/473 = 0.474) is not comparable to the full test sets:
 Python 3.11 or newer (ranges in `pyproject.toml`). The tested versions (Python 3.13.1) are
 pinned in [`requirements.txt`](requirements.txt) (the direct and dev dependencies plus the
 runtime pins for SciPy, tokenizers, huggingface-hub, joblib, threadpoolctl and
-safetensors), which needs Python 3.12 or newer.
+safetensors), which needs Python 3.12 or newer. Use a git clone
+(`git clone https://github.com/Rxd3/NALTRA`), not a ZIP: manifests and summaries record the
+commit via `git rev-parse`. Commands are PowerShell (5.1 too: one per line, no `&&`), with
+the bash form in a comment where it differs; `make` targets need Linux/macOS.
 
-```bash
+```powershell
 python -m venv .venv
-source .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"  # or: make install
-# exact tested replay instead: python -m pip install -r requirements.txt && python -m pip install -e . --no-deps
-# optional, for the GPU steps: the CUDA 12.6 PyTorch build used for the local GPU runs
-python -m pip install --no-deps --force-reinstall torch==2.14.1+cu126 --index-url https://download.pytorch.org/whl/cu126
+.venv\Scripts\Activate.ps1                    # bash: source .venv/bin/activate
+python -m pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu   # CPU-only: skips the 4 GB CUDA build
+python -m pip install -r requirements.txt     # tested pins (the CPU torch above satisfies torch==2.14.1)
+python -m pip install -e . --no-deps
+# development install with version ranges instead: python -m pip install -e ".[dev]"
+# GPU steps: python -m pip install --no-deps --force-reinstall torch==2.14.1+cu126 --index-url https://download.pytorch.org/whl/cu126
 ```
+
+The NB/SVM equality below was checked with the tested pins.
 
 **What is in Git.** The summaries behind every table are committed under `results/`:
 `metrics/cordis_v1.1.0_ensemble/summary.{json,md}` (full sets),
 `metrics/cordis_v1.1.0_sample/summary.{json,md}` (120-pair sample),
 `ood/cordis_v1.1.0/summary.json`, `benchmarks/cordis_v1.1.0/benchmark_summary.{json,md}` and
 `metrics/translation_exceptions.json` (`evaluate_ensemble.py` records the code commit,
-environment and bootstrap seed in each `summary.json`). Prediction dumps and models stay
-local (too large). From a clone, the NB and SVM rows, their intervals and the NB/SVM
-near-OOD results can be regenerated on CPU; every other table can be checked against the
+environment and bootstrap seed in each `summary.json`), plus the `label_coverage.json`,
+sample `pairwise.json` and `error_analysis.json` of `scripts/extra_analyses.py`. Prediction
+dumps and models stay local (too large). From a clone, the NB and SVM rows, their intervals
+and the NB/SVM near-OOD results can be regenerated on CPU (about 1.5 GB of data, models and
+results besides the virtual environment); every other table can be checked against the
 committed summaries.
 
-```bash
-python scripts/unpack_data.py                          # verified splits (or: make data)
-python -m pytest                                       # tests, no data/weights/GPU (or: make test)
-python -m ruff check . && python -m black --check .    # lint (or: make lint)
-# NB and SVM on CPU, about 45 min on a busy laptop (SVM training about 7 min); compare */cpu_check* with the committed summaries
+```powershell
+$env:LOKY_MAX_CPU_COUNT = "4"                            # bash: export LOKY_MAX_CPU_COUNT=4
+python scripts/unpack_data.py                            # verified splits (or: make data)
+python scripts/validate_datasets.py --prebuilt-release   # record-level audit of the shipped release, about 2 min
+python -m ruff check .                                   # lint (or: make lint)
+python -m black --check .
+# tests (no data, weights or GPU; about 20 min): one process per file, a failing file re-run once
+Get-ChildItem tests\test_*.py | ForEach-Object { python -m pytest -q $_.FullName; if ($LASTEXITCODE -ne 0) { python -m pytest -q $_.FullName } }
+# bash: for f in tests/test_*.py; do python -m pytest -q "$f" || python -m pytest -q "$f"; done
+```
+
+Why per file: on Windows a test file occasionally stops with exit code 139 / 0xC0000005 and
+no traceback (a native crash at varying points, e.g. inside transformers or scikit-learn),
+which is not a test failure; one process per file confines it, and the loop re-runs that file.
+Elsewhere `python -m pytest` (or `make test`) runs the suite in one process.
+
+```powershell
+# NB and SVM on CPU, about 45 min on a busy laptop; train the two families in separate runs
 python scripts/prepare_data.py --dataset noisy --prebuilt-release
-python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models naive_bayes svm --device cpu --output-dir models/cordis_v1.1.0
+python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models naive_bayes --device cpu --output-dir models/cordis_v1.1.0   # about 4 min
+python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models svm --device cpu --output-dir models/cordis_v1.1.0           # about 7-13 min
+# Windows: a training run can end with exit 139 / -1073741819 / 0xC0000005 and no traceback;
+# if models/cordis_v1.1.0/cordis_h2020/en_tr_direct/<family>/naltra.json is missing, re-run that family's line
 python scripts/predict_all.py --artifacts models/cordis_v1.1.0/cordis_h2020/en_tr_direct --models naive_bayes svm --sets en_validation tr_validation en_test tr_test cs_chunk_test cs_sentence_test en_test_noisy=data/noisy/combined/medium/cordis_h2020/en/test.jsonl tr_test_noisy=data/noisy/combined/medium/cordis_h2020/tr/test.jsonl --device cpu --output-dir results/predictions/cordis_v1.1.0
 python scripts/evaluate_ensemble.py --predictions results/predictions/cordis_v1.1.0 --members naive_bayes svm --tune-sets en_validation tr_validation --test-sets en_test tr_test cs_chunk_test cs_sentence_test en_test_noisy=data/noisy/combined/medium/cordis_h2020/en/test.jsonl tr_test_noisy=data/noisy/combined/medium/cordis_h2020/tr/test.jsonl --output-dir results/metrics/cpu_check
 python scripts/sample_sets.py --sets en_validation tr_validation --pairs 80 --output-dir data/samples/val80
@@ -295,12 +406,17 @@ python scripts/run_ood.py --models naive_bayes svm --languages en tr --output-di
 
 `evaluate_ensemble.py` needs two voting members, so this check lets NB vote; thresholds are
 tuned per member and every bootstrap uses the same seed, so its NB and SVM rows and
-intervals equal the committed full-set and sample ones. With every member's dumps
-([runbook sections 2-4](docs/runbook.md#2-train)), rebuild the summary and the results page:
+intervals equal the committed full-set and sample ones. Which fields of
+`results/*/cpu_check*` must match the committed summaries, and which differ by design, is
+listed in [results/README.md](results/README.md#checking-the-cpu-re-run).
+
+With every member's dumps ([runbook sections 2-4](docs/runbook.md#2-train)), rebuild the
+summary, the results page and the extra analyses:
 
 ```bash
 python scripts/evaluate_ensemble.py --predictions results/predictions/cordis_v1.1.0 --members svm hybrid_knn bilstm transformer --baselines naive_bayes --tune-sets en_validation tr_validation --test-sets en_test tr_test cs_chunk_test cs_sentence_test en_test_noisy=data/noisy/combined/medium/cordis_h2020/en/test.jsonl tr_test_noisy=data/noisy/combined/medium/cordis_h2020/tr/test.jsonl --output-dir results/metrics/cordis_v1.1.0_ensemble
 python scripts/build_dashboard.py --summary results/metrics/cordis_v1.1.0_ensemble/summary.json --sample-summary results/metrics/cordis_v1.1.0_sample/summary.json --predictions results/predictions/cordis_v1.1.0 --test-sets en_test tr_test cs_chunk_test cs_sentence_test en_test_noisy=data/noisy/combined/medium/cordis_h2020/en/test.jsonl tr_test_noisy=data/noisy/combined/medium/cordis_h2020/tr/test.jsonl --latency results/benchmarks/cordis_v1.1.0/benchmark_summary.json --ood results/ood/cordis_v1.1.0/summary.json --output docs/results/index.html
+python scripts/extra_analyses.py   # label_coverage.json, sample pairwise.json, error_analysis.json
 ```
 
 | Member or step | Needs beyond a CPU clone |
@@ -309,18 +425,14 @@ python scripts/build_dashboard.py --summary results/metrics/cordis_v1.1.0_ensemb
 | `hybrid_knn` | the `intfloat/multilingual-e5-base` download (1.1 GB) and, in practice, a GPU |
 | `kev` | a WSL2 Kev server with the `jaredpalmer/kev-0.8b` weights ([runbook](docs/runbook.md#5-kev-server-wsl2-ubuntu)) and `KEV_API_KEY`, `KEV_API_BASE_URL` in `.env`; about 75 s per project on a 4 GB GTX 1650, hence the 120-pair sample |
 | `jev` | `JEV_API_KEY` (paid hosted API) and `JEV_API_BASE_URL=https://api.typesafe.ai` in `.env` (copy `.env.example`; never commit `.env`) |
-| `laya` | `pip install -r requirements-laya.txt`, the 678 MB pinned checkpoint (`prepare_laya.py`) and, in practice, a GPU: about 145 s per document on the GTX 1650 (about 7 s on an RTX 4050), hence the sample ([runbook](docs/runbook.md#kev-jev-and-laya-on-fixed-samples)) |
+| `laya` | `pip install -r requirements-laya.txt`, the 678 MB pinned checkpoint (`prepare_laya.py`) and, in practice, a GPU: about 145 s (EN) to 200 s (TR) per document on the GTX 1650, about 19 h for the 400 sample documents (about 7 s per document on an RTX 4050), hence the sample ([runbook](docs/runbook.md#kev-jev-and-laya-on-fixed-samples)) |
 | `run_benchmark.py` (latency) | the artifacts of all five trained families and an idle machine |
 
 - Every `train_all.py` run rewrites `<output-dir>/training_summary.json`; check that it
   reports `"success"` before the next run overwrites it.
-- If NB or SVM training fails with joblib's "A task has failed to un-serialize" (seen under
-  memory pressure with `n_jobs: -1`), set `LOKY_MAX_CPU_COUNT=4` and re-run that family. On
-  Windows a process can also end with a native access violation and no traceback (exit
-  code 139, -1073741819 or 0xC0000005), sometimes after the model is saved, while joblib
-  worker processes shut down. It is not a data error: if the family's `naltra.json` exists
-  and `training_summary.json` (or the printed status) says `"success"`, the saved model is
-  usable (`predict_all.py` reloads and checks it); otherwise re-run that family alone.
+- After joblib's "A task has failed to un-serialize" (memory pressure with `n_jobs: -1`),
+  re-run that family with `LOKY_MAX_CPU_COUNT=4`. After a native crash, a family whose
+  `naltra.json` exists and whose status says `"success"` is usable (`predict_all.py` checks it).
 - `train_all.py --smoke` trains a bounded subset offline for every family except
   `hybrid_knn`, which needs the e5 encoder in the Hugging Face cache.
 
@@ -329,7 +441,7 @@ python scripts/build_dashboard.py --summary results/metrics/cordis_v1.1.0_ensemb
 | Path | Purpose |
 | --- | --- |
 | `contributions/` | One file per team member, `<NAME>_<ID>_<GITHUB>.md`: role, work done and results |
-| `configs/` | Source and translation locks (`data.yaml`), training defaults (`training.yaml`), benchmark protocol (`benchmark.yaml`: primary metric, system roles); one YAML per member in `models/` |
+| `configs/` | Source and translation locks (`data.yaml`), training defaults (`training.yaml`), benchmark protocol (`benchmark.yaml`: primary metric, system roles), calibration bins of `evaluate_all.py` (`evaluation.yaml`); one YAML per member in `models/` |
 | `data/raw/`, `data/processed/`, `data/splits/` | Committed CORDIS archive (extracted CSVs stay local); compressed EN, TR and code-switch splits with manifests; project split map |
 | `data/review/` | Stratified 100-project translation review sample (its human-review columns still read `pending`) and its AI-assisted audit |
 | `data/noisy/`, `data/cache/`, `data/samples/` | Generated noisy test copies, translation cache and the Kev, Jev and Laya samples (ignored) |
@@ -342,10 +454,10 @@ python scripts/build_dashboard.py --summary results/metrics/cordis_v1.1.0_ensemb
 | `src/naltra/schemas/`, `src/naltra/utils/` | `PredictionResult` and related typed prediction structures; YAML config loading and run provenance (git commit, repository-relative paths) |
 | `src/naltra/cli.py` | `prepare_data` entry point, shared by `scripts/prepare_data.py` and `naltra-prepare-data` |
 | `scripts/` | Command-line entry points (next section) |
-| `tests/` | Pytest suite on small fixtures |
+| `tests/` | Pytest suite on small fixtures (41 files: data and audits, models, evaluation and votes, scripts, results page) |
 | `models/` | Trained artifacts, `<run>/<dataset>/<track>/<family>/` (ignored) |
 | `results/` | Committed metric, OOD, benchmark and translation-exception summaries (see [Reproduce](#reproduce)); prediction dumps, plots and OOD models are generated locally (ignored) |
-| `docs/` | [Runbook](docs/runbook.md) (commands, hardware, Kev server), [dataset card](docs/dataset.md), [taxonomy](docs/taxonomy.md), [architecture](docs/architecture.md) (prediction contract, pipeline), [core ML](docs/core_ml.md) (training, artifacts, service adapters, local Laya), [evaluation](docs/evaluation.md) (metric choice, baselines vs new methods, code-switch evaluation), [team ownership](docs/team_ownership.md) |
+| `docs/` | [Runbook](docs/runbook.md) (commands, hardware, Kev server), [dataset specification](docs/dataset.md) (the dataset card is [data/README.md](data/README.md)), [taxonomy](docs/taxonomy.md), [architecture](docs/architecture.md) (prediction contract, pipeline), [core ML](docs/core_ml.md) (training, artifacts, service adapters, local Laya), [evaluation](docs/evaluation.md) (metric choice, baselines vs new methods, code-switch evaluation), [team ownership](docs/team_ownership.md) |
 | `docs/results/` | The built interactive results page (`index.html`) |
 
 Top level: `pyproject.toml` (package, dependencies, pytest/Ruff/Black settings),
@@ -356,7 +468,7 @@ Top level: `pyproject.toml` (package, dependencies, pytest/Ruff/Black settings),
 
 ## Scripts
 
-All 16 scripts in `scripts/`, run from the repository root:
+All 17 scripts in `scripts/`, run from the repository root:
 
 | Script | Inputs -> outputs |
 | --- | --- |
@@ -365,19 +477,37 @@ All 16 scripts in `scripts/`, run from the repository root:
 | `prepare_data.py` | Raw archive -> EN splits; `--dataset translation`, `code_switch` or `all` for derived tracks; `--dataset noisy` -> `data/noisy/combined/medium/cordis_h2020/{en,tr}/test.jsonl`; `--prebuilt-release` derives from the shipped 1.1.0 release |
 | `validate_datasets.py` | Prepared release -> full audit pass or error; `--code-switch` adds both code-switch tracks, `--derived` noise and code-switch; `--prebuilt-release` audits the shipped 1.1.0 release record by record, which the full audit refuses ([why](#preprocessing-pipeline)) |
 | `train_all.py` | Splits + `configs/` -> `models/<run>/cordis_h2020/<track>/<family>/`; rewrites `<run>/training_summary.json` on every run |
-| `prepare_laya.py` | Pinned checkpoint in `configs/models/laya.yaml` -> `<output-dir>/laya/` artifact (checkpoint files with their SHA-256s, the 473 topic questions); no training |
+| `prepare_laya.py` | Pinned checkpoint in `configs/models/laya.yaml` -> `<output-dir>/laya/` artifact (checkpoint files with their SHA-256s, the 473 label questions); no training |
 | `sample_sets.py` | Evaluation sets -> the `--pairs` projects with the smallest pair-id SHA-256 in each, `data/samples/<dir>/<set>.jsonl`, for Kev, Jev and Laya |
 | `predict_all.py` | Artifacts + evaluation sets -> score matrices `results/predictions/<run>/<family>/<set>.npz` with `.json` sidecars |
-| `classify.py` | Artifacts + `--text` or a JSONL `--input` -> one JSON line per text with labels, taxonomy-closed labels, language and OOD decision (`disabled` for the shipped neural artifacts, whose head refit cleared the threshold); several `--models` are combined by a `--method` hard or soft vote, which uses a fixed 0.5 soft threshold (not the benchmark's tuned one) and reports no OOD decision |
+| `classify.py` | Artifacts + `--text` or a JSONL `--input` -> one JSON line per text with labels, taxonomy-closed labels, language and OOD decision (`disabled` for the reported neural artifacts, whose head refit cleared the threshold); several `--models` are combined by a `--method` hard or soft vote, which uses a fixed 0.5 soft threshold (not the benchmark's tuned one) and reports no OOD decision |
 | `evaluate_ensemble.py` | Score matrices -> tuned thresholds, member and ensemble metrics, bootstrap tests in `results/metrics/<run>/summary.{json,md}` |
 | `evaluate_all.py` | The teammates' direct BiLSTM/XLM-R/Laya evaluator with `--resume`; it runs the full validator, so it needs a release rebuilt from the raw archive, and no reported number comes from it |
 | `translation_exceptions.py` | Summary + dumps + a `--prebuilt-release` artifact -> the projects the prebuilt audit flagged (0 on 1.1.0) and scores with and without them, `results/metrics/translation_exceptions.json` |
+| `extra_analyses.py` | Committed data + local prediction dumps (`coverage`, `pairwise`, `errors`; default all) -> label coverage against the full CORDIS closure (`results/metrics/label_coverage.json`), sample member pairs (`results/metrics/cordis_v1.1.0_sample/pairwise.json`) and `results/metrics/cordis_v1.1.0_ensemble/error_analysis.json` |
 | `make_figures.py` | Summary + score matrices -> paper figures `results/plots/<run>/*.png` |
 | `run_benchmark.py` | Artifacts -> latency, throughput and size in `results/benchmarks/<run>/benchmark_summary.*` |
 | `run_ood.py` | Splits -> retrains NB/SVM without one root (default humanities), near-OOD AUROC and FPR@95%TPR in `<output-dir>/summary.json` (reported: `results/ood/cordis_v1.1.0`); refuses an existing `--output-dir` unless it holds an earlier `run_ood.py` output or `--overwrite` is given, and always refuses one that overlaps `--data-dir` or the repository root |
 | `build_dashboard.py` | Summary + 120-pair sample summary + dumps + latency + OOD -> `docs/results/index.html` |
 
-## License
+## References and licences
 
 Code: MIT ([LICENSE](LICENSE)). Data and taxonomy: CC BY 4.0 ([data/LICENSE](data/LICENSE)),
-derived from "European Union, CORDIS - https://cordis.europa.eu - CC BY 4.0".
+derived from "European Union, CORDIS - https://cordis.europa.eu - CC BY 4.0". Third-party
+models are downloaded at their pinned revisions, not redistributed:
+
+| Resource | Used for | Licence |
+| --- | --- | --- |
+| CORDIS H2020 projects (European Union) and EuroSciVoc (Publications Office of the EU) | texts and labels | CC BY 4.0 ([data/LICENSE](data/LICENSE)) |
+| `Helsinki-NLP/opus-mt-tc-big-en-tr` @ `e539fc16` (OPUS-MT; Tiedemann and Thottingal 2020) | EN -> TR translation | CC BY 4.0 |
+| `intfloat/multilingual-e5-base` @ `d1287505` (Wang et al. 2024) | `hybrid_knn` dense retriever | MIT |
+| `xlm-roberta-base` (XLM-R; Conneau et al. 2020) | `transformer` | MIT |
+| `convaiinnovations/laya` @ `7b928d82`, laya SDK 0.4.1 | `laya` | Apache-2.0 |
+| `jaredpalmer/kev-0.8b` @ `bf75a6a8` on `Qwen/Qwen3.5-0.8B-Base` | `kev` | Apache-2.0 |
+| TypeSafe `jev-latest` (hosted API) | `jev` | the provider's terms of service |
+
+- Conneau, A. et al. (2020). Unsupervised cross-lingual representation learning at scale. ACL.
+- Cormack, G. V., Clarke, C. L. A. and Buettcher, S. (2009). Reciprocal rank fusion outperforms Condorcet and individual rank learning methods. SIGIR.
+- Holm, S. (1979). A simple sequentially rejective multiple test procedure. Scandinavian Journal of Statistics 6(2), 65-70.
+- Tiedemann, J. and Thottingal, S. (2020). OPUS-MT: building open translation services for the world. EAMT.
+- Wang, L. et al. (2024). Multilingual E5 text embeddings: a technical report. arXiv:2402.05672.

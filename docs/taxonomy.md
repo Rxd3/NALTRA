@@ -45,12 +45,14 @@ To ensure statistical significance and balanced stratified partitioning across s
 
 Ancestors are **never pruned** merely because they are rarely annotated directly; structural integrity from root to leaf is strictly preserved.
 
+Codes below the threshold are dropped from a project's direct labels, not rolled up to their nearest supported ancestor: 8,128 of the 31,407 retained projects lose at least one directly assigned code ([dataset specification, section 3](dataset.md#3-classification-ontology-euroscivoc)).
+
 ---
 
 ## 4. Hierarchy Closure & Violations
 
 Stored dataset targets preserve both sets:
-1. `labels_direct`: Specific EuroSciVoc categories directly assigned to the project.
+1. `labels_direct`: The project's directly assigned EuroSciVoc categories that pass the support threshold, i.e. those among the 473 direct labels.
 2. `labels`: Direct labels plus all required ancestors up to the root domain.
 
 Models train on `labels_direct`. Prediction `labels` contains direct selections, and `hierarchy_paths` contains required ancestors without invented scores. Ordinary metrics compare direct assignments; hierarchical metrics expand ancestors.

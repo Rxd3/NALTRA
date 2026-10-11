@@ -1,0 +1,755 @@
+{
+  "code_commit": "9c9a14a-dirty",
+  "environment": {
+    "python_version": "3.13.1",
+    "platform": "win32",
+    "package_versions": {
+      "numpy": "2.5.3",
+      "torch": "2.14.1+cu126",
+      "transformers": "5.19.0",
+      "scikit-learn": "1.9.1",
+      "pyyaml": "6.0.3",
+      "huggingface-hub": "1.33.0",
+      "httpx": "0.28.1"
+    }
+  },
+  "inputs": {
+    "results/metrics/cordis_v1.1.0_sample/summary.json": "abd6fa3192d93e58768eb92b969b479210ac2c62ed1a4144ab81142937597233"
+  },
+  "resamples": 10000,
+  "bootstrap_seed": 42,
+  "projects": {
+    "en_test_kev": 120,
+    "tr_test_kev": 120
+  },
+  "thresholds": {
+    "jev": 0.88,
+    "kev": 0.88,
+    "laya": 0.98,
+    "transformer": 0.12,
+    "naive_bayes": 0.16,
+    "bilstm": 0.14,
+    "svm": 0.12,
+    "hybrid_knn": 0.12
+  },
+  "systems": {
+    "jev": {
+      "role": "new",
+      "architecture": "hosted System One decision model (Jev), zero-shot yes/no per label",
+      "model": "TypeSafe jev-latest via POST /v1/systemone, one noul question per direct label (\"Is this project about {name}?\"), no CORDIS fine-tuning by the team"
+    },
+    "kev": {
+      "role": "new",
+      "architecture": "zero-shot yes/no decision model (open-source Jev alternative)",
+      "model": "Kev-0.8B: jaredpalmer/kev-0.8b at bf75a6a8848ea6960ff2ed108d9ed44c2941174f (tag v1.0) on Qwen/Qwen3.5-0.8B-Base, System One server; one yes/no (\"noul\") question per direct label, p(yes) for \"Is this project about {name}?\"; not fine-tuned on CORDIS by the team"
+    },
+    "laya": {
+      "role": "new",
+      "architecture": "local pretrained multilingual choice-question model (Laya), zero-shot",
+      "model": "convaiinnovations/laya multilingual checkpoint at 7b928d828b7b0e022f929d9bd2e44165aa270148 via laya SDK 0.4.1; one two-option question per direct label (A = the topic, B = other research topics), P(A) as the label score; not fine-tuned on CORDIS"
+    },
+    "transformer": {
+      "role": "baseline",
+      "architecture": "Transformer encoder (RoBERTa family)",
+      "model": "release cordis_v0.5.0: xlm-roberta-base fine-tuned for 3 epochs (lr 2e-5), then its sigmoid head refit on the frozen encoder for up to 20 epochs (unweighted BCE, lr 1e-3); max_length 512"
+    },
+    "naive_bayes": {
+      "role": "baseline",
+      "architecture": "multinomial Naive Bayes over TF-IDF, one-vs-rest",
+      "model": "TF-IDF word 1-2-grams (50k features, min_df 2, sublinear tf) + one binary MultinomialNB per label, alpha 0.03"
+    },
+    "bilstm": {
+      "role": "baseline",
+      "architecture": "bidirectional LSTM",
+      "model": "release cordis_v0.5.0: 1-layer BiLSTM trained from scratch (300-d embeddings, 50k vocabulary, 256 hidden units per direction, dropout 0.2) with early stopping, which ended training after epoch 9 and kept the lowest-validation-loss epoch-7 checkpoint; then its sigmoid head refit on the frozen encoder (unweighted BCE, lr 1e-3); max_length 512"
+    },
+    "svm": {
+      "role": "baseline",
+      "architecture": "linear SVM over TF-IDF, one-vs-rest",
+      "model": "TF-IDF word 1-2-grams (50k features, min_df 2, sublinear tf) + one LinearSVC (C 1.0) per label, 3-fold project-grouped Platt calibration"
+    },
+    "hybrid_knn": {
+      "role": "new",
+      "architecture": "sparse + dense retrieval kNN with reciprocal rank fusion (Cormack et al. 2009, k = 60)",
+      "model": "TF-IDF 1-2-grams (50k) cosine + intfloat/multilingual-e5-base mean-pooled embeddings (max_length 256), 50 neighbours per retriever, RRF k 60, fused neighbour label vote"
+    }
+  },
+  "micro_f1_ci_half_width": {
+    "en_test_kev": {
+      "mean": 0.0433,
+      "min": 0.0364,
+      "max": 0.0471
+    },
+    "tr_test_kev": {
+      "mean": 0.0406,
+      "min": 0.0336,
+      "max": 0.0447
+    }
+  },
+  "comparisons": {
+    "en_test_kev": {
+      "jev-transformer": {
+        "micro_f1": {
+          "a": 0.2771,
+          "b": 0.2649,
+          "difference": 0.0122,
+          "ci_low": -0.0332,
+          "ci_high": 0.0582,
+          "p_value": 0.5875,
+          "p_resolution": 0.0002,
+          "p_holm": 1.0
+        },
+        "macro_f1": {
+          "a": 0.1532,
+          "b": 0.0911,
+          "difference": 0.0621,
+          "ci_low": 0.0246,
+          "ci_high": 0.0599,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "jev-naive_bayes": {
+        "micro_f1": {
+          "a": 0.2771,
+          "b": 0.2967,
+          "difference": -0.0196,
+          "ci_low": -0.0618,
+          "ci_high": 0.0219,
+          "p_value": 0.3682,
+          "p_resolution": 0.0002,
+          "p_holm": 1.0
+        },
+        "macro_f1": {
+          "a": 0.1532,
+          "b": 0.1342,
+          "difference": 0.019,
+          "ci_low": -0.0094,
+          "ci_high": 0.0238,
+          "p_value": 0.389,
+          "p_resolution": 0.0002,
+          "p_holm": 0.8813
+        }
+      },
+      "jev-bilstm": {
+        "micro_f1": {
+          "a": 0.2771,
+          "b": 0.2983,
+          "difference": -0.0212,
+          "ci_low": -0.0659,
+          "ci_high": 0.0248,
+          "p_value": 0.3662,
+          "p_resolution": 0.0002,
+          "p_holm": 1.0
+        },
+        "macro_f1": {
+          "a": 0.1532,
+          "b": 0.1081,
+          "difference": 0.0452,
+          "ci_low": 0.0127,
+          "ci_high": 0.0463,
+          "p_value": 0.001,
+          "p_resolution": 0.0002,
+          "p_holm": 0.005
+        }
+      },
+      "jev-svm": {
+        "micro_f1": {
+          "a": 0.2771,
+          "b": 0.5557,
+          "difference": -0.2786,
+          "ci_low": -0.3237,
+          "ci_high": -0.2335,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.1532,
+          "b": 0.2541,
+          "difference": -0.1009,
+          "ci_low": -0.0945,
+          "ci_high": -0.0614,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "jev-hybrid_knn": {
+        "micro_f1": {
+          "a": 0.2771,
+          "b": 0.377,
+          "difference": -0.0999,
+          "ci_low": -0.1375,
+          "ci_high": -0.061,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.1532,
+          "b": 0.1554,
+          "difference": -0.0022,
+          "ci_low": -0.0227,
+          "ci_high": 0.0064,
+          "p_value": 0.2938,
+          "p_resolution": 0.0002,
+          "p_holm": 0.8813
+        }
+      },
+      "kev-transformer": {
+        "micro_f1": {
+          "a": 0.2653,
+          "b": 0.2649,
+          "difference": 0.0004,
+          "ci_low": -0.0463,
+          "ci_high": 0.0479,
+          "p_value": 0.9715,
+          "p_resolution": 0.0002,
+          "p_holm": 1.0
+        },
+        "macro_f1": {
+          "a": 0.1586,
+          "b": 0.0911,
+          "difference": 0.0674,
+          "ci_low": 0.0303,
+          "ci_high": 0.0648,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "kev-naive_bayes": {
+        "micro_f1": {
+          "a": 0.2653,
+          "b": 0.2967,
+          "difference": -0.0314,
+          "ci_low": -0.0711,
+          "ci_high": 0.008,
+          "p_value": 0.1168,
+          "p_resolution": 0.0002,
+          "p_holm": 0.6983
+        },
+        "macro_f1": {
+          "a": 0.1586,
+          "b": 0.1342,
+          "difference": 0.0244,
+          "ci_low": -0.0032,
+          "ci_high": 0.0283,
+          "p_value": 0.1206,
+          "p_resolution": 0.0002,
+          "p_holm": 0.4824
+        }
+      },
+      "kev-bilstm": {
+        "micro_f1": {
+          "a": 0.2653,
+          "b": 0.2983,
+          "difference": -0.033,
+          "ci_low": -0.074,
+          "ci_high": 0.0081,
+          "p_value": 0.1164,
+          "p_resolution": 0.0002,
+          "p_holm": 0.6983
+        },
+        "macro_f1": {
+          "a": 0.1586,
+          "b": 0.1081,
+          "difference": 0.0505,
+          "ci_low": 0.0205,
+          "ci_high": 0.0499,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "kev-svm": {
+        "micro_f1": {
+          "a": 0.2653,
+          "b": 0.5557,
+          "difference": -0.2904,
+          "ci_low": -0.3344,
+          "ci_high": -0.2458,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.1586,
+          "b": 0.2541,
+          "difference": -0.0955,
+          "ci_low": -0.0909,
+          "ci_high": -0.054,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "kev-hybrid_knn": {
+        "micro_f1": {
+          "a": 0.2653,
+          "b": 0.377,
+          "difference": -0.1117,
+          "ci_low": -0.1477,
+          "ci_high": -0.0748,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.1586,
+          "b": 0.1554,
+          "difference": 0.0032,
+          "ci_low": -0.0171,
+          "ci_high": 0.0119,
+          "p_value": 0.7569,
+          "p_resolution": 0.0002,
+          "p_holm": 0.8813
+        }
+      },
+      "laya-transformer": {
+        "micro_f1": {
+          "a": 0.0675,
+          "b": 0.2649,
+          "difference": -0.1974,
+          "ci_low": -0.2424,
+          "ci_high": -0.15,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.0314,
+          "b": 0.0911,
+          "difference": -0.0597,
+          "ci_low": -0.0644,
+          "ci_high": -0.0354,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "laya-naive_bayes": {
+        "micro_f1": {
+          "a": 0.0675,
+          "b": 0.2967,
+          "difference": -0.2292,
+          "ci_low": -0.2692,
+          "ci_high": -0.1884,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.0314,
+          "b": 0.1342,
+          "difference": -0.1028,
+          "ci_low": -0.1005,
+          "ci_high": -0.0685,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "laya-bilstm": {
+        "micro_f1": {
+          "a": 0.0675,
+          "b": 0.2983,
+          "difference": -0.2308,
+          "ci_low": -0.2767,
+          "ci_high": -0.1835,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.0314,
+          "b": 0.1081,
+          "difference": -0.0767,
+          "ci_low": -0.0782,
+          "ci_high": -0.0467,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "laya-svm": {
+        "micro_f1": {
+          "a": 0.0675,
+          "b": 0.5557,
+          "difference": -0.4882,
+          "ci_low": -0.5338,
+          "ci_high": -0.4419,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.0314,
+          "b": 0.2541,
+          "difference": -0.2227,
+          "ci_low": -0.1915,
+          "ci_high": -0.1488,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "laya-hybrid_knn": {
+        "micro_f1": {
+          "a": 0.0675,
+          "b": 0.377,
+          "difference": -0.3095,
+          "ci_low": -0.354,
+          "ci_high": -0.264,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.0314,
+          "b": 0.1554,
+          "difference": -0.124,
+          "ci_low": -0.1166,
+          "ci_high": -0.0829,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      }
+    },
+    "tr_test_kev": {
+      "jev-transformer": {
+        "micro_f1": {
+          "a": 0.2786,
+          "b": 0.2413,
+          "difference": 0.0374,
+          "ci_low": -0.0056,
+          "ci_high": 0.08,
+          "p_value": 0.0882,
+          "p_resolution": 0.0002,
+          "p_holm": 0.3528
+        },
+        "macro_f1": {
+          "a": 0.1474,
+          "b": 0.0776,
+          "difference": 0.0698,
+          "ci_low": 0.0311,
+          "ci_high": 0.0633,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "jev-naive_bayes": {
+        "micro_f1": {
+          "a": 0.2786,
+          "b": 0.298,
+          "difference": -0.0194,
+          "ci_low": -0.062,
+          "ci_high": 0.0247,
+          "p_value": 0.3818,
+          "p_resolution": 0.0002,
+          "p_holm": 0.9545
+        },
+        "macro_f1": {
+          "a": 0.1474,
+          "b": 0.1224,
+          "difference": 0.025,
+          "ci_low": -0.0006,
+          "ci_high": 0.0311,
+          "p_value": 0.0594,
+          "p_resolution": 0.0002,
+          "p_holm": 0.1782
+        }
+      },
+      "jev-bilstm": {
+        "micro_f1": {
+          "a": 0.2786,
+          "b": 0.2779,
+          "difference": 0.0008,
+          "ci_low": -0.0419,
+          "ci_high": 0.0454,
+          "p_value": 0.9721,
+          "p_resolution": 0.0002,
+          "p_holm": 0.9721
+        },
+        "macro_f1": {
+          "a": 0.1474,
+          "b": 0.0933,
+          "difference": 0.0541,
+          "ci_low": 0.0214,
+          "ci_high": 0.0528,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "jev-svm": {
+        "micro_f1": {
+          "a": 0.2786,
+          "b": 0.4893,
+          "difference": -0.2106,
+          "ci_low": -0.2534,
+          "ci_high": -0.1671,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.1474,
+          "b": 0.2157,
+          "difference": -0.0684,
+          "ci_low": -0.0694,
+          "ci_high": -0.0369,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "jev-hybrid_knn": {
+        "micro_f1": {
+          "a": 0.2786,
+          "b": 0.3821,
+          "difference": -0.1035,
+          "ci_low": -0.1446,
+          "ci_high": -0.0596,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.1474,
+          "b": 0.1563,
+          "difference": -0.009,
+          "ci_low": -0.0241,
+          "ci_high": 0.0047,
+          "p_value": 0.1888,
+          "p_resolution": 0.0002,
+          "p_holm": 0.3776
+        }
+      },
+      "kev-transformer": {
+        "micro_f1": {
+          "a": 0.2202,
+          "b": 0.2413,
+          "difference": -0.0211,
+          "ci_low": -0.0611,
+          "ci_high": 0.021,
+          "p_value": 0.3182,
+          "p_resolution": 0.0002,
+          "p_holm": 0.9545
+        },
+        "macro_f1": {
+          "a": 0.1473,
+          "b": 0.0776,
+          "difference": 0.0697,
+          "ci_low": 0.0334,
+          "ci_high": 0.0658,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "kev-naive_bayes": {
+        "micro_f1": {
+          "a": 0.2202,
+          "b": 0.298,
+          "difference": -0.0778,
+          "ci_low": -0.1152,
+          "ci_high": -0.041,
+          "p_value": 0.0004,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.1473,
+          "b": 0.1224,
+          "difference": 0.0249,
+          "ci_low": 0.002,
+          "ci_high": 0.0333,
+          "p_value": 0.0264,
+          "p_resolution": 0.0002,
+          "p_holm": 0.1056
+        }
+      },
+      "kev-bilstm": {
+        "micro_f1": {
+          "a": 0.2202,
+          "b": 0.2779,
+          "difference": -0.0577,
+          "ci_low": -0.0993,
+          "ci_high": -0.0149,
+          "p_value": 0.009,
+          "p_resolution": 0.0002,
+          "p_holm": 0.045
+        },
+        "macro_f1": {
+          "a": 0.1473,
+          "b": 0.0933,
+          "difference": 0.054,
+          "ci_low": 0.0233,
+          "ci_high": 0.0556,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "kev-svm": {
+        "micro_f1": {
+          "a": 0.2202,
+          "b": 0.4893,
+          "difference": -0.2691,
+          "ci_low": -0.3142,
+          "ci_high": -0.2248,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.1473,
+          "b": 0.2157,
+          "difference": -0.0684,
+          "ci_low": -0.0687,
+          "ci_high": -0.0333,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "kev-hybrid_knn": {
+        "micro_f1": {
+          "a": 0.2202,
+          "b": 0.3821,
+          "difference": -0.1619,
+          "ci_low": -0.1969,
+          "ci_high": -0.1252,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.1473,
+          "b": 0.1563,
+          "difference": -0.009,
+          "ci_low": -0.0208,
+          "ci_high": 0.006,
+          "p_value": 0.2714,
+          "p_resolution": 0.0002,
+          "p_holm": 0.3776
+        }
+      },
+      "laya-transformer": {
+        "micro_f1": {
+          "a": 0.0463,
+          "b": 0.2413,
+          "difference": -0.1949,
+          "ci_low": -0.2323,
+          "ci_high": -0.1557,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.0288,
+          "b": 0.0776,
+          "difference": -0.0488,
+          "ci_low": -0.0528,
+          "ci_high": -0.029,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "laya-naive_bayes": {
+        "micro_f1": {
+          "a": 0.0463,
+          "b": 0.298,
+          "difference": -0.2517,
+          "ci_low": -0.2852,
+          "ci_high": -0.2181,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.0288,
+          "b": 0.1224,
+          "difference": -0.0935,
+          "ci_low": -0.0878,
+          "ci_high": -0.0577,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "laya-bilstm": {
+        "micro_f1": {
+          "a": 0.0463,
+          "b": 0.2779,
+          "difference": -0.2315,
+          "ci_low": -0.2698,
+          "ci_high": -0.1914,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.0288,
+          "b": 0.0933,
+          "difference": -0.0645,
+          "ci_low": -0.0643,
+          "ci_high": -0.0382,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "laya-svm": {
+        "micro_f1": {
+          "a": 0.0463,
+          "b": 0.4893,
+          "difference": -0.4429,
+          "ci_low": -0.4857,
+          "ci_high": -0.3994,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.0288,
+          "b": 0.2157,
+          "difference": -0.1869,
+          "ci_low": -0.1607,
+          "ci_high": -0.1223,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      },
+      "laya-hybrid_knn": {
+        "micro_f1": {
+          "a": 0.0463,
+          "b": 0.3821,
+          "difference": -0.3358,
+          "ci_low": -0.3734,
+          "ci_high": -0.2969,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        },
+        "macro_f1": {
+          "a": 0.0288,
+          "b": 0.1563,
+          "difference": -0.1275,
+          "ci_low": -0.1133,
+          "ci_high": -0.0826,
+          "p_value": 0.0002,
+          "p_resolution": 0.0002,
+          "p_holm": 0.003
+        }
+      }
+    }
+  }
+}

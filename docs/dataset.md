@@ -1,9 +1,10 @@
-# Dataset Card & Research Methodology Specification
+# Dataset Specification & Research Methodology
 
-**Dataset Title**: CORDIS – EU research projects under Horizon 2020 (2014–2020)
+**Dataset**: the NALTRA CORDIS EN-TR benchmark, release 1.1.0 (dataset card with intended use and known issues: [data/README.md](../data/README.md))
+**Derived from**: CORDIS – EU research projects under Horizon 2020 (2014–2020), European Union, CC BY 4.0
 **Ontology**: European Science Vocabulary (EuroSciVoc)
-**Intended Task**: Multilingual Hierarchical Multi-Label Scientific Text Classification
-**Target Languages/Variants**: English (`en`), Turkish (`tr`), English–Turkish Code-Switched (`en-tr`)
+**Task**: multilingual hierarchical multi-label classification into EuroSciVoc
+**Tracks (shipped)**: English (`en`), machine-translated Turkish (`tr`), synthetic EN-TR code-switch (`sentence_mix`, `chunk_mix`); **generated locally, not shipped**: seeded noisy EN/TR test copies ([section 10](#10-noisy-test-track-generated-not-shipped))
 
 ---
 
@@ -12,15 +13,16 @@
 NALTRA investigates **Multilingual Hierarchical Multi-Label Scientific Text Classification** using a single authoritative source dataset:
 **CORDIS Horizon 2020 Projects (2014–2020)** published by the European Commission and the Publications Office of the European Union.
 
-### One Source Dataset Principle
+### Provenance: one public source, no external text
 The benchmark relies strictly on one original source dataset. We do **not** combine CORDIS with Horizon Europe, FP7, external parallel corpora, external translation datasets, or third-party web scrapes.
 
 All language variants evaluate the **exact same underlying research projects**:
 1. **English (`en`)**: The canonical project objective and description released by the European Union.
 2. **Turkish (`tr`)**: A machine-translated variant of the identical English project records. The shipped TR 1.1.0 is a frozen imported release that the committed scripts cannot rebuild exactly (see [Shipped Turkish Release](#shipped-turkish-release-110)).
 3. **English–Turkish Code-Switched (`en-tr`)**: Controlled, synthetic code-switched variants generated deterministically from aligned sentences of the identical English and Turkish versions.
+4. **Noisy (`en`, `tr`, test only)**: seeded character-level corruptions of the test splits, generated locally and not shipped ([section 10](#10-noisy-test-track-generated-not-shipped)).
 
-All three variants maintain strict traceability:
+All variants maintain strict traceability:
 - Identical project ID (`project_id`)
 - Identical alignment pair ID (`pair_id = cordis:<project_id>`)
 - Identical split assignment (`train`, `validation`, `test`)
@@ -86,13 +88,23 @@ ancestor nodes (473 + 113 = 586).
 - Retains the full depth of the EuroSciVoc ontology (depths 1 through 7) across all 6 OECD root domains.
 - Required ancestors are **never** discarded; an ancestor is retained regardless of its direct frequency.
 
+**Rare codes are dropped, not rolled up.** In a retained project, codes below the threshold
+are removed from `labels_direct` (and from `source_label_ids`) instead of being mapped to
+their nearest supported ancestor (`src/naltra/data/preprocessing.py`). 8,128 of the 31,407
+retained projects lose at least one directly assigned code (9,909 codes in total); 1,039 of
+the 4,711 test projects' label closures miss 2,375 CORDIS-implied nodes, and 327 test
+projects miss a whole root. Scored against the complete CORDIS closure, hierarchical F1
+changes by at most 0.007 (SVM 0.668 -> 0.662) and no model ranking changes
+(`results/metrics/label_coverage.json`, from `scripts/extra_analyses.py`). A rolled-up
+release would need a new release version and every member retrained.
+
 ---
 
 ## 4. Multi-Label & Hierarchy Semantics
 
 ### Direct vs. Hierarchy-Closed Labels
 In hierarchical multi-label classification, two distinct label sets must be preserved:
-1. `labels_direct`: The canonical EuroSciVoc categories directly assigned to the CORDIS project record.
+1. `labels_direct`: The EuroSciVoc categories CORDIS assigns to the project directly, restricted to the 473 supported codes; sub-threshold codes are dropped ([section 3](#3-classification-ontology-euroscivoc)).
 2. `labels`: The hierarchy-closed target set comprising all direct labels plus all active ancestor categories up to the root domain.
 
 **Mathematical Invariants**:
@@ -107,6 +119,7 @@ $$\forall l \in \text{labels}, \quad \text{parent}(l) \neq \text{None} \implies 
 - **Hierarchy-Closed Cardinality**: Mean = 10.24, Median = 10.0, Max = 24
 - **Multi-Root Projects (spanning >1 OECD root domain)**: 18,794 of 31,407 (**59.8%**)
 - **Hierarchy Violation Rate in Clean Targets**: Exactly **0.00%**
+- **Objective Length**: EN mean 266.1 / median 276 whitespace words, TR 216.9 / 227 (all tracks: [at a glance](../data/README.md#at-a-glance))
 
 ---
 
@@ -251,7 +264,7 @@ Partitioning applies grouped multi-label iterative stratification (`grouped_mult
 ## 8. Translation Pipeline & Turkish Derivation
 
 > [!IMPORTANT]
-> **One Source Dataset Principle**: CORDIS Horizon 2020 itself is an **English source dataset**.
+> **Provenance**: CORDIS Horizon 2020 itself is an **English source dataset**.
 > Turkish text is a **derived machine-translated variant**.
 > English–Turkish mixed text is a **synthetic derived variant**.
 > Hugging Face is used exclusively to obtain the pretrained OPUS-MT neural translation model weights and is **NOT** a benchmark data source.
@@ -269,9 +282,7 @@ Partitioning applies grouped multi-label iterative stratification (`grouped_mult
 - **Accelerator**: NVIDIA GeForce RTX 3060 (12,288 MiB VRAM)
 - **NVIDIA Driver**: 595.79
 - **Driver CUDA Version**: 13.2
-- **PyTorch Runtime**: `2.14.1+cu126` (CUDA 12.6 backend)
-- **Transformers Library**: `5.18.0`
-- **SentencePiece**: `0.2.2`
+- **Software of the 1.1.0 import and repair** (the `environment` block of all four 1.1.0 manifests): Python 3.13.5, PyTorch `2.6.0+cu124`, Transformers `5.18.0`. The software versions of the 1.0.0 bulk run are not recorded; `requirements.txt` pins the later evaluation environment (PyTorch `2.14.1+cu126`), not this one.
 
 ### Translation Architecture & Engineering
 1. **Sentence-Level Alignment**: Text is segmented into sentences using abbreviation-protected boundary heuristics (preserving *et al.*, *e.g.*, *vs.*, *approx.*). Each sentence is translated independently to yield aligned sentence pairs.
@@ -293,24 +304,24 @@ Partitioning applies grouped multi-label iterative stratification (`grouped_mult
    - Every English project of a split has exactly one translation, and the splits stay disjoint
    - One translation provenance across all records: backend `huggingface_local` (no mock output) and, for a rebuilt release, the locked model and revision
 
-   Nothing checks for Turkish characters, replacement characters (U+FFFD) or that the output is Turkish at all: a Turkish text containing U+FFFD, or unrelated English text of a plausible length, passes.
+   Nothing checks for Turkish characters, replacement characters (U+FFFD) or that the output is Turkish at all: a Turkish text containing U+FFFD, or unrelated English text of a plausible length, passes. A one-off screen of the shipped 1.1.0 TR splits ([snippet](../data/README.md#at-a-glance)) finds Turkish-specific letters (`çğıöşüÇĞİÖŞÜ`) in all 31,407 records, U+FFFD in none, and no record equal to its English source; this is a screen, not a quality judgement.
 5. **Stratified Human Review Sample**:
    - Location: `data/review/translation_review_sample.csv`
    - Size: 100 validation projects. Their direct labels reach all 6 OECD root domains (natural sciences 94 projects, engineering and technology 70, social sciences 45, medical and health sciences 37, agricultural sciences 20, humanities 7). `hierarchy_depth`, the depth of the deepest direct label, covers depths 4–7 only (4: 12, 5: 56, 6: 30, 7: 2), and every project is multi-label (5 direct labels: 93, 4: 5, 3: 2); there are no single-label records.
    - Column caveat: despite its name, `top_level_domain` holds each project's first direct label in alphabetical order (e.g. `4g`, `5g`), not its root domain; the committed file predates the current `create_stratified_human_review_sample`, which writes the root.
-   - Formal Human Review Status: `review_status = pending` (no fabricated human scores; true human audit pending). The human-review columns hold no ratings yet: in all 100 rows `meaning_preserved`, `terminology_quality` and `fluency` read `pending`, and `notes` says the review is pending.
+   - Human Review Status: not done. In all 100 rows `review_status`, `meaning_preserved`, `terminology_quality` and `fluency` read `pending`, and `notes` says the review is pending. The AI-assisted audit below is the only quality rating that exists.
    - Reviewed text: the sample and the AI-assisted audit below predate TR 1.1.0. 82 of the 100 rows match the shipped 1.1.0 Turkish exactly (unchanged since 1.0.0); the other 18 are among the 598 records repaired in 1.1.0, and their sample text matches neither 1.0.0 nor 1.1.0. The sample has not been regenerated, so those 18 rows show Turkish that no release ships. The audit covers the same 100 projects.
 
 6. **AI-Assisted Translation Quality Audit of a Stratified 100-Project Sample**:
    - Location: `data/review/translation_ai_review.csv` (`reviewer_type = ai_assisted` for all 100 rows).
    - Sample Definition: `data/review/translation_review_sample.csv` (the 100 validation projects described above).
-   - Methodology: AI-assisted semantic and terminological rating of the English CORDIS source against the Turkish neural MT output, one row per sampled project, after pipeline hardening.
+   - Methodology: AI-assisted semantic and terminological rating of the English CORDIS source against the Turkish neural MT output, one row per sampled project, after pipeline hardening. The model, prompt and date used were not recorded; the CSV has no column for them.
    - Ratings in the file (100 projects): meaning preserved `yes` 83, `partial` 17, `no` 0; terminology quality (1–5) mean 4.52, median 5, $\le 2$: 5; Turkish fluency (1–5) mean 3.84, median 4, $\le 2$: 0.
    - Historical figures without a tracked source: a before-hardening pass reported meaning `yes` 73, `partial` 24, `no` 3; terminology mean 4.34 ($\le 2$: 11); fluency mean 3.71 ($\le 2$: 3); and 1 repetition loop, 6 severe truncations or omissions and 18 important omissions, reduced after hardening (`no_repeat_ngram_size=4`, period normalization, list/bullet segmentation and chunking) to 0, 0 and 4. None of these can be recomputed from the repository.
    - Known Remaining Limitations:
      - Pretrained model lexical polysemy in specialized sub-disciplines (*harvesters* $\rightarrow$ *biçerdöverler*, *technology adoption* $\rightarrow$ *evlat edinme*, *stemness* $\rightarrow$ *saplık*, *crickets* $\rightarrow$ *kriketler*, *knockout* $\rightarrow$ *nakavt*).
      - Calque phrasing in complex multi-clause sentences.
-   - Formal Human Review Status: **PENDING** (this audit is explicitly AI-assisted, NOT human validation; human expert review remains pending).
+   - Human review: not done (the audit is AI-assisted, not human validation).
 
 ### Bulk Translation Execution Metrics (RTX 3060)
 - **Source English Projects**: 31,407
@@ -322,7 +333,8 @@ Partitioning applies grouped multi-label iterative stratification (`grouped_mult
 - **Output Files**: `data/processed/cordis_h2020/tr/{train,validation,test}.jsonl` and `data/processed/cordis_h2020/tr/manifest.json`.
 
 ### Shipped Turkish Release (1.1.0)
-- All four manifests (EN, TR, both code-switch tracks) are 1.1.0; the EN splits are byte-identical to 1.0.0. 1.1.0 is the 1.0.0 import with the 598 records the 1.0.0 audit flagged (text not matching the stored sentence alignment; 3 also failed the length-ratio QA check) re-translated in 128-token chunks by the pinned checkpoint (`generation_parameters`: `operation` `validated_archive_import_with_targeted_alignment_repair`, `repaired_count` 598, `legacy_model_names_normalized` 30,809). All 598 alignments were rewritten; the TR text changed in 300 of them (214 train, 49 validation, 37 test). Labels are identical.
+- All four manifests (EN, TR, both code-switch tracks) are 1.1.0; the EN splits are byte-identical to 1.0.0. 1.1.0 is the 1.0.0 import with the 598 records the 1.0.0 audit flagged (text not matching the stored sentence alignment; 3 also failed the length-ratio QA check) re-translated in 128-token chunks by the pinned checkpoint (`generation_parameters`: `operation` `validated_archive_import_with_targeted_alignment_repair`, `repaired_count` 598, `legacy_model_names_normalized` 30,809). The 598 repaired records, which carry `import_archive_sha256`, are 416 train, 99 validation and 83 test. All 598 alignments were rewritten; the TR text changed in 300 of them (214 train, 49 validation, 37 test). The 300 and the 3 are historical figures from the 1.0.0 import, which is not shipped, so they cannot be recomputed from the repository. Labels are identical.
+- Release 1.1.0 is identified by the per-split SHA-256s in the four committed manifests. `manifest_version` is the manifest schema version (`MANIFEST_SCHEMA_VERSION` in `src/naltra/data/manifest.py`), which any rebuild also writes, so a rebuilt release does not identify itself as a new version.
 - TR 1.1.0 is a frozen imported release. Its targeted repair (128-token source chunks, `repair_source_chunk_tokens` 128 in `generation_parameters`) was run by a teammate, and the repair script is not in the repository. EN can be rebuilt from the raw archive with the committed scripts, and so can the derived tracks from the EN/TR release they are built on, but a standard translation run (chunks of up to 500 tokens) builds a different TR release, which needs a new release version.
 - Every member, including the zero-shot Kev, Jev and Laya, is evaluated on 1.1.0 (Laya on the 80/120-pair samples), and NB, SVM and `hybrid_knn` are trained on it. The teammate-trained `bilstm` and `transformer` (release `cordis_v0.5.0`, whose recorded TR split SHA-256s match this release) refit their heads on 1.1.0, on encoders trained in run v0.4.0; the data XLM-R's encoder was fine-tuned on there is not recorded.
 - `scripts/translation_exceptions.py` reports the projects the audit flagged and scores every member with and without them: none on 1.1.0; on 1.0.0 its 598 projects moved any member's micro-F1 by at most 0.0011 (a historical figure; that run's output is not tracked).
@@ -358,6 +370,7 @@ Controlled code-switched records are generated strictly from aligned English and
 - **Strategy**: Deterministic sentence mixing (`sentence_mix`) and chunk mixing (`chunk_mix`).
 - **Primary Language**: Each record's seeded generator picks English or Turkish as the primary language with probability 1/2; the other is the secondary language. It is stored in `primary_language`.
 - **Strengths** (`mix_aligned_sentences` in `src/naltra/data/code_switching.py`): `balanced` alternates primary and secondary sentences (`sentence_mix`) or takes the first half of the sentences in the primary language and the rest in the secondary (`chunk_mix`), so about half of the sentences are in each language. `light` puts every third sentence (`sentence_mix`, about 1/3) or the last quarter of the sentences (`chunk_mix`, about 1/4) in the secondary language. A single-sentence document instead joins the first half of its primary-language words with the second half of its secondary-language words. The shipped tracks use `balanced` only.
+- **Switching Granularity**: whole sentences (`sentence_mix`) or document halves (`chunk_mix`); switching inside a sentence occurs only in the 11 single-sentence documents of the 9,422 per track, so intra-sentential code-switching is not covered.
 - **Pairing Guarantee**: Never mixes sentences across different project IDs.
 - **Seed Determinism**: Per-pair SHA-256 seed derived from `pair_id`, strategy, strength, and base seed (42).
 - **Benchmark Role**: Evaluation-only robustness track (held out in validation and test).
@@ -376,13 +389,37 @@ scoring both test tracks through `predict_all.py` and `evaluate_ensemble.py`
 
 ---
 
-## 10. Limitations & Ethical Considerations
+## 10. Noisy Test Track (generated, not shipped)
 
-1. **Semi-Automatic Label Caveat**: CORDIS classifications are generated in part by European Commission machine learning algorithms and keyword indexing. They are subject to label noise and should not be treated as gold human ground truth.
-2. **Translation Quality Limitation**: Machine translation may introduce terminological inaccuracies or syntactic artifacts, especially in technical scientific domains. Semantic fidelity must be audited through the provided sample before drawing clinical or legal conclusions.
-3. **Domain Bias**: CORDIS reflects European research priorities funded under Horizon 2020, with high concentrations in Natural Sciences and Engineering.
-4. **Pretrained Translation Tool**: The OPUS-MT translation model is an external tool used strictly for language transformation; no benchmark labels or test texts were derived from Hugging Face datasets.
-5. **Cleaning Loss**: The cleaner removes `<...>` comparison spans as if they were HTML tags, in 62 retained projects; see [Known limitation: angle-bracket comparisons](#known-limitation-angle-bracket-comparisons).
+`python scripts/prepare_data.py --dataset noisy --prebuilt-release` writes seeded noisy copies
+of the EN and TR test splits to `data/noisy/combined/medium/cordis_h2020/{en,tr}/test.jsonl`
+(ignored by Git; `generate_noisy_benchmarks` in `src/naltra/data/noise.py`). Labels, `pair_id`
+and `split` are copied; `id` gains the suffix `:noise:combined:medium` and `original_id` names
+the clean record.
+
+- **Seed**: a per-record SHA-256 of the record id, strategy, severity and base seed 42, so the
+  copies are deterministic.
+- **Strategy `combined`, severity medium = 0.10**: each document gets one primary edit type:
+  adjacent-character swap (35% of documents; each space-separated word with a swappable pair
+  is edited with probability 0.10), character duplication (35%) or deletion (30%; each
+  alphanumeric character with probability 0.10). Then, each with document probability 0.10,
+  casing flips on 5% of letters and punctuation swaps on 10% of `. , ! ? ; :`. At least one
+  edit is guaranteed.
+- **Realised corruption** (regenerated test copies; the 4,707 EN and 4,708 TR documents whose
+  space-separated token count is unchanged): a mean of 32.5% (EN) and 37.3% (TR) of tokens
+  change. Because each document gets a single edit type the rate is bimodal: 31.4% (EN) and
+  31.2% (TR) of documents have under 15% of their tokens changed, 50.9% and 64.8% over 40%.
+- **Unused**: `noise.py` also implements a `turkish_diacritics` strategy, but no command
+  produces it.
+
+---
+
+## 11. Limitations & Ethical Considerations
+
+All known issues of release 1.1.0 (silver labels, rare codes dropped rather than rolled up,
+unreviewed machine translation, the missing repair script, cleaning loss, the generated
+noisy track, synthetic code-switching, domain skew and more) are listed in one place in the
+dataset card: [Known issues](../data/README.md#known-issues).
 
 ## Integrated release commands and model target contract
 

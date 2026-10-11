@@ -28,8 +28,8 @@
 
 **Reporting and documentation**
 - Interactive results page (`docs/results/index.html`), figures, tracked result summaries with commit, environment and seed provenance.
-- README, dataset card, evaluation and runbook documentation, and a results report for expert review.
-- Test suite for data integrity, leakage, members, ensembles, evaluation and the results page (about 780 tests).
+- README, dataset card, evaluation and runbook documentation.
+- Test suite for data integrity, leakage, members, ensembles, evaluation and the results page (more than 800 tests).
 
 ## Key results
 
@@ -38,4 +38,4 @@ On the 4,711-project test sets (micro-F1, EN / TR):
 - **Weighted soft vote:** 0.523 / 0.472.
 - **Retrieval kNN:** 0.393 / 0.382, losing 0.011 on Turkish against 0.070 for the SVM.
 
-On the 120-pair sample, Jev scores 0.277 / 0.279 with no significant EN→TR drop. Held-out-root rejection reaches an AUROC of 0.93 with the SVM.
+On the 120-pair sample, Jev scores 0.277 / 0.279 with no significant EN→TR drop. Held-out-root rejection reaches an AUROC of 0.927 EN / 0.924 TR with the SVM.

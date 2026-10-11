@@ -1,7 +1,7 @@
 # Core ML operation and integration
 
 BiLSTM and Transformer train independently on prepared records and save locally
-reloadable artifacts. The shipped neural release `cordis_v0.5.0` refits their
+reloadable artifacts. The reported neural release `cordis_v0.5.0` refits their
 classifier heads on frozen encoders (see [evaluation](evaluation.md)). Kev and Jev are
 inference adapters: Kev queries a local Kev-0.8B server and Jev TypeSafe's hosted API
 with the same questions. Laya runs a pinned pretrained checkpoint locally, zero-shot
@@ -10,19 +10,18 @@ documented in the [README](../README.md#models) and [evaluation](evaluation.md).
 
 ## Setup and training
 
-Activate the project environment and install the updated dependencies:
+Activate the project environment and install the dependencies:
 
 ```powershell
 .venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 ```
 
-New dependencies include `httpx` and `lingua-language-detector`. CUDA training
-requires a compatible PyTorch build (see the README's Reproduce section); CPU is
-supported. Dataset manifests include dependency-file hashes, so changes require
-genuine regeneration, not hash edits. The commands below rebuild EN and the derived tracks
-from the raw archive; a standard translation run produces a new TR release, not the frozen
-TR 1.1.0 that ships (see [the README's Data section](../README.md#data)). To audit the
+CUDA training requires a compatible PyTorch build (see the README's Reproduce section); CPU
+is supported. Dataset manifests include dependency-file hashes, so changes require
+genuine regeneration, not hash edits. The commands below rebuild the release from the raw
+archive, except TR 1.1.0, which a rebuild does not reproduce
+([details](dataset.md#shipped-turkish-release-110)). To audit the
 shipped release instead, run `python scripts/unpack_data.py` and
 `python scripts/validate_datasets.py --prebuilt-release`. To rebuild:
 
@@ -82,26 +81,25 @@ Full Transformer training needs an initial pretrained-weight download or local
 checkpoint. For local weights, set `architecture.pretrained_name` to that directory
 and `local_files_only: true`. An optional `revision` pins Hub weights; resolved
 commit metadata is recorded when available. Saved artifacts reload offline. The
-shipped `cordis_v0.5.0` transformer was trained without a pinned revision, and its
+reported `cordis_v0.5.0` transformer was trained without a pinned revision, and its
 `naltra.json` records `pretrained_revision` as null; inference does not need the base
 checkpoint, because the fine-tuned weights are stored in the artifact's
 `model.safetensors`.
 
 ## Prediction and artifacts
 
-The five `BaseNALTRAModel` methods are unchanged. Neural constructors accept
+Every member implements the five `BaseNALTRAModel` methods. Neural constructors accept
 nested config overrides and optional `taxonomy_path`; Transformer also accepts
-an injected tokenizer/network pair for local fixtures. Existing wrappers work.
+an injected tokenizer/network pair for local fixtures.
 
 `PredictionResult.label_scores` contains probabilities for every supported direct
 label. `labels` in `PredictionResult` contains threshold-selected direct labels and may be empty. `metadata`
-records label space, taxonomy, calibration status and OOD configuration. New
-fields have defaults for compatibility. Probabilities/latencies must be finite;
-duplicate selected labels are rejected. Serialization includes the new fields.
+records label space, taxonomy, calibration status and OOD configuration, and serialization
+includes it. Probabilities/latencies must be finite; duplicate selected labels are rejected.
 Hard ensemble scores are explicitly marked as vote fractions rather than class
 probabilities in metadata.
 
-Artifacts live under `<output>/<dataset>/<track>/<model>/`. CORDIS tracks are `en_direct`, `tr_direct`, or `en_tr_direct`; the artifact records `target_field`, language selection, and dataset manifests. Older artifacts use a different taxonomy and must be retained as historical runs. `naltra.json` records
+Artifacts live under `<output>/<dataset>/<track>/<model>/`. CORDIS tracks are `en_direct`, `tr_direct`, or `en_tr_direct`; the artifact records `target_field`, language selection, and dataset manifests. `naltra.json` records
 configuration, label order, taxonomy/label-map hashes, history, OOD threshold and
 provenance. BiLSTM adds weights/vocabulary; Transformer saves Hugging Face model
 and tokenizer files. Loading checks family and taxonomy compatibility and uses
@@ -144,7 +142,7 @@ policy is fulfilled by ancestor paths.
 OOD score is `1 - max(label_scores)`, with higher scores meaning lower confidence.
 After checkpoint selection, training sets the threshold to the 95th percentile
 of ID validation scores. A head refit (`--refit-head-from`) clears it, because the
-threshold no longer fits the new head, so the shipped `cordis_v0.5.0` BiLSTM and
+threshold no longer fits the new head, so the reported `cordis_v0.5.0` BiLSTM and
 Transformer artifacts store `ood_threshold: null` and report OOD as `disabled`; the
 NB, SVM and hybrid kNN artifacts keep theirs. The pipeline flags scores strictly above
 the threshold. This is a confidence baseline, not a calibrated OOD performance claim. OOD predictions
@@ -158,7 +156,8 @@ fitted on calibrated validation scores or detection remains disabled.
 ## Ensembles
 
 Soft/weighted-soft voting uses complete probabilities, including values below
-selection thresholds. Legacy results fall back to selected scores. Hard voting
+selection thresholds; a result without `label_scores` falls back to the scores of its
+selected labels. Hard voting
 uses selected-label membership and preserves strict-majority semantics. Declared
 dataset, track and supported-label spaces must match. Missing required models
 fail explicitly; they are never silently removed from the vote.
@@ -221,10 +220,10 @@ result = pipeline.predict("This project develops solar panels and battery storag
 print([(label.label, label.score) for label in result.labels])
 ```
 
-Each label is a separate two-option `choice` question. Option `A` names the
-canonical scientific topic; option `B` is "other unrelated research topics".
-`P(A)` becomes the direct-label score. Labels are independent and their probabilities
-do not sum to one. Two-option choice follows the upstream workaround for the
+Each label is a separate two-option `choice` question, asked in English: option `A` is the
+label's field name and option `B` a fixed "other" option (exact wording in
+`src/naltra/models/laya/model.py`). `P(A)` becomes the direct-label score. Labels are
+independent and their probabilities do not sum to one. Two-option choice follows the upstream workaround for the
 documented `noul` label bias.
 Eight questions and one document per inference batch bound GPU memory. The
 1,024-token total budget includes a 256-token question budget; longer input is
@@ -238,7 +237,8 @@ scored zero-shot.
 ### Benchmark route: `prepare_laya.py` and `predict_all.py`
 
 The sample protocol scores Laya on the same fixed 80/120-pair samples as Kev and Jev
-([runbook](runbook.md#kev-jev-and-laya-on-fixed-samples)), as a non-voting baseline:
+([runbook](runbook.md#kev-jev-and-laya-on-fixed-samples)), as a non-voting new method
+(role `new`):
 
 ```bash
 python scripts/prepare_laya.py --output-dir models/cordis_laya_v1.1.0/cordis_h2020/en_tr_direct
@@ -246,17 +246,18 @@ python scripts/predict_all.py --artifacts models/cordis_laya_v1.1.0/cordis_h2020
 ```
 
 `prepare_laya.py` downloads the pinned checkpoint once (678 MB) and copies its files with
-their SHA-256 values and the 473 exact topic questions into `<output-dir>/laya`; it refuses a
+their SHA-256 values and the 473 exact label questions into `<output-dir>/laya`; it refuses a
 folder that already holds an artifact. Share the entire folder. Reload uses local files
 only and verifies their hashes, so it needs no API or second download. `predict_all.py`
 loads the artifact like a trained one and records its digest in every dump sidecar.
 Once those dumps exist, `laya` is added to `--baselines` of the sample
 `evaluate_ensemble.py` command (`--baselines naive_bayes laya`): like every member it is
 scored and its threshold is tuned on val-A, but it never votes, so the existing votes do
-not change. On the 120-pair test sample it scores 0.068 English / 0.046 Turkish micro-F1
-(threshold 0.98, tuned on val-A). On the GTX 1650
-one document takes about 145 s (473 questions, 8 per batch), so the 400 sample documents
-take about 16 h.
+not change (the flag does not make it a course baseline). On
+the 120-pair test sample it scores 0.068 English / 0.046 Turkish micro-F1 (threshold 0.98,
+the top of the threshold grid, tuned on val-A; [details](evaluation.md#sample-protocol-kev-jev-laya)).
+On the GTX 1650 one document takes about 145 s in English and 200 s in Turkish (473
+questions, 8 per batch), so the 400 sample documents take about 19 h.
 
 ### Direct validation route: `evaluate_all.py`
 
@@ -273,8 +274,7 @@ Create a portable Laya artifact and check two records from each validation track
 Use a new output directory if that check already exists. `--prepare-laya` refuses
 an existing artifact and is limited to bilingual validation. It binds the audited
 release without training and copies weights, encoder/tokenizer configs, exact
-questions and checksums into the ignored model folder. Old external-service Laya
-artifacts are incompatible.
+questions and checksums into the ignored model folder.
 
 Once the subset check is satisfactory, tune on full clean validation:
 
@@ -288,12 +288,11 @@ In this route the cutoff is selected only after both validation languages finish
 subset reports cannot supply it. Classify all labels even when only a few are
 selected; partial top-k results cannot be compared fairly with the neural models.
 
-This run scores 9,422 documents against 473 independent topic questions. On the
+This run scores 9,422 documents against 473 independent label questions. On the
 RTX 4050 laptop, the measured two-document speed check took 14.5 seconds;
 budget roughly 18–24 hours for full validation, depending on document lengths.
-Larger question batches did not improve measured throughput. Keep the laptop
-plugged in and awake during the run. `--resume` commits each completed batch to
-the ignored `prediction_cache.sqlite3` beside the metrics report. Repeat the same
+Larger question batches did not improve measured throughput. `--resume` commits each
+completed batch to the ignored `prediction_cache.sqlite3` beside the metrics report. Repeat the same
 command after an interruption; add `--overwrite` if a failed summary already
 exists. Changed artifacts, inputs, settings, dependencies or evaluation code are
 rejected instead of silently reusing incompatible predictions.

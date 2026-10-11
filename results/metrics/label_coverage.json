@@ -1,0 +1,173 @@
+{
+  "code_commit": "9c9a14a-dirty",
+  "environment": {
+    "python_version": "3.13.1",
+    "platform": "win32",
+    "package_versions": {
+      "numpy": "2.5.3",
+      "torch": "2.14.1+cu126",
+      "transformers": "5.19.0",
+      "scikit-learn": "1.9.1",
+      "pyyaml": "6.0.3",
+      "huggingface-hub": "1.33.0",
+      "httpx": "0.28.1"
+    }
+  },
+  "inputs": {
+    "data/raw/cordis_h2020/cordis-h2020projects-csv.zip": "d4a8e3645d0b1896b967618e8e7a7f7928738b469737363a30816c217cbd48f2",
+    "taxonomy/taxonomy.json": "0dda384c528199fc0dd4f170ce2a677bb5009f569802b963b5c9cd6ed1299b84",
+    "data/processed/cordis_h2020/en/train.jsonl": "25ce2f59f0ee0d083292eebf536e91941c8efb345474bbfaacc67e78c444a2a4",
+    "data/processed/cordis_h2020/en/validation.jsonl": "77722f1d42b4eeaa60bc1f3dc1a037a43dcf97ae64721ea31cb00da26981f16f",
+    "data/processed/cordis_h2020/en/test.jsonl": "4f8564416013dff1c07e51f2c1f2064c2013c144908a26beec8122f455614052",
+    "results/metrics/cordis_v1.1.0_ensemble/summary.json": "36b985401373d4fb2c2aabbd9c841fb9006354ecb8863dce1e6d37baaf5e7ce4"
+  },
+  "definitions": {
+    "codes_lost": "assigned codes below the 50-project support, dropped, not rolled up",
+    "projects_rollup_would_add_label": "a dropped code's nearest supported ancestor is not in labels_direct",
+    "nodes_missing": "tree nodes on assigned code paths that the stored closure lacks",
+    "complete": "gold closure of every assigned code, as CORDIS implies it"
+  },
+  "counts": {
+    "train": {
+      "projects": 21985,
+      "projects_losing_codes": 5692,
+      "codes_lost": 6931,
+      "projects_rollup_would_add_label": 3560,
+      "closures_missing_nodes": 4876,
+      "nodes_missing": 11399,
+      "projects_missing_root": 1560,
+      "roots_missing": 1621
+    },
+    "validation": {
+      "projects": 4711,
+      "projects_losing_codes": 1204,
+      "codes_lost": 1469,
+      "projects_rollup_would_add_label": 764,
+      "closures_missing_nodes": 1026,
+      "nodes_missing": 2424,
+      "projects_missing_root": 340,
+      "roots_missing": 355
+    },
+    "test": {
+      "projects": 4711,
+      "projects_losing_codes": 1232,
+      "codes_lost": 1509,
+      "projects_rollup_would_add_label": 762,
+      "closures_missing_nodes": 1039,
+      "nodes_missing": 2375,
+      "projects_missing_root": 327,
+      "roots_missing": 337
+    },
+    "all": {
+      "projects": 31407,
+      "projects_losing_codes": 8128,
+      "codes_lost": 9909,
+      "projects_rollup_would_add_label": 5086,
+      "closures_missing_nodes": 6941,
+      "nodes_missing": 16198,
+      "projects_missing_root": 2227,
+      "roots_missing": 2313
+    }
+  },
+  "hierarchical_micro_f1": {
+    "en_test": {
+      "systems": {
+        "svm": {
+          "hmicro_precision_stored": 0.6963,
+          "hmicro_recall_stored": 0.6425,
+          "hmicro_f1_stored": 0.6683,
+          "hmicro_precision_complete": 0.7069,
+          "hmicro_recall_complete": 0.6217,
+          "hmicro_f1_complete": 0.6616
+        },
+        "hybrid_knn": {
+          "hmicro_precision_stored": 0.5569,
+          "hmicro_recall_stored": 0.533,
+          "hmicro_f1_stored": 0.5446,
+          "hmicro_precision_complete": 0.5697,
+          "hmicro_recall_complete": 0.5197,
+          "hmicro_f1_complete": 0.5436
+        },
+        "bilstm": {
+          "hmicro_precision_stored": 0.4833,
+          "hmicro_recall_stored": 0.44,
+          "hmicro_f1_stored": 0.4606,
+          "hmicro_precision_complete": 0.4939,
+          "hmicro_recall_complete": 0.4286,
+          "hmicro_f1_complete": 0.4589
+        },
+        "transformer": {
+          "hmicro_precision_stored": 0.4555,
+          "hmicro_recall_stored": 0.4222,
+          "hmicro_f1_stored": 0.4382,
+          "hmicro_precision_complete": 0.4681,
+          "hmicro_recall_complete": 0.4136,
+          "hmicro_f1_complete": 0.4392
+        },
+        "naive_bayes": {
+          "hmicro_precision_stored": 0.3973,
+          "hmicro_recall_stored": 0.4923,
+          "hmicro_f1_stored": 0.4397,
+          "hmicro_precision_complete": 0.4072,
+          "hmicro_recall_complete": 0.481,
+          "hmicro_f1_complete": 0.441
+        }
+      },
+      "max_abs_hmicro_f1_change": 0.0067,
+      "ranking_unchanged": true
+    },
+    "tr_test": {
+      "systems": {
+        "svm": {
+          "hmicro_precision_stored": 0.661,
+          "hmicro_recall_stored": 0.5754,
+          "hmicro_f1_stored": 0.6152,
+          "hmicro_precision_complete": 0.6719,
+          "hmicro_recall_complete": 0.5575,
+          "hmicro_f1_complete": 0.6094
+        },
+        "hybrid_knn": {
+          "hmicro_precision_stored": 0.5741,
+          "hmicro_recall_stored": 0.4989,
+          "hmicro_f1_stored": 0.5338,
+          "hmicro_precision_complete": 0.5867,
+          "hmicro_recall_complete": 0.486,
+          "hmicro_f1_complete": 0.5316
+        },
+        "bilstm": {
+          "hmicro_precision_stored": 0.4813,
+          "hmicro_recall_stored": 0.41,
+          "hmicro_f1_stored": 0.4428,
+          "hmicro_precision_complete": 0.4911,
+          "hmicro_recall_complete": 0.3988,
+          "hmicro_f1_complete": 0.4402
+        },
+        "transformer": {
+          "hmicro_precision_stored": 0.4533,
+          "hmicro_recall_stored": 0.405,
+          "hmicro_f1_stored": 0.4278,
+          "hmicro_precision_complete": 0.4658,
+          "hmicro_recall_complete": 0.3966,
+          "hmicro_f1_complete": 0.4285
+        },
+        "naive_bayes": {
+          "hmicro_precision_stored": 0.4581,
+          "hmicro_recall_stored": 0.41,
+          "hmicro_f1_stored": 0.4327,
+          "hmicro_precision_complete": 0.4674,
+          "hmicro_recall_complete": 0.3989,
+          "hmicro_f1_complete": 0.4304
+        }
+      },
+      "max_abs_hmicro_f1_change": 0.0059,
+      "ranking_unchanged": true
+    }
+  },
+  "thresholds": {
+    "svm": 0.16,
+    "hybrid_knn": 0.14,
+    "bilstm": 0.14,
+    "transformer": 0.14,
+    "naive_bayes": 0.22
+  }
+}
