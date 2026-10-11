@@ -68,14 +68,19 @@ commands use a source checkout.
 Models train on `labels_direct`. Ordinary classification evaluates direct labels;
 hierarchical evaluation expands predictions and targets to include ancestors.
 
-Hard voting uses selected-label membership. Soft voting uses complete score
-vectors; weighted soft voting weights each member by its validation micro-F1.
-Legacy prediction objects without complete score vectors fall back to selected
-scores. Members must declare compatible dataset, track, and label spaces.
+Hard voting uses selected-label membership and treats omissions as negative votes.
+Soft voting uses complete score vectors; weighted soft voting weights each member by
+its validation micro-F1. A prediction without `label_scores` falls back to the scores
+of its selected labels and treats omissions as zero. Members must declare compatible
+dataset, track, and label spaces.
 
 The full benchmark uses SVM, hybrid kNN, BiLSTM, and Transformer as voting members.
 Naive Bayes is a non-voting baseline. Kev and Jev join the votes only on the fixed
-EN/TR samples. Laya is evaluated on the same samples as a non-voting baseline.
+EN/TR samples. Laya is evaluated on the same samples but does not vote. Kev answers
+through a local server and Jev through TypeSafe's hosted API, with the same yes/no
+questions; Laya runs a pinned multilingual checkpoint locally, one two-option question
+per label. The near-OOD benchmark (humanities root held out of training) is
+`scripts/run_ood.py`.
 
 See [model usage](core_ml.md) for runtime decisions and
 [evaluation](evaluation.md) for the offline protocol.

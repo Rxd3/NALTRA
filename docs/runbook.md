@@ -17,7 +17,8 @@ have been installed where needed.
 
 ## 0. Data
 
-Restore the archived release:
+Restore the archived NALTRA CORDIS EN-TR benchmark, release 1.1.0 (EN, TR and
+code-switch files under `data/processed/cordis_h2020/`), and generate the noisy test copies:
 
 ```bash
 python scripts/unpack_data.py
@@ -59,13 +60,13 @@ Training a freshly regenerated release omits `--prebuilt-release`.
 | Family | Where | Notes |
 |---|---|---|
 | `naive_bayes` | CPU | baseline row, does not vote |
-| `svm` | CPU, ~7 min | calibrated (3-fold Platt) |
+| `svm` | CPU, ~7-13 min | calibrated (3-fold Platt) |
 | `hybrid_knn` | GPU for the e5 encoder | TF-IDF + multilingual-e5 neighbours, reciprocal rank fusion (Cormack et al. 2009, k = 60); own run `cordis_v1.1.0_knn` |
 | `bilstm` | GPU | release `cordis_v0.5.0`: head refit on the frozen encoder |
 | `transformer` | GPU | `xlm-roberta-base`; release `cordis_v0.5.0`: head refit on the frozen encoder |
 | `kev` | Kev server (WSL2) | zero-shot, 473 yes/no questions per document; scored on 80 validation and 120 test pairs (section 4) |
 | `jev` | TypeSafe API | hosted System One model, same questions as Kev; `JEV_API_KEY`, `JEV_API_BASE_URL=https://api.typesafe.ai` in `.env` |
-| `laya` | GPU in practice | zero-shot, pinned local checkpoint (`requirements-laya.txt`, `scripts/prepare_laya.py`), 473 two-option questions per document, 8 per batch: about 145 s per document on the GTX 1650, about 7 s on a teammate's RTX 4050; scored on the same samples as Kev, non-voting (0.068 EN / 0.046 TR micro-F1, section 4) |
+| `laya` | GPU in practice | zero-shot, pinned local checkpoint (`requirements-laya.txt`, `scripts/prepare_laya.py`), 473 two-option questions per document, 8 per batch: about 145 s (EN) to 200 s (TR) per document on the GTX 1650, about 7 s on a teammate's RTX 4050; scored on the same samples as Kev, never votes (0.068 EN / 0.046 TR micro-F1, section 4) |
 
 Every locally trained member is fit on EN+TR training data, so EN -> TR measures the gap on
 translated input, not zero-shot transfer; Kev, Jev and Laya are the zero-shot members.
@@ -77,7 +78,7 @@ Hardware of the reported runs:
 | EN -> TR translation (historical run, about 3.9 h) | NVIDIA GeForce RTX 3060, 12 GB ([dataset guide](dataset.md#translation-review)) |
 | `bilstm`, `transformer` (`cordis_v0.5.0`) | NVIDIA GeForce RTX 4050 Laptop GPU (the `hardware` field of their `naltra.json`) |
 | `hybrid_knn` e5 encoding, GPU prediction dumps, Kev server | NVIDIA GeForce GTX 1650, 4 GB |
-| `naive_bayes`/`svm` training, OOD, latency | Intel Core i5-9300H CPU (latency with CUDA hidden, 4 torch threads) |
+| `naive_bayes`/`svm` training, OOD, latency | Intel Core i5-9300H CPU, recorded as `Intel64 Family 6 Model 158 Stepping 10` (latency with CUDA hidden, 4 torch threads) |
 
 The `hybrid_knn` artifact records the GPU run only as `config.device: cuda`, which its e5
 encoder follows. Its `metadata.device` and `metadata.hardware` read `cpu` and `CPU` because
@@ -91,7 +92,9 @@ XLM-R training lineage or guarantee identical model weights. For exact inference
 install the original artifacts instead.
 
 ```bash
-python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models naive_bayes svm --device cpu --output-dir models/retrained_v1.1.0
+export LOKY_MAX_CPU_COUNT=4        # PowerShell: $env:LOKY_MAX_CPU_COUNT = "4"
+python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models naive_bayes --device cpu --output-dir models/retrained_v1.1.0
+python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models svm --device cpu --output-dir models/retrained_v1.1.0
 python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models bilstm --device cuda --output-dir models/retrained_v0.4.0
 python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models transformer --device cuda --batch-size 16 --accumulation 1 --output-dir models/retrained_v0.4.0
 python scripts/train_all.py --datasets cordis_h2020 --prebuilt-release --models bilstm transformer --device cuda --refit-head-from models/retrained_v0.4.0/cordis_h2020/en_tr_direct --max-length 512 --loss-weighting none --output-dir models/retrained_v0.5.0
@@ -103,24 +106,19 @@ they are newly trained models, not replacements for the owner's archived origina
 Each run rewrites its `training_summary.json`; save the report before a later run
 uses the same output directory.
 
-On Windows, NB/SVM can exit with a native access violation (139, -1073741819,
-or 0xC0000005) while joblib workers shut down, sometimes after saving the model.
-Check the family's `naltra.json` and the success status in `training_summary.json`
-or printed output, then verify the saved artifact by reloading it with
-`predict_all.py`. If saving or reloading failed, rerun that family alone.
+NB and SVM train in separate runs. `LOKY_MAX_CPU_COUNT=4` caps their joblib workers
+(both train with `n_jobs: -1`); without it, joblib's "A task has failed to un-serialize"
+was seen under memory pressure. On Windows, NB/SVM can also exit with a native access
+violation (139, -1073741819, or 0xC0000005) and no traceback while joblib workers shut
+down, sometimes after saving the model. Check the family's `naltra.json` and the success
+status in `training_summary.json` or printed output, then verify the saved artifact by
+reloading it with `predict_all.py`. If saving or reloading failed, rerun that family
+alone, adding `--overwrite` if its folder exists.
 
 Training defaults select BiLSTM and Transformer. Name `--models` explicitly.
 Use new directories for additional runs. Existing artifacts require explicit
 `--overwrite`.
 
-If NB/SVM fails to deserialize worker tasks under memory pressure, limit the
-worker count before retrying that family:
-
-```powershell
-$env:LOKY_MAX_CPU_COUNT = "4"
-```
-
-On Linux/macOS, use `export LOKY_MAX_CPU_COUNT=4`.
 A bounded offline integration check is described in [model usage](core_ml.md#setup-and-training).
 
 ## 3. Dump predictions
@@ -158,7 +156,9 @@ New full-set summaries go to `results/metrics/replay_full/`. Compare them agains
 
 The benchmark partitions validation by pair identity, tunes member thresholds on
 val-A and ensemble settings on val-B, then scores test. Methods and uncertainty
-are explained in [evaluation](evaluation.md).
+are explained in [evaluation](evaluation.md); the significance families and what
+is not tested are listed under
+[what is significance-tested](evaluation.md#what-is-significance-tested).
 
 Optional translation-exception analysis additionally needs the original SVM
 `naltra.json` for its prebuilt-audit provenance:
@@ -189,7 +189,8 @@ python scripts/predict_all.py --artifacts models/cordis_v0.5.0/cordis_h2020/en_t
 
 Sample generation in section 0 selects 80 validation and 120 test pairs by
 smallest pair-ID hash. EN/TR contain the same projects, and every model is evaluated
-on those same files. See [sample coverage](evaluation.md#metrics).
+on those same files. See [sample coverage](evaluation.md#metrics) and the
+[sample protocol](evaluation.md#sample-protocol-kev-jev-laya).
 
 Optional Laya preparation and sample inference:
 
@@ -200,9 +201,31 @@ python scripts/predict_all.py --artifacts models/cordis_laya_v1.1.0/cordis_h2020
 
 The recorded Laya sample scores are 0.068 English / 0.046 Turkish micro-F1
 (threshold 0.98, tuned on val-A). The sample evaluator includes its archived dumps
-with `--baselines naive_bayes laya`.
+with `--baselines naive_bayes laya`: Laya is scored and its threshold tuned, but it
+never votes (its role stays `new`), so the votes do not change.
 Retain the same voting members. New inference dumps use `inference_replay/`;
 change the evaluator's `--predictions` when evaluating that run.
+
+### Extra analyses
+
+```bash
+python scripts/extra_analyses.py
+```
+
+On CPU, this reads the committed full-set and sample summaries and the archived dumps
+whose hashes they record, and rewrites in place `results/metrics/label_coverage.json`
+(`coverage`), the sample `pairwise.json` (`pairwise`), the full-set `error_analysis.json`
+(`errors`) and `robustness.json` (`drops`), and `results/metrics/translation_checks.json`
+(`translation`, TR splits only). Name analyses to run a subset; `git diff` shows any
+change from the committed files.
+
+`mtquality` (run only when named; `--device auto|cuda|cpu`, `--batch-size`) -> language ID
+and round-trip chrF in `results/metrics/translation_quality.json`. It needs the pinned
+TR -> EN model (downloaded on first use) and is slow without a GPU:
+
+```bash
+python scripts/extra_analyses.py mtquality --device cuda
+```
 
 ### Efficiency and OOD
 
@@ -286,8 +309,8 @@ A documentation-folder static host can serve the same page without an applicatio
 
 ## Script reference
 
-All scripts run from the repository root. Use `python scripts/<name>.py --help`
-for options.
+All 18 scripts in `scripts/` run from the repository root. Use
+`python scripts/<name>.py --help` for options.
 
 | Script | Inputs -> outputs |
 | --- | --- |
@@ -296,13 +319,14 @@ for options.
 | `prepare_data.py` | Raw archive -> EN splits; `--dataset translation`, `code_switch` or `all` for derived tracks; `--dataset noisy` -> `data/noisy/combined/medium/cordis_h2020/{en,tr}/test.jsonl`; `--prebuilt-release` derives from the shipped 1.1.0 release |
 | `validate_datasets.py` | Prepared release -> full audit pass or error; `--code-switch` adds both code-switch tracks, `--derived` noise and code-switch; `--prebuilt-release` audits the shipped 1.1.0 release record by record, which the full audit refuses ([why](dataset.md#release-validation)) |
 | `train_all.py` | Splits + `configs/` -> `models/<run>/cordis_h2020/<track>/<family>/`; rewrites `<run>/training_summary.json` on every run |
-| `prepare_laya.py` | Pinned checkpoint in `configs/models/laya.yaml` -> `<output-dir>/laya/` artifact (checkpoint files with their SHA-256s, the 473 topic questions); no training |
+| `prepare_laya.py` | Pinned checkpoint in `configs/models/laya.yaml` -> `<output-dir>/laya/` artifact (checkpoint files with their SHA-256s, the 473 label questions); no training |
 | `sample_sets.py` | Evaluation sets -> the `--pairs` projects with the smallest pair-id SHA-256 in each, `data/samples/<dir>/<set>.jsonl`, for Kev, Jev and Laya |
 | `predict_all.py` | Artifacts + evaluation sets -> score matrices `results/predictions/<run>/<family>/<set>.npz` with `.json` sidecars |
-| `classify.py` | Artifacts + `--text` or a JSONL `--input` -> one JSON line per text with labels, taxonomy-closed labels, language and OOD decision; `--benchmark-settings summary.json` loads frozen member thresholds and hard, tuned k-of-M, soft or weighted-soft votes after checking artifact/taxonomy hashes. Without it, artifact thresholds and the default 0.5 ensemble threshold apply. Ensemble OOD remains disabled. |
+| `classify.py` | Artifacts + `--text` or a JSONL `--input` -> one JSON line per text with labels, taxonomy-closed labels, language and OOD decision (`disabled` for the reported neural artifacts, whose head refit cleared the threshold); `--benchmark-settings summary.json` loads frozen member thresholds and hard, tuned k-of-M, soft or weighted-soft votes after checking artifact/taxonomy hashes. Without it, artifact thresholds and the default 0.5 ensemble threshold apply. Ensemble OOD remains disabled. |
 | `evaluate_ensemble.py` | Score matrices -> tuned thresholds, member and ensemble metrics, bootstrap tests in `results/metrics/<run>/summary.{json,md}` |
 | `evaluate_all.py` | Direct BiLSTM/XLM-R/Laya evaluator with `--resume`; it runs the full validator, so it needs a release rebuilt from the raw archive, and no reported number comes from it |
 | `translation_exceptions.py` | Summary + dumps + a `--prebuilt-release` artifact -> the projects the prebuilt audit flagged (0 on 1.1.0) and scores with and without them, `results/metrics/translation_exceptions.json` |
+| `extra_analyses.py` | Committed data, summaries and archived dumps (`coverage`, `pairwise`, `errors`, `drops`, `translation`; default all but `mtquality`) -> label coverage against the CORDIS closure within the active 586-node taxonomy (`results/metrics/label_coverage.json`), zero-shot vs trained members on the sample (`results/metrics/cordis_v1.1.0_sample/pairwise.json`), micro-F1 by EuroSciVoc root, training label frequency and gold labels per project, plus the top errors (`results/metrics/cordis_v1.1.0_ensemble/error_analysis.json`), each member's EN micro-F1 drop on TR, code-switch and noisy EN with SVM's drop minus each other member's (`results/metrics/cordis_v1.1.0_ensemble/robustness.json`), and TR truncation and repetition screens (`results/metrics/translation_checks.json`); `mtquality` (run only when named; `--device` auto, cuda or cpu; `--batch-size`) -> language ID and round-trip chrF in `results/metrics/translation_quality.json` |
 | `make_figures.py` | Summary + score matrices -> paper figures `results/plots/<run>/*.png` |
 | `plot_results.py` | Full, sample, latency and OOD summaries -> eight PNG/SVG documentation charts plus source-checksum manifest in `docs/figures/cordis_v1.1.0/`; no model files or dumps required |
 | `run_benchmark.py` | Artifacts -> latency, throughput and size in `results/benchmarks/<run>/benchmark_summary.*` |

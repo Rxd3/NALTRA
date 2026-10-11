@@ -1,11 +1,11 @@
 """Held-out-root near-OOD benchmark for the locally trainable members.
 
-Protocol: every project touching the held-out EuroSciVoc root is removed from training and
-validation, so neither its texts nor its labels are seen. In-distribution test projects
-have no held-out label; OOD test projects carry only held-out-root labels; projects that
-mix both are excluded as ambiguous. The OOD score is 1 - max label probability. Inputs pass
-the shared release audit and cross-partition isolation check before any filtering or fitting;
-AUROC carries a stratified 2,000-resample bootstrap 95% interval.
+Protocol: every project with a supported label under the held-out EuroSciVoc root is removed
+from training and validation, so neither its texts nor its labels are seen. In-distribution
+test projects have no held-out label; OOD test projects carry only held-out-root labels;
+projects that mix both are excluded as ambiguous. The OOD score is 1 - max label probability.
+Inputs pass the shared release audit and cross-partition isolation check before any filtering
+or fitting; AUROC carries a stratified 2,000-resample bootstrap 95% interval.
 """
 
 from __future__ import annotations

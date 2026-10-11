@@ -363,16 +363,3 @@ def test_missing_input_preflight_check() -> None:
             assert "Cannot generate code-switch benchmarks" in str(exc)
         else:
             raise AssertionError("Expected FileNotFoundError for a missing input directory")
-
-
-if __name__ == "__main__":
-    print("Running test_code_switching suite...")
-    test_deterministic_seeding_and_repeatability()
-    test_original_records_unmodified()
-    test_record_structure_and_traceability()
-    test_both_languages_contribute_tokens()
-    test_pair_aligned_records_validation()
-    test_input_validation_and_empty_text()
-    test_mock_benchmark_generation_and_split_safety()
-    test_missing_input_preflight_check()
-    print("All 8 code-switching benchmark tests passed successfully!")

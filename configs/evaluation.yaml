@@ -1,21 +1,5 @@
-average_modes:
-  - micro
-  - macro
-classification_metrics:
-  - precision
-  - recall
-  - f1
-  - jaccard
+# Read only by scripts/evaluate_all.py: equal-width probability bins for its ECE and
+# reliability table. The reported benchmark protocol is configs/benchmark.yaml, and the
+# latency protocol (10 warm-up calls, 200 timed texts) is in scripts/run_benchmark.py.
 calibration:
   bins: 10
-  metrics:
-    - ece
-    - brier_score
-ood_metrics:
-  - auroc
-  - fpr_at_95_tpr
-robustness_metrics:
-  - jaccard_stability
-benchmark:
-  warmup_runs: 3
-  measured_runs: 20

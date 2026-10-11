@@ -4,13 +4,19 @@ Historical review of the producing checkout, with a follow-up on the critical fi
 For current setup and artifact handoff instructions, see [documentation](README.md)
 and [reproducibility](reproducibility.md).
 
+Current state: 43 test files; 867 tests pass with 1 expected failure (the documented
+scientific-text cleaning limitation). Laya has a recorded result on the 120-pair sample,
+0.068 EN / 0.046 TR micro-F1; it is scored but never votes. Counts and line references in
+the body below describe checkout `000bc21`, and the 844 and 835 test totals below are
+earlier runs, not the current tree.
+
 Follow-up: the requested high-priority code fixes address findings **1, 2 and 4** below.
 Prediction dumps now validate batch length, text order, model identity and complete finite
 scores. Wheels include canonical configs/taxonomy resources, verified by installed-model
 inference outside the checkout. `classify.py --benchmark-settings summary.json` imports
 frozen thresholds and votes after artifact/taxonomy checks. The original audit below records
 the state before these fixes; dataset files and published results have not been changed.
-The 11 October integration review incorporates the team's subsequent Laya sample
+The 11 October integration check incorporates the team's subsequent Laya sample
 result (0.068 EN / 0.046 TR micro-F1, non-voting); statements below about pending
 Laya results describe the original 10 October checkout.
 Integration verification: **844 tests passed, 1 expected failure**; Ruff, Black,

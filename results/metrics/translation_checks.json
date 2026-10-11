@@ -1,0 +1,119 @@
+{
+  "code_commit": "3f90517",
+  "environment": {
+    "python_version": "3.13.1",
+    "platform": "win32",
+    "package_versions": {
+      "numpy": "2.5.3",
+      "torch": "2.14.1+cu126",
+      "transformers": "5.19.0",
+      "scikit-learn": "1.9.1",
+      "pyyaml": "6.0.3",
+      "huggingface-hub": "1.33.0",
+      "httpx": "0.28.1"
+    }
+  },
+  "inputs": {
+    "data/processed/cordis_h2020/en/train.jsonl": "25ce2f59f0ee0d083292eebf536e91941c8efb345474bbfaacc67e78c444a2a4",
+    "data/processed/cordis_h2020/tr/train.jsonl": "edbb7112a474c140775663b26fa8ead1e88a384f50119688bf9054f340f109ef",
+    "data/processed/cordis_h2020/en/validation.jsonl": "77722f1d42b4eeaa60bc1f3dc1a037a43dcf97ae64721ea31cb00da26981f16f",
+    "data/processed/cordis_h2020/tr/validation.jsonl": "eb9483b0db8b725f1d3f19150c9d9a1c837704af6ba62a54aca382c3b515ae59",
+    "data/processed/cordis_h2020/en/test.jsonl": "4f8564416013dff1c07e51f2c1f2064c2013c144908a26beec8122f455614052",
+    "data/processed/cordis_h2020/tr/test.jsonl": "d269933ab6d24dd26cbbda44f9bbe3c8c8fa71c60ed1b109d2e907a227ea0141"
+  },
+  "definitions": {
+    "truncation": "a TR record with at least one sentence_alignment pair whose EN sentence is longer than 80 characters and whose TR sentence has fewer than 40% of its characters (possible truncation)",
+    "repetition": "a TR record whose text, lowercased and split into \\w+ words, holds a word n-gram (n >= 4) immediately followed by itself, where that doubled 2n-word sequence does not occur in the paired EN split text split the same way (possible MT repetition)",
+    "rate": "flagged TR records / TR records in the split",
+    "examples": "the first 5 flagged TR record ids in file order",
+    "scope": "automatic screens: flagged records are candidates, not confirmed errors, and the released text is unchanged"
+  },
+  "splits": {
+    "train": {
+      "records": 21985,
+      "truncation": {
+        "records": 117,
+        "rate": 0.0053,
+        "examples": [
+          "cordis:830019:tr",
+          "cordis:890378:tr",
+          "cordis:653426:tr",
+          "cordis:876019:tr",
+          "cordis:875586:tr"
+        ]
+      },
+      "repetition": {
+        "records": 37,
+        "rate": 0.0017,
+        "examples": [
+          "cordis:724208:tr",
+          "cordis:820516:tr",
+          "cordis:887227:tr",
+          "cordis:833275:tr",
+          "cordis:694126:tr"
+        ]
+      }
+    },
+    "validation": {
+      "records": 4711,
+      "truncation": {
+        "records": 32,
+        "rate": 0.0068,
+        "examples": [
+          "cordis:761656:tr",
+          "cordis:827245:tr",
+          "cordis:815019:tr",
+          "cordis:723925:tr",
+          "cordis:774833:tr"
+        ]
+      },
+      "repetition": {
+        "records": 5,
+        "rate": 0.0011,
+        "examples": [
+          "cordis:692143:tr",
+          "cordis:950421:tr",
+          "cordis:657286:tr",
+          "cordis:101007784:tr",
+          "cordis:822766:tr"
+        ]
+      }
+    },
+    "test": {
+      "records": 4711,
+      "truncation": {
+        "records": 31,
+        "rate": 0.0066,
+        "examples": [
+          "cordis:640771:tr",
+          "cordis:723833:tr",
+          "cordis:846107:tr",
+          "cordis:740934:tr",
+          "cordis:655172:tr"
+        ]
+      },
+      "repetition": {
+        "records": 6,
+        "rate": 0.0013,
+        "examples": [
+          "cordis:831838:tr",
+          "cordis:777483:tr",
+          "cordis:637394:tr",
+          "cordis:101033752:tr",
+          "cordis:690808:tr"
+        ]
+      }
+    },
+    "all": {
+      "records": 31407,
+      "truncation": {
+        "records": 180,
+        "rate": 0.0057
+      },
+      "repetition": {
+        "records": 48,
+        "rate": 0.0015
+      }
+    }
+  }
+}

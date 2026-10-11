@@ -28,6 +28,16 @@ python -m black .
 If Make is available, `make lint`, `make test`, and `make format` run the equivalent
 commands.
 
+On Windows, run each test file in its own process and re-run a failing file once. A
+process there occasionally stops with exit code 139 / 0xC0000005 and no traceback (a
+native crash at varying points, for example inside transformers or scikit-learn), which
+is not a test failure; one process per file confines it:
+
+```powershell
+Get-ChildItem tests\test_*.py | ForEach-Object { python -m pytest -q $_.FullName; if ($LASTEXITCODE -ne 0) { python -m pytest -q $_.FullName } }
+# bash: for f in tests/test_*.py; do python -m pytest -q "$f" || python -m pytest -q "$f"; done
+```
+
 ## Code and tests
 
 Keep shared interfaces typed and modules focused. Put adjustable settings in

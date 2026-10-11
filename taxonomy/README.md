@@ -10,7 +10,8 @@ NALTRA uses EuroSciVoc taxonomy version **0.4.0**: 473 directly supported labels
 | `validation.py` | Checks schema, cycles, and parent references |
 
 Models predict direct labels. Hierarchy paths add their ancestors. The 50-project
-support threshold is computed over the source archive before splitting.
+support threshold is computed over the source archive before splitting. Codes below
+it are dropped from a project's direct labels, not rolled up to an ancestor.
 
 Validate from the repository root:
 

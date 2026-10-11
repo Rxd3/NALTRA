@@ -1,7 +1,14 @@
 # Model artifacts
 
-Install the shared benchmark artifacts at the paths below, relative to the repository
-root. Share complete folders without editing their contents.
+Git tracks only this README, so a clone contains no trained model. Install the shared
+benchmark artifacts at the paths below, relative to the repository root. Share complete
+folders without editing their contents.
+
+Folders follow `<run>/<dataset>/<track>/<family>/`. `scripts/train_all.py` writes new
+artifacts there (Naive Bayes and SVM train on CPU, see the
+[reproduction guide](../docs/reproducibility.md); the GPU families are in
+[runbook section 2](../docs/runbook.md#2-train)), and `scripts/prepare_laya.py` builds
+the Laya artifact.
 
 ## Required benchmark models
 
@@ -33,9 +40,10 @@ The full and sample benchmark summaries record per-file model SHA-256 values und
 artifact fingerprints and taxonomy before inference.
 
 Classical artifacts require the same scikit-learn version used to save them
-(1.9.1 for the reported runs). Only load trusted `estimator.joblib` files:
-joblib deserialization can execute code. A checksum verifies file identity, rather
-than whether its source is trustworthy.
+(1.9.1 for the reported runs, pinned in `requirements.txt`). Only load trusted
+`estimator.joblib` files: joblib deserialization can execute code. A checksum verifies
+file identity, rather than whether its source is trustworthy: whoever can replace the
+file can also rewrite the SHA-256 in the sibling `naltra.json`.
 
 ## Other artifacts
 
@@ -45,8 +53,9 @@ than whether its source is trustworthy.
 - Kev uses a local server; Jev uses a hosted service. Their recorded predictions
   are essential for sample result replay.
 - Laya is prepared, rather than trained, using `scripts/prepare_laya.py`. Its folder
-  contains pinned checkpoint files, SHA-256 values, and the 473 topic questions.
-  It is a non-voting sample baseline (0.068 EN / 0.046 TR micro-F1).
+  contains pinned checkpoint files, their SHA-256 values (verified on loading), and the
+  473 label questions. It is scored on the fixed samples but never votes (0.068 EN /
+  0.046 TR micro-F1).
 
 Artifact download links and independent verification are pending the handoff.
 See [reproducibility](../docs/reproducibility.md) for the release checklist and

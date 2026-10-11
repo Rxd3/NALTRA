@@ -50,7 +50,7 @@ duplicate selected labels are rejected. Serialization preserves these fields.
 Hard ensemble scores are explicitly marked as vote fractions rather than class
 probabilities in metadata.
 
-Artifacts live under `<output>/<dataset>/<track>/<model>/`. CORDIS tracks are `en_direct`, `tr_direct`, or `en_tr_direct`; the artifact records `target_field`, language selection, and dataset manifests. Older artifacts use a different taxonomy and must be retained as historical runs. `naltra.json` records
+Artifacts live under `<output>/<dataset>/<track>/<model>/`. CORDIS tracks are `en_direct`, `tr_direct`, or `en_tr_direct`; the artifact records `target_field`, language selection, and dataset manifests. `naltra.json` records
 configuration, label order, taxonomy/label-map hashes, history, OOD threshold and
 provenance. BiLSTM adds weights/vocabulary; Transformer saves Hugging Face model
 and tokenizer files. Loading checks family and taxonomy compatibility and uses
@@ -98,7 +98,7 @@ policy is fulfilled by ancestor paths.
 OOD score is `1 - max(label_scores)`, with higher scores meaning lower confidence.
 After checkpoint selection, training sets the threshold to the 95th percentile
 of ID validation scores. A head refit (`--refit-head-from`) clears it, because the
-threshold no longer fits the new head, so the shipped `cordis_v0.5.0` BiLSTM and
+threshold no longer fits the new head, so the reported `cordis_v0.5.0` BiLSTM and
 Transformer artifacts store `ood_threshold: null` and report OOD as `disabled`; the
 NB, SVM and hybrid kNN artifacts keep theirs. The pipeline flags scores strictly above
 the threshold. This is a confidence baseline, not a calibrated OOD performance claim. OOD predictions
@@ -108,7 +108,6 @@ text OOD detector or explicit score threshold. Calibration and explanation
 callables are hooks; absent explainers produce no fabricated attribution.
 A custom calibrator invalidates the original OOD threshold; supply a threshold
 fitted on calibrated validation scores or detection remains disabled.
-
 
 ## Ensembles
 
@@ -126,8 +125,9 @@ all be available under `--artifacts`. Choose `--method hard`, `hard_k`, `soft`, 
 Outputs record the settings-file SHA-256 in `threshold_source`. Without the flag,
 the CLI retains the artifact thresholds and the default hard/soft voting behavior.
 
-Soft/weighted-soft voting uses complete probabilities, including values below
-selection thresholds. Legacy results fall back to selected scores. Hard voting
+Soft/weighted-soft voting uses complete per-label scores, including values below
+selection thresholds; a result without `label_scores` falls back to the scores of its
+selected labels and treats omissions as zero. Hard voting
 uses selected-label membership and defaults to strict-majority semantics; an explicit
 `vote_count` enables k-of-M voting. Declared
 dataset, track and supported-label spaces must match. Missing required models
@@ -157,7 +157,6 @@ Ensembles have no automatically fitted OOD threshold. Fit a threshold on that
 ensemble's ID validation scores and pass it explicitly; do not reuse a component
 threshold. Hard-vote fractions are not class probabilities, so confidence OOD
 is disabled for hard voting; use a custom detector.
-
 
 For a JSONL batch file containing a non-empty `text` field per line, replace
 `--text` with `--input path/to/input.jsonl`. The CLI prints one JSON result per input.
@@ -205,8 +204,9 @@ result = pipeline.predict("This project develops solar panels and battery storag
 print([(label.label, label.score) for label in result.labels])
 ```
 
-Each label is a separate two-option `choice` question. Option `A` names the
-canonical scientific topic; option `B` is "other unrelated research topics".
+Each label is a separate two-option `choice` question, asked in English for every
+input language. Option `A` names the canonical scientific topic; option `B` is "other
+unrelated research topics".
 `P(A)` becomes the direct-label score. Labels are independent and their probabilities
 do not sum to one. Two-option choice follows the upstream workaround for the
 documented `noul` label bias.
@@ -219,18 +219,19 @@ teammate's eight-record integration check at that default selected too many labe
 verified execution, not accuracy. `train()` deliberately reports unsupported: Laya is
 scored zero-shot.
 
-
 ### Benchmark route
 
 Prepare Laya using `scripts/prepare_laya.py`, then score the fixed EN/TR samples
 using the [sample commands](runbook.md#kev-jev-and-laya-on-fixed-samples).
 The prepared folder includes pinned checkpoint files, SHA-256 values, and exact
-topic questions. Reload verifies hashes and uses local files only.
+label questions. Reload verifies hashes and uses local files only.
 
 Once all sample dumps exist, add `laya` to the sample evaluator's non-voting
-baselines (`--baselines naive_bayes laya`). Its threshold is tuned on val-A, but
-it does not change the voting members. The recorded 120-pair test result is
-0.068 English / 0.046 Turkish micro-F1, using a threshold of 0.98 tuned on val-A.
+members (`--baselines naive_bayes laya`). Its threshold is tuned on val-A, but
+it does not change the voting members, and the flag does not make it a course
+baseline: its role stays `new`. The recorded 120-pair test result is
+0.068 English / 0.046 Turkish micro-F1, using a threshold of 0.98 tuned on val-A,
+the top of the threshold grid ([sample protocol](evaluation.md#sample-protocol-kev-jev-laya)).
 
 ### Direct validation route: `evaluate_all.py`
 
@@ -247,8 +248,7 @@ Create a portable Laya artifact and check two records from each validation track
 Use a new output directory if that check already exists. `--prepare-laya` refuses
 an existing artifact and is limited to bilingual validation. It binds the audited
 release without training and copies weights, encoder/tokenizer configs, exact
-questions and checksums into the ignored model folder. Old external-service Laya
-artifacts are incompatible.
+questions and checksums into the ignored model folder.
 
 Once the subset check is satisfactory, tune on full clean validation:
 
@@ -262,14 +262,13 @@ In this route the cutoff is selected only after both validation languages finish
 subset reports cannot supply it. Classify all labels even when only a few are
 selected; partial top-k results cannot be compared fairly with the neural models.
 
-This run scores 9,422 documents against 473 independent topic questions. On the
+This run scores 9,422 documents against 473 independent label questions. On the
 RTX 4050 laptop, the measured two-document speed check took 14.5 seconds;
 budget roughly 18–24 hours for full validation, depending on document lengths.
-Larger question batches did not improve measured throughput. Keep the laptop
-plugged in and awake during the run. `--resume` commits each completed batch to
-the ignored `prediction_cache.sqlite3` beside the metrics report. Repeat the same
-command after an interruption; add `--overwrite` if a failed summary already
-exists. Changed artifacts, inputs, settings, dependencies or evaluation code are
+Larger question batches did not improve measured throughput. `--resume` commits each
+completed batch to the ignored `prediction_cache.sqlite3` beside the metrics report.
+Repeat the same command after an interruption; add `--overwrite` if a failed summary
+already exists. Changed artifacts, inputs, settings, dependencies or evaluation code are
 rejected instead of silently reusing incompatible predictions.
 
 Upstream: [model card](https://huggingface.co/convaiinnovations/laya) and

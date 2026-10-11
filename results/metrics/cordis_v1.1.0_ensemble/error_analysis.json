@@ -1,0 +1,329 @@
+{
+  "code_commit": "3f90517",
+  "environment": {
+    "python_version": "3.13.1",
+    "platform": "win32",
+    "package_versions": {
+      "numpy": "2.5.3",
+      "torch": "2.14.1+cu126",
+      "transformers": "5.19.0",
+      "scikit-learn": "1.9.1",
+      "pyyaml": "6.0.3",
+      "huggingface-hub": "1.33.0",
+      "httpx": "0.28.1"
+    }
+  },
+  "inputs": {
+    "results/metrics/cordis_v1.1.0_ensemble/summary.json": "36b985401373d4fb2c2aabbd9c841fb9006354ecb8863dce1e6d37baaf5e7ce4",
+    "data/processed/cordis_h2020/en/train.jsonl": "25ce2f59f0ee0d083292eebf536e91941c8efb345474bbfaacc67e78c444a2a4",
+    "taxonomy/taxonomy.json": "0dda384c528199fc0dd4f170ce2a677bb5009f569802b963b5c9cd6ed1299b84"
+  },
+  "thresholds": {
+    "svm": 0.16,
+    "hybrid_knn": 0.14,
+    "bilstm": 0.14,
+    "transformer": 0.14,
+    "naive_bayes": 0.22
+  },
+  "label_frequency_support": "EN-train projects per direct label: tail < 70, mid 70-199, head >= 200; micro-F1 over that bucket's label columns",
+  "sets": {
+    "en_test": {
+      "label_frequency": {
+        "tail_lt70": {
+          "labels": 177,
+          "gold_positives": 1910,
+          "svm": 0.4415,
+          "hybrid_knn": 0.3342,
+          "bilstm": 0.1146,
+          "transformer": 0.1073,
+          "naive_bayes": 0.1872
+        },
+        "mid_70_199": {
+          "labels": 197,
+          "gold_positives": 4913,
+          "svm": 0.5298,
+          "hybrid_knn": 0.3806,
+          "bilstm": 0.2111,
+          "transformer": 0.1583,
+          "naive_bayes": 0.2519
+        },
+        "head_ge200": {
+          "labels": 99,
+          "gold_positives": 8328,
+          "svm": 0.5968,
+          "hybrid_knn": 0.4079,
+          "bilstm": 0.3458,
+          "transformer": 0.3034,
+          "naive_bayes": 0.2988
+        }
+      },
+      "root": {
+        "agricultural sciences": {
+          "labels": 16,
+          "gold_positives": 379,
+          "svm": 0.5014,
+          "hybrid_knn": 0.3771
+        },
+        "engineering and technology": {
+          "labels": 104,
+          "gold_positives": 3553,
+          "svm": 0.55,
+          "hybrid_knn": 0.411
+        },
+        "humanities": {
+          "labels": 24,
+          "gold_positives": 494,
+          "svm": 0.5316,
+          "hybrid_knn": 0.4208
+        },
+        "medical and health sciences": {
+          "labels": 78,
+          "gold_positives": 2279,
+          "svm": 0.6185,
+          "hybrid_knn": 0.4405
+        },
+        "natural sciences": {
+          "labels": 186,
+          "gold_positives": 6322,
+          "svm": 0.5562,
+          "hybrid_knn": 0.38
+        },
+        "social sciences": {
+          "labels": 65,
+          "gold_positives": 2124,
+          "svm": 0.5288,
+          "hybrid_knn": 0.3419
+        }
+      },
+      "gold_labels_per_project": {
+        "1": {
+          "projects": 730,
+          "gold_positives": 730,
+          "svm": 0.4286,
+          "hybrid_knn": 0.2738
+        },
+        "2": {
+          "projects": 890,
+          "gold_positives": 1780,
+          "svm": 0.5637,
+          "hybrid_knn": 0.3699
+        },
+        "3": {
+          "projects": 900,
+          "gold_positives": 2700,
+          "svm": 0.5956,
+          "hybrid_knn": 0.4102
+        },
+        "4+": {
+          "projects": 2191,
+          "gold_positives": 9941,
+          "svm": 0.5626,
+          "hybrid_knn": 0.4118
+        }
+      },
+      "top_errors": {
+        "svm": {
+          "missed_of_gold": {
+            "software": "110/264",
+            "sensors": "108/266",
+            "business models": "93/252",
+            "proteins": "78/219",
+            "energy and fuels": "77/123",
+            "databases": "74/138",
+            "employment": "59/118",
+            "optical sensors": "58/93",
+            "oncology": "55/175",
+            "renewable energy": "55/130"
+          },
+          "false_of_predicted": {
+            "business models": "216/375",
+            "software": "152/306",
+            "sensors": "145/303",
+            "oncology": "111/231",
+            "renewable energy": "110/185",
+            "proteins": "107/248",
+            "climatic changes": "88/198",
+            "neurobiology": "78/169",
+            "history": "76/193",
+            "genomes": "65/151"
+          }
+        },
+        "hybrid_knn": {
+          "missed_of_gold": {
+            "software": "146/264",
+            "databases": "123/138",
+            "sensors": "121/266",
+            "business models": "99/252",
+            "machine learning": "99/122",
+            "productivity": "90/107",
+            "employment": "82/118",
+            "control systems": "74/80",
+            "optical sensors": "71/93",
+            "data science": "69/69"
+          },
+          "false_of_predicted": {
+            "business models": "434/587",
+            "proteins": "360/518",
+            "oncology": "322/462",
+            "sensors": "308/453",
+            "software": "290/408",
+            "climatic changes": "203/315",
+            "history": "193/296",
+            "renewable energy": "190/283",
+            "genomes": "187/274",
+            "neurobiology": "184/278"
+          }
+        }
+      }
+    },
+    "tr_test": {
+      "label_frequency": {
+        "tail_lt70": {
+          "labels": 177,
+          "gold_positives": 1910,
+          "svm": 0.3868,
+          "hybrid_knn": 0.3147,
+          "bilstm": 0.1109,
+          "transformer": 0.0913,
+          "naive_bayes": 0.1354
+        },
+        "mid_70_199": {
+          "labels": 197,
+          "gold_positives": 4913,
+          "svm": 0.4754,
+          "hybrid_knn": 0.365,
+          "bilstm": 0.2096,
+          "transformer": 0.1517,
+          "naive_bayes": 0.2294
+        },
+        "head_ge200": {
+          "labels": 99,
+          "gold_positives": 8328,
+          "svm": 0.5155,
+          "hybrid_knn": 0.4002,
+          "bilstm": 0.3184,
+          "transformer": 0.2968,
+          "naive_bayes": 0.3075
+        }
+      },
+      "root": {
+        "agricultural sciences": {
+          "labels": 16,
+          "gold_positives": 379,
+          "svm": 0.4724,
+          "hybrid_knn": 0.3729
+        },
+        "engineering and technology": {
+          "labels": 104,
+          "gold_positives": 3553,
+          "svm": 0.5112,
+          "hybrid_knn": 0.4115
+        },
+        "humanities": {
+          "labels": 24,
+          "gold_positives": 494,
+          "svm": 0.465,
+          "hybrid_knn": 0.408
+        },
+        "medical and health sciences": {
+          "labels": 78,
+          "gold_positives": 2279,
+          "svm": 0.5409,
+          "hybrid_knn": 0.4357
+        },
+        "natural sciences": {
+          "labels": 186,
+          "gold_positives": 6322,
+          "svm": 0.4841,
+          "hybrid_knn": 0.3665
+        },
+        "social sciences": {
+          "labels": 65,
+          "gold_positives": 2124,
+          "svm": 0.4115,
+          "hybrid_knn": 0.306
+        }
+      },
+      "gold_labels_per_project": {
+        "1": {
+          "projects": 730,
+          "gold_positives": 730,
+          "svm": 0.3517,
+          "hybrid_knn": 0.2752
+        },
+        "2": {
+          "projects": 890,
+          "gold_positives": 1780,
+          "svm": 0.4866,
+          "hybrid_knn": 0.364
+        },
+        "3": {
+          "projects": 900,
+          "gold_positives": 2700,
+          "svm": 0.5189,
+          "hybrid_knn": 0.3987
+        },
+        "4+": {
+          "projects": 2191,
+          "gold_positives": 9941,
+          "svm": 0.4977,
+          "hybrid_knn": 0.3966
+        }
+      },
+      "top_errors": {
+        "svm": {
+          "missed_of_gold": {
+            "software": "144/264",
+            "sensors": "134/266",
+            "business models": "107/252",
+            "databases": "99/138",
+            "proteins": "86/219",
+            "employment": "80/118",
+            "energy and fuels": "78/123",
+            "productivity": "74/107",
+            "history": "69/160",
+            "oncology": "68/175"
+          },
+          "false_of_predicted": {
+            "business models": "237/382",
+            "software": "176/296",
+            "sensors": "170/302",
+            "proteins": "130/263",
+            "oncology": "110/217",
+            "renewable energy": "107/182",
+            "history": "100/191",
+            "neurobiology": "85/160",
+            "climatic changes": "83/189",
+            "climatic change mitigation": "70/156"
+          }
+        },
+        "hybrid_knn": {
+          "missed_of_gold": {
+            "software": "153/264",
+            "sensors": "137/266",
+            "databases": "125/138",
+            "business models": "118/252",
+            "machine learning": "97/122",
+            "productivity": "95/107",
+            "employment": "87/118",
+            "optical sensors": "73/93",
+            "control systems": "72/80",
+            "data science": "69/69"
+          },
+          "false_of_predicted": {
+            "proteins": "369/523",
+            "business models": "348/482",
+            "oncology": "324/460",
+            "software": "267/378",
+            "sensors": "265/394",
+            "climatic changes": "200/319",
+            "renewable energy": "190/278",
+            "history": "186/283",
+            "genomes": "182/266",
+            "neurobiology": "165/258"
+          }
+        }
+      }
+    }
+  }
+}

@@ -31,7 +31,9 @@ The six roots form a forest of trees. Every non-root node has one parent.
 A directly assigned category is retained if at least **50 distinct projects**
 in the full source archive carry it. This calculation precedes splitting, so it
 includes projects later assigned to validation and test. It is not a training-only
-support threshold and does not guarantee a particular count in each split.
+support threshold and does not guarantee a particular count in each split. In the
+shipped splits, every retained direct label has at least 34 train, 6 validation,
+and 6 test projects.
 
 The source has 1,053 directly assigned categories across 32,210 projects. At the
 chosen threshold, 473 categories retain 31,407 projects (97.51% of labeled projects).
@@ -49,7 +51,10 @@ their direct support is zero.
 
 ## Direct labels and ancestors
 
-Dataset `labels_direct` stores assigned canonical labels. Dataset `labels`
+Dataset `labels_direct` stores the assigned canonical labels that pass the support
+threshold. Codes below it are dropped, not rolled up to their nearest supported
+ancestor: 8,128 of the 31,407 retained projects lose at least one assigned code
+([dataset card, known issue 2](../data/README.md#known-issues)). Dataset `labels`
 adds every ancestor. Models learn and score direct labels; the prediction pipeline
 provides root-to-label `hierarchy_paths` without inventing ancestor probabilities.
 

@@ -41,7 +41,7 @@ a { color: var(--accent); }
 button, select { font: inherit; }
 [id] { scroll-margin-top: 112px; }
 [hidden] { display: none !important; }
-.wrap { max-width: 1392px; margin: 0 auto; padding: 0 32px 48px; display: grid; gap: 24px; }
+.wrap { max-width: 1392px; margin: 0 auto; padding: 0 32px 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
 .topbar { position: sticky; top: 0; z-index: 6; min-height: 84px; display: flex; align-items: center; justify-content: space-between; gap: 24px; background: var(--bg); border-bottom: 1px solid var(--rule); }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
 .brand-mark { width: 38px; height: 38px; display: grid; place-items: center; background: var(--ink); color: var(--bg); border-radius: 11px; }
@@ -244,7 +244,7 @@ footer { color: var(--ink-3); font: 400 10px/1.9 var(--font-data); padding: 8px 
     <div class="hero-copy">
       <div class="eyebrow">NLP course research project</div>
       <h1>Research beyond<br><span>language.</span></h1>
-      <p id="lede">Multilingual hierarchical multi-label classification of EU research projects (CORDIS Horizon 2020) into the EuroSciVoc science taxonomy under cross-lingual, code-switched and noisy input shift, with near-OOD rejection.</p>
+      <p id="lede">Multilingual hierarchical multi-label classification of EU research projects (CORDIS Horizon 2020) into the EuroSciVoc science taxonomy under machine-translated (EN→TR), code-switched and noisy input shift, with near-OOD rejection.</p>
       <div class="hero-actions">
         <a class="action action-primary" href="#p-lang">Explore the results <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
         <a class="action" href="#p-notes">Read the methodology</a>
@@ -663,7 +663,7 @@ function staticSections() {
   if (DATA.significance) document.getElementById("sig-sub").textContent =
     `Paired project bootstrap, ${DATA.significance.resamples.toLocaleString()} resamples, 95% intervals. A dot is red for a significant drop and green for a significant gain (Holm-corrected p < ${ALPHA}), grey when the corrected difference is not significant. Left: how much a system changes from ${setName(ref)} on each other condition. Right: each ensemble against the best single member, ${sysName(best)}.`;
   if (DATA.ood) {
-    document.getElementById("ood-sub").textContent = `Projects whose only root is ${DATA.ood.heldout_root} were removed from training; they are scored against ${DATA.ood.counts.en_test_id ?? ""} in-domain test projects. Score: 1 − max label probability.`;
+    document.getElementById("ood-sub").textContent = `Every project with a supported ${DATA.ood.heldout_root} label was removed from training and validation; the ${DATA.ood.counts.en_test_ood ?? ""} ${DATA.ood.heldout_root}-only test projects per language are scored against ${DATA.ood.counts.en_test_id ?? ""} in-domain ones (${DATA.ood.counts.en_test_mixed_excluded ?? ""} mixed projects excluded). Score: 1 − max label probability.`;
     const rows = Object.entries(DATA.ood.results).flatMap(([s, r]) => Object.entries(r).filter(([k]) => k !== "trained_labels").map(([lang, v]) => ({s, lang, ...v})));
     const interval = r => r.auroc_ci_low == null || r.auroc_ci_high == null ? "–" : `[${fmt(r.auroc_ci_low)}, ${fmt(r.auroc_ci_high)}]`;
     table(document.getElementById("ood-table"), [{label: "System", value: r => sysName(r.s)}, {label: "Language", value: r => r.lang.toUpperCase()},

@@ -275,7 +275,10 @@ def test_lede_frames_the_task_without_calling_it_topic_classification(tmp_path) 
     assert lede.startswith(
         "Multilingual hierarchical multi-label classification of EU research projects"
     )
-    assert "EuroSciVoc science taxonomy under cross-lingual, code-switched and noisy" in lede
+    assert (
+        "EuroSciVoc science taxonomy under machine-translated (EN→TR), code-switched and noisy"
+        in lede
+    )
     assert lede.endswith("input shift, with near-OOD rejection.")
     assert "topic" not in build_dashboard.TEMPLATE.read_text(encoding="utf-8").lower()
 
