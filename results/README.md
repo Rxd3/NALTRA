@@ -34,7 +34,7 @@ The two `evaluate_ensemble.py` summaries record `code_commit` (`git describe --a
 `environment` and `bootstrap_seeds`. The six `extra_analyses.py` outputs record
 `code_commit`, `environment` and the SHA-256 values of the files they read (`inputs`);
 `translation_quality.json` also records the back-translation model revision and decoding
-settings, and was run on an uncommitted tree (`b601267-dirty`). The prediction dumps are
+settings. All six were regenerated together in one run from a clean tree. The prediction dumps are
 checked against the hashes in the summary they cite. The committed latency summary was
 measured before its producer added top-level code and environment fields: it records the
 runtime and hardware, but no `code_commit`.
