@@ -4,6 +4,9 @@ Git tracks only this README, so a clone contains no trained model. Install the s
 benchmark artifacts at the paths below, relative to the repository root. Share complete
 folders without editing their contents.
 
+Download the model weights from the shared
+[Google Drive folder](https://drive.google.com/drive/u/2/folders/1Bb8_apsbu09pVMg6qy6OW83JzUim8ilC).
+
 Folders follow `<run>/<dataset>/<track>/<family>/`. `scripts/train_all.py` writes new
 artifacts there (Naive Bayes and SVM train on CPU, see the
 [reproduction guide](../docs/reproducibility.md); the GPU families are in
@@ -57,6 +60,6 @@ file can also rewrite the SHA-256 in the sibling `naltra.json`.
   473 label questions. It is scored on the fixed samples but never votes (0.068 EN /
   0.046 TR micro-F1).
 
-Artifact download links and independent verification are pending the handoff.
+Independent artifact verification remains pending.
 See [reproducibility](../docs/reproducibility.md) for the release checklist and
 [model usage](../docs/core_ml.md) for loading and inference.

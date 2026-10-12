@@ -1,8 +1,10 @@
 # Result files
 
 Git tracks the small summaries behind the reported results and their documentation
-charts in `docs/figures/cordis_v1.1.0/`. Large prediction dumps, plots from new runs,
-and OOD model artifacts stay local.
+charts in `docs/figures/cordis_v1.1.0/`. Model weights and prediction dumps are
+distributed separately in the shared
+[Google Drive folder](https://drive.google.com/drive/u/2/folders/1Bb8_apsbu09pVMg6qy6OW83JzUim8ilC).
+Plots from new runs and OOD model artifacts are not tracked in Git.
 
 ## Committed summaries
 

@@ -175,16 +175,17 @@ synthetic input variants, and a single training seed limit the conclusions.
 ## Reproduce
 
 The raw archive, compressed dataset splits, manifests, taxonomy, and small result
-summaries are committed. Trained models and prediction dumps are distributed separately
-and installed at documented paths.
+summaries are committed. Download the trained model weights and prediction dumps from
+[Google Drive](https://drive.google.com/drive/u/2/folders/1Bb8_apsbu09pVMg6qy6OW83JzUim8ilC)
+and install them at the paths in the [model guide](models/README.md) and
+[result guide](results/README.md#prediction-dumps).
 
 The [reproduction guide](docs/reproducibility.md) distinguishes recalculating metrics,
 rerunning inference, and retraining. From a clone alone, the Naive Bayes and SVM rows,
 their intervals and their near-OOD results can be regenerated on CPU
 ([CPU check](docs/reproducibility.md#cpu-check-naive-bayes-and-svm)); every other table can
-be checked against the committed summaries. Publishing the artifact bundles and their
-checksum list remains pending. Download links will be added when the release bundles are
-available.
+be checked against the committed summaries. Publishing the artifact checksum list and
+independent artifact verification remain pending.
 
 ## Repository map
 

@@ -22,8 +22,11 @@ Laya results describe the original 10 October checkout.
 Integration verification: **844 tests passed, 1 expected failure**; Ruff, Black,
 all ten split checksums, and the prebuilt EN/TR record audit passed. The Laya
 summary preserves all earlier sample metrics and voting members. Documentation
-links and regenerated chart-source fingerprints were also checked. Original
-model artifacts and prediction dumps remain unavailable for independent scoring.
+links and regenerated chart-source fingerprints were also checked. Model weights
+and prediction dumps are now shared in the
+[Google Drive folder](https://drive.google.com/drive/u/2/folders/1Bb8_apsbu09pVMg6qy6OW83JzUim8ilC);
+independent artifact replay remains pending. The availability limitations below
+describe the original audit checkout.
 Follow-up verification: **835 tests passed, 1 expected failure**; Ruff, Black and
 `git diff --check` passed. The expected failure remains the documented scientific-text
 cleaning limitation, which requires a separate dataset release.
@@ -34,7 +37,7 @@ Reviewed 10 October 2026, checkout `000bc21`. This is a broad source, structure,
 
 NALTRA is a well documented research codebase with substantial automated coverage and useful safeguards against data leakage. Its strongest implementation areas are the shared prediction contract, project-grouped data checks, calibrated classical models, reproducible input variants, and offline evaluation. Its largest weaknesses are incomplete experiment reproducibility, separation between benchmark settings and usable inference, and a few missing integrity checks. The evidence supports using it for continued research; packaging and inference need attention before treating it as a portable application.
 
-Passing tests do not establish that the published model outputs are correct. The trained weights and prediction dumps are absent from this checkout, so I could verify data and published-summary consistency but could not independently recompute their classification scores or timings. I did not retrain the full models, download pretrained checkpoints, or call paid services.
+Passing tests do not establish that the published model outputs are correct. The trained weights and prediction dumps were absent from the audited checkout, so I could verify data and published-summary consistency but could not independently recompute their classification scores or timings. I did not retrain the full models, download pretrained checkpoints, or call paid services.
 
 ## Findings, ordered by priority
 
@@ -62,7 +65,7 @@ Fix: ship immutable defaults and taxonomy as package resources accessed with `im
 
 Locations: `models/README.md:3`, `results/README.md:11`, `docs/dataset.md:326`, `README.md:64`.
 
-The checkout contains model documentation but no trained artifacts or score matrices. The frozen Turkish 1.1.0 repair script is missing, so ordinary translation produces a different release. The README also states that the shipped XLM-R encoder's original fine-tuning data is not recorded. Refitting a classifier head does not recover the encoder's training lineage.
+At the time of the audit, the checkout contained model documentation but no trained artifacts or score matrices; these are now shared separately as linked above. The frozen Turkish 1.1.0 repair script is missing, so ordinary translation produces a different release. The README also states that the shipped XLM-R encoder's original fine-tuning data is not recorded. Refitting a classifier head does not recover the encoder's training lineage.
 
 These limitations are disclosed; I found no evidence that the numbers were fabricated or that the encoder actually saw test projects. However, the available evidence cannot establish the complete neural training lineage or independently verify all published scores.
 

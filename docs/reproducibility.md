@@ -15,8 +15,9 @@ The source archive, compressed datasets, manifests, split map, taxonomy, review
 files, and result summaries are committed. The documentation assumes shared
 artifacts are installed at the paths below.
 
-The model/prediction handoff, download links, and independent verification are
-pending. No uploaded bundle or successful artifact replay is claimed here.
+Model weights and prediction dumps are available in the shared
+[Google Drive folder](https://drive.google.com/drive/u/2/folders/1Bb8_apsbu09pVMg6qy6OW83JzUim8ilC).
+Independent file verification and artifact replay remain pending.
 Laya has a recorded 120-pair sample result (scored, never votes); its original
 artifact and prediction dumps are also needed for independent verification.
 
@@ -56,8 +57,9 @@ predictions needs no live API credentials.
 
 ## Install the handoff
 
-Request the **original artifacts used for the reported experiments**, preserving
-paths and file contents. Newly retrained artifacts form a new release.
+Download the shared model weights and prediction dumps linked above, preserving
+paths and file contents. Use the **original artifacts used for the reported
+experiments**; newly retrained artifacts form a new release.
 
 | Bundle | Installation location | Inventory |
 | --- | --- | --- |
@@ -196,7 +198,7 @@ checkout and a new release version for fresh dataset preparation or retraining.
 
 1. Freeze the reviewed code and record both producing and replay commits.
 2. Package original model folders and prediction pairs without modifying files.
-3. Publish versioned archives, a checksum list, and a release manifest; add links here.
+3. Publish versioned archives, a checksum list, and a release manifest; record download locations.
 4. Test download, verification, installation, and metric replay from a fresh checkout.
 5. Record which reproduction levels passed and any remaining provenance gaps.
 
